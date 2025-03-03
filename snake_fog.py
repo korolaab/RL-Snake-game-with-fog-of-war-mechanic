@@ -6,7 +6,7 @@ import sys
 CELL_SIZE = 20
 GRID_WIDTH = 30
 GRID_HEIGHT = 30
-GAME_WIDTH = GRID_WIDTH * CELL_SIZE  # 600 пикселей
+GAME_WIDTH = GRID_WIDTH * CELL_SIZE   # 600 пикселей
 GAME_HEIGHT = GRID_HEIGHT * CELL_SIZE  # 600 пикселей
 
 FPS = 10
@@ -28,12 +28,13 @@ BLACK     = (0, 0, 0)
 GREEN     = (0, 255, 0)
 DARKGREEN = (0, 155, 0)
 RED       = (255, 0, 0)
+BLUE      = (0, 0, 255)      # Для отображения столкновения с границей
 GRAY      = (100, 100, 100)
 DARKGRAY  = (50, 50, 50)
 
 pygame.init()
 screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-pygame.display.set_caption("Snake + Вид змеи")
+pygame.display.set_caption("Snake + Вид змеи (граница = смерть)")
 clock = pygame.time.Clock()
 
 def random_food_position(snake):
@@ -47,18 +48,19 @@ def draw_game_area(snake, food):
     game_rect = pygame.Rect(0, 0, GAME_WIDTH, GAME_HEIGHT)
     pygame.draw.rect(screen, BLACK, game_rect)
     
-    # Отрисовка еды
-    food_rect = pygame.Rect(food[0] * CELL_SIZE, food[1] * CELL_SIZE, CELL_SIZE, CELL_SIZE)
-    pygame.draw.rect(screen, RED, food_rect)
+    # Отрисовка еды (если еда находится в пределах поля)
+    if 0 <= food[0] < GRID_WIDTH and 0 <= food[1] < GRID_HEIGHT:
+        food_rect = pygame.Rect(food[0] * CELL_SIZE, food[1] * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+        pygame.draw.rect(screen, RED, food_rect)
     
-    # Отрисовка змейки (голова выделена ярким цветом)
+    # Отрисовка змейки
     for i, cell in enumerate(snake):
         x, y = cell
         rect = pygame.Rect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
         color = GREEN if i == 0 else DARKGREEN
         pygame.draw.rect(screen, color, rect)
     
-    # Дополнительно: рисуем сетку
+    # Рисуем сетку для удобства
     for x in range(0, GAME_WIDTH, CELL_SIZE):
         pygame.draw.line(screen, GRAY, (x, 0), (x, GAME_HEIGHT))
     for y in range(0, GAME_HEIGHT, CELL_SIZE):
@@ -66,24 +68,21 @@ def draw_game_area(snake, food):
 
 def draw_vision_area(snake, food):
     # Окно видения (правая часть окна)
-    # Чтобы окно видения было не в самом углу, центрируем его по вертикали
-    vision_x_offset = GAME_WIDTH  # правая часть начинается после игровой области
+    vision_x_offset = GAME_WIDTH  # начало правой части
     vision_y_offset = (GAME_HEIGHT - VISION_HEIGHT) // 2  # выравнивание по центру по вертикали
     
-    # Заполняем область видения фоном для клеток, вне зоны обзора (темно-серым)
+    # Заполняем область видения базовым фоном (темно-серым)
     vision_area_rect = pygame.Rect(vision_x_offset, vision_y_offset, VISION_WIDTH, VISION_HEIGHT)
     pygame.draw.rect(screen, DARKGRAY, vision_area_rect)
     
     # Получаем координаты головы змейки
     head_x, head_y = snake[0]
     
-    # Проходим по всем клеткам окна видения (11×11)
+    # Отрисовываем сетку видения (11x11 клеток)
     for i in range(VISION_GRID_SIZE):
         for j in range(VISION_GRID_SIZE):
-            dx = i - VISION_RADIUS  # смещение по горизонтали относительно головы
-            dy = j - VISION_RADIUS  # смещение по вертикали относительно головы
-            
-            # Вычисляем положение клетки в области окна видения
+            dx = i - VISION_RADIUS  # смещение относительно головы
+            dy = j - VISION_RADIUS
             cell_rect = pygame.Rect(
                 vision_x_offset + i * VISION_CELL_SIZE,
                 vision_y_offset + j * VISION_CELL_SIZE,
@@ -92,29 +91,29 @@ def draw_vision_area(snake, food):
             )
             # Если клетка находится в пределах манхэттенского расстояния
             if abs(dx) + abs(dy) <= VISION_RADIUS:
-                # Определяем соответствующую клетку в игровой сетке (учитываем обертывание)
-                cell_x = (head_x + dx) % GRID_WIDTH
-                cell_y = (head_y + dy) % GRID_HEIGHT
-                cell = (cell_x, cell_y)
-                # Определяем цвет клетки в зависимости от содержимого
-                if cell == snake[0]:
-                    color = GREEN  # Голова змейки
-                elif cell in snake:
-                    color = DARKGREEN  # Тело змейки
-                elif cell == food:
-                    color = RED  # Еда
+                nx = head_x + dx
+                ny = head_y + dy
+                # Если клетка выходит за пределы игрового поля – окрашиваем в синий
+                if nx < 0 or nx >= GRID_WIDTH or ny < 0 or ny >= GRID_HEIGHT:
+                    color = BLUE
                 else:
-                    color = WHITE  # Пустая клетка
+                    cell = (nx, ny)
+                    if cell == snake[0]:
+                        color = GREEN   # Голова змейки
+                    elif cell in snake:
+                        color = DARKGREEN  # Тело змейки
+                    elif cell == food:
+                        color = RED    # Еда
+                    else:
+                        color = WHITE  # Пустая клетка
             else:
-                # Если клетка находится за пределами видимости, оставляем фон DARKGRAY
+                # За пределами видимости
                 color = DARKGRAY
-            
             pygame.draw.rect(screen, color, cell_rect)
-            # Рисуем рамку клетки
             pygame.draw.rect(screen, GRAY, cell_rect, 1)
 
 def main():
-    # Начальное состояние змейки (начинаем с длины 3)
+    # Начальное состояние змейки (длина 3)
     snake = [(GRID_WIDTH // 2, GRID_HEIGHT // 2),
              (GRID_WIDTH // 2 - 1, GRID_HEIGHT // 2),
              (GRID_WIDTH // 2 - 2, GRID_HEIGHT // 2)]
@@ -129,21 +128,27 @@ def main():
                 pygame.quit()
                 sys.exit()
             elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_UP and direction != (0, 1):
-                    direction = (0, -1)
-                elif event.key == pygame.K_DOWN and direction != (0, -1):
-                    direction = (0, 1)
-                elif event.key == pygame.K_LEFT and direction != (1, 0):
-                    direction = (-1, 0)
-                elif event.key == pygame.K_RIGHT and direction != (-1, 0):
-                    direction = (1, 0)
+                # Игровое управление не работает после game_over
+                if not game_over:
+                    if event.key == pygame.K_UP and direction != (0, 1):
+                        direction = (0, -1)
+                    elif event.key == pygame.K_DOWN and direction != (0, -1):
+                        direction = (0, 1)
+                    elif event.key == pygame.K_LEFT and direction != (1, 0):
+                        direction = (-1, 0)
+                    elif event.key == pygame.K_RIGHT and direction != (-1, 0):
+                        direction = (1, 0)
         
         if not game_over:
             head_x, head_y = snake[0]
             dx, dy = direction
-            new_head = ((head_x + dx) % GRID_WIDTH, (head_y + dy) % GRID_HEIGHT)
-            # Проверка столкновения змейки с собой
-            if new_head in snake:
+            new_head = (head_x + dx, head_y + dy)
+            # Проверка столкновения с границей
+            if new_head[0] < 0 or new_head[0] >= GRID_WIDTH or new_head[1] < 0 or new_head[1] >= GRID_HEIGHT:
+                snake.insert(0, new_head)
+                game_over = True
+            # Проверка столкновения с телом змейки
+            elif new_head in snake:
                 game_over = True
             else:
                 snake.insert(0, new_head)
@@ -157,7 +162,7 @@ def main():
         # Отрисовка правой части – окно видения змеи
         draw_vision_area(snake, food)
         
-        # Рисуем вертикальную разделительную линию между областями
+        # Разделительная вертикальная линия между областями
         pygame.draw.line(screen, GRAY, (GAME_WIDTH, 0), (GAME_WIDTH, WINDOW_HEIGHT), 2)
         
         pygame.display.flip()
