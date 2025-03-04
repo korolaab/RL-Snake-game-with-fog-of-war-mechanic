@@ -8,13 +8,13 @@ GRID_WIDTH = 30
 GRID_HEIGHT = 30
 GAME_WIDTH = GRID_WIDTH * CELL_SIZE   # 600 пикселей
 GAME_HEIGHT = GRID_HEIGHT * CELL_SIZE   # 600 пикселей
-FPS = 10
+FPS = 10000
 
 # --- Настройки окна видения змеи ---
 # Вид задаётся по L1-радиусу 5, но отображается со стороны головы.
 VISION_RADIUS = 5
 # Фиксированная сетка для вида: 11 колонок (от -5 до +5 относительно оси "вперёд") и 6 строк (только вперед: от -5 до 0),
-# где голова всегда будет в позиции (5,5).
+# где голова всегда будет отображаться в клетке (5,5)
 VISION_DISPLAY_COLS = 11  
 VISION_DISPLAY_ROWS = 6   
 VISION_CELL_SIZE = 20     
@@ -33,12 +33,15 @@ DARKGREEN = (0, 155, 0)    # Тело змейки
 RED       = (255, 0, 0)
 BLUE      = (0, 0, 255)    # Граница поля
 GRAY      = (100, 100, 100)
-DARKGRAY  = (50, 50, 50)
+DARKGRAY  = (50, 51, 50)
 
 pygame.init()
 screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
 pygame.display.set_caption("Snake + Вид из головы с поворотом")
 clock = pygame.time.Clock()
+
+# --- Шрифт для отображения очков ---
+score_font = pygame.font.SysFont("Arial", 24)
 
 def random_food_position(snake):
     while True:
@@ -86,8 +89,9 @@ def draw_game_area(snake, food):
     for y in range(0, GAME_HEIGHT, CELL_SIZE):
         pygame.draw.line(screen, GRAY, (0, y), (GAME_WIDTH, y))
 
+visible_state = ""
 def draw_vision_area(snake, food, direction):
-    # Для формирования вида из головы поворачиваем координаты так, чтобы "вперёд" всегда было сверху.
+    # Для формирования вида из головы поворачиваем координаты так, чтобы "вперёд" всегда было вверх.
     if direction == (0, -1):  # вверх – без поворота
         def rotate(dx, dy): 
             return (dx, dy)
@@ -107,12 +111,14 @@ def draw_vision_area(snake, food, direction):
     head_x, head_y = snake[0]
     visible_cells = {}
     
+    global visible_state
+    visible_state = ""
     # Проходим по всем смещениям в пределах L1-радиуса
     for dx in range(-VISION_RADIUS, VISION_RADIUS + 1):
         for dy in range(-VISION_RADIUS, VISION_RADIUS + 1):
             if abs(dx) + abs(dy) > VISION_RADIUS:
                 continue
-            # Для всех клеток, кроме самой головы, учитываем, что клетка должна быть "перед" головой
+            # Для всех клеток, кроме головы, учитываем, что клетка должна быть "перед" головой
             if (dx, dy) != (0, 0):
                 if (dx * direction[0] + dy * direction[1]) <= 0:
                     continue
@@ -130,20 +136,27 @@ def draw_vision_area(snake, food, direction):
             global_x = (head_x + dx) % GRID_WIDTH
             global_y = (head_y + dy) % GRID_HEIGHT
             cell = (global_x, global_y)
-            
+            ct = '' 
             if (dx, dy) == (0, 0):
                 color = GREEN
+                сt = 'H'
             elif global_x == 0 or global_x == GRID_WIDTH - 1 or global_y == 0 or global_y == GRID_HEIGHT - 1:
-                color = BLUE
+                color = WHITE
+                ct = 'F'
             elif cell in snake:
                 color = DARKGREEN
+                ct = 'S'
             elif cell == food:
                 color = RED
+                ct = 'A'
             else:
                 color = WHITE
+                ct = 'F'
             
             visible_cells[(disp_col, disp_row)] = color
+            visible_state += ct
     
+    #print(visible_state)
     vision_x_offset = GAME_WIDTH
     vision_y_offset = (WINDOW_HEIGHT - (VISION_DISPLAY_ROWS * VISION_CELL_SIZE)) // 2
     vision_rect = pygame.Rect(vision_x_offset, vision_y_offset, VISION_DISPLAY_COLS * VISION_CELL_SIZE, VISION_DISPLAY_ROWS * VISION_CELL_SIZE)
@@ -158,7 +171,44 @@ def draw_vision_area(snake, food, direction):
                 pygame.draw.rect(screen, visible_cells[(col, row)], cell_rect)
             pygame.draw.rect(screen, GRAY, cell_rect, 1)
 
+from collections import defaultdict
+import numpy as np
+from tabulate import tabulate
+
+class QLearner():
+    def __init__(self, epsilon=0.1, learning_rate = 0.3, gamma = 0.9):
+        self.epsilon = epsilon
+        self.q_values = defaultdict(lambda: np.zeros(4))
+        self.last_state = ''
+        self.last_action = 0
+        self.gamma = gamma
+        self.learning_rate = learning_rate
+
+    def _egreedy_policy(self, state):
+        if np.random.random() < self.epsilon:
+            return np.random.choice(4) 
+        else:
+            return np.argmax(self.q_values[state])
+    
+    def action(self,state):
+        self.last_state = state
+        self.last_action = self._egreedy_policy(state)
+        return self.last_action
+
+    def update(self, next_state, reward, done): 
+        td_target = reward + self.gamma * max(self.q_values[next_state])
+        td_error =  td_target - self.q_values[self.last_state][self.last_action]
+        self.q_values[self.last_state][self.last_action] += self.learning_rate * td_error
+
+    def q_values_table_str(self):
+        # Convert dictionary to list of tuples
+        table = [[key, *value] for key, value in self.q_values.items()]
+
+        return table
+import csv
+
 def main():
+    # Инициализация начального состояния
     snake = [
         (GRID_WIDTH // 2, GRID_HEIGHT // 2),
         (GRID_WIDTH // 2 - 1, GRID_HEIGHT // 2),
@@ -167,22 +217,48 @@ def main():
     direction = (1, 0)  # начальное направление – вправо
     food = random_food_position(snake)
     game_over = False
+    game_over_time = None
+    global visible_state
+    qlearner = QLearner(epsilon = 0.02,learning_rate=1)
 
+    
+    # Define a custom event triggered every 1 second
+    TIMER_QSTATE_SAVE_EVENT = pygame.USEREVENT + 1
+    pygame.time.set_timer(TIMER_QSTATE_SAVE_EVENT, 10000)  # 1000ms = 1 second
+
+    last_score = 0
     while True:
+        # Очищаем весь экран в начале каждого кадра, чтобы не было "накладывания" старых рисунков
+        screen.fill(BLACK)
+        #print(visible_state) 
+        go = ["up","down","left", "right"]
+        if game_over == False:
+            action = qlearner.action(visible_state)
+            #print(go[action])
+            direction = turn_snake(direction, go[action]) 
+        
+        
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-            elif event.type == pygame.KEYDOWN:
-                # При нажатии клавиш вызываем функцию поворота
-                if event.key == pygame.K_UP:
-                    direction = turn_snake(direction, "up")
-                elif event.key == pygame.K_DOWN:
-                    direction = turn_snake(direction, "down")
-                elif event.key == pygame.K_LEFT:
-                    direction = turn_snake(direction, "left")
-                elif event.key == pygame.K_RIGHT:
-                    direction = turn_snake(direction, "right")
+            elif event.type == TIMER_QSTATE_SAVE_EVENT:
+                with open("q_values.csv", "w") as f:
+                    writer = csv.writer(f)
+                    writer.writerow(["state", "up", "down", "left", "right"])  # Header
+                    writer.writerows(qlearner.q_values_table_str())
+                print("saved_q_state")
+            elif event.type == pygame.KEYDOWN and False:
+                # Изменяем направление только если игра не окончена
+                if not game_over:
+                    if event.key == pygame.K_UP:
+                        direction = turn_snake(direction, "up")
+                    elif event.key == pygame.K_DOWN:
+                        direction = turn_snake(direction, "down")
+                    elif event.key == pygame.K_LEFT:
+                        direction = turn_snake(direction, "left")
+                    elif event.key == pygame.K_RIGHT:
+                        direction = turn_snake(direction, "right")
         
         if not game_over:
             head_x, head_y = snake[0]
@@ -190,16 +266,43 @@ def main():
             new_head = ((head_x + dx) % GRID_WIDTH, (head_y + dy) % GRID_HEIGHT)
             if new_head in snake:
                 game_over = True
+                game_over_time = pygame.time.get_ticks()
+                print(f"reward: {len(snake) - 3}")
+                qlearner.update(visible_state, -1*(len(snake) - 3),True)
             else:
                 snake.insert(0, new_head)
                 if new_head == food:
                     food = random_food_position(snake)
                 else:
                     snake.pop()
+        else:
+            # Автопрезапуск игры через 2 секунды после game over
+            if pygame.time.get_ticks() - game_over_time >= 2000:
+                snake = [
+                    (GRID_WIDTH // 2, GRID_HEIGHT // 2),
+                    (GRID_WIDTH // 2 - 1, GRID_HEIGHT // 2),
+                    (GRID_WIDTH // 2 - 2, GRID_HEIGHT // 2)
+                ]
+                direction = (1, 0)
+                food = random_food_position(snake)
+                game_over = False
+                last_score = 0
         
         draw_game_area(snake, food)
         draw_vision_area(snake, food, direction)
         pygame.draw.line(screen, GRAY, (GAME_WIDTH, 0), (GAME_WIDTH, WINDOW_HEIGHT), 2)
+        
+        # Выводим текущее количество очков в правом верхнем углу
+        score = len(snake) - 3  # очки = съеденная еда
+        if game_over == False :
+            qlearner.update(visible_state, score - last_score, True)
+        last_score = score
+
+        score_text = score_font.render(f"Score: {score}", True, WHITE)
+        score_rect = score_text.get_rect()
+        score_rect.topright = (WINDOW_WIDTH - 10, 10)
+        screen.blit(score_text, score_rect)
+        
         pygame.display.flip()
         clock.tick(FPS)
 
