@@ -6,6 +6,26 @@ import numpy as np
 import csv
 from collections import defaultdict
 
+# --- Game settings ---
+CELL_SIZE = 20
+GRID_WIDTH = 15
+GRID_HEIGHT = 15
+GAME_WIDTH = GRID_WIDTH * CELL_SIZE   # 300 pixels
+GAME_HEIGHT = GRID_HEIGHT * CELL_SIZE   # 300 pixels
+FPS = 100000
+
+# --- Snake vision settings ---
+VISION_RADIUS = 5
+VISION_DISPLAY_COLS = 11  
+VISION_DISPLAY_ROWS = 11   
+VISION_CELL_SIZE = 20     
+VISION_WIDTH = VISION_DISPLAY_COLS * VISION_CELL_SIZE   # 220 pixels
+VISION_HEIGHT = VISION_DISPLAY_ROWS * VISION_CELL_SIZE    # 220 pixels
+
+# --- Window settings ---
+WINDOW_WIDTH = GAME_WIDTH + VISION_WIDTH  # 300 + 220 = 520 pixels
+WINDOW_HEIGHT = GAME_HEIGHT               # 300 pixels
+
 # --- Global Shared Statistics ---
 shared_stats = {
     'episodes': 0,
@@ -69,11 +89,58 @@ def simulate_game(thread_id, qlearner, exp_queue):
     food = random_food(snake)
 
     # A simple state representation.
-    def compute_state(snake, food, direction):
-        head = snake[0]
-        return f"{head}_{food}_{direction}"
+    #def compute_state(snake, food, direction):
+    #    head = snake[0]
+    #    return f"{head}_{food}_{direction}"
 
-    state = compute_state(snake, food, direction)
+    def compute_visible_state(snake, food, direction):
+        head_x, head_y = snake[0]
+        visible_cells = {}
+        state_str = ""
+        
+        if direction == (0, -1):
+            def rotate(dx, dy): 
+                return (dx, dy)
+        elif direction == (1, 0):
+            def rotate(dx, dy): 
+                return (dy, -dx)
+        elif direction == (0, 1):
+            def rotate(dx, dy): 
+                return (-dx, -dy)
+        elif direction == (-1, 0):
+            def rotate(dx, dy): 
+                return (-dy, dx)
+        else:
+            def rotate(dx, dy):
+                return (dx, dy)
+        
+        for dx in range(-VISION_RADIUS, VISION_RADIUS + 1):
+            for dy in range(-VISION_RADIUS, VISION_RADIUS + 1):
+                if abs(dx) + abs(dy) > VISION_RADIUS:
+                    continue
+                r_x, r_y = rotate(dx, dy)
+                disp_col = (VISION_DISPLAY_COLS // 2) + r_x
+                disp_row = (VISION_DISPLAY_ROWS // 2) + r_y
+                if not (0 <= disp_col < VISION_DISPLAY_COLS and 0 <= disp_row < VISION_DISPLAY_ROWS):
+                    continue
+                
+                global_x = (head_x + dx) % GRID_WIDTH
+                global_y = (head_y + dy) % GRID_HEIGHT
+                cell = (global_x, global_y)
+                
+                if (dx, dy) == (0, 0):
+                    c = 'H'
+                elif cell in snake:
+                    c = 'S'
+                elif cell == food:
+                    c = 'A'
+                else:
+                    c = '_'
+                
+                state_str += c
+        return state_str
+
+    state = compute_visible_state(snake, food, direction)
     
     # Run forever.
     while True:
@@ -106,7 +173,7 @@ def simulate_game(thread_id, qlearner, exp_queue):
             else:
                 snake.pop()
 
-        next_state = compute_state(snake, food, direction)
+        next_state = compute_visible_state(snake, food, direction)
         exp_queue.put((state, action, reward, next_state, done))
         state = next_state
 
@@ -123,7 +190,7 @@ def simulate_game(thread_id, qlearner, exp_queue):
             ]
             direction = (1, 0)
             food = random_food(snake)
-            state = compute_state(snake, food, direction)
+            state = compute_visible_state(snake, food, direction)
         #time.sleep(0.001)  # tiny delay to yield control
 
 # --- Updater Thread: Consumes Experiences and Updates Q-Learner ---
@@ -154,7 +221,7 @@ def stats_monitor():
 
 # --- Main function to start simulations and threads ---
 def main():
-    num_simulations = 1 # number of parallel game threads
+    num_simulations = 4 # number of parallel game threads
     exp_queue = Queue()
     qlearner = QLearner(epsilon=0.1, learning_rate=1, gamma=0.95)
     
