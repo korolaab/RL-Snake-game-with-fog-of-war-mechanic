@@ -15,8 +15,8 @@ FPS = 60
 VISION_RADIUS = 5
 # Фиксированная сетка для вида: 11 колонок (от -5 до +5 относительно оси "вперёд") и 6 строк (только вперед: от -5 до 0),
 # где голова всегда будет отображаться в клетке (5,5)
-VISION_DISPLAY_COLS = 11  
-VISION_DISPLAY_ROWS = 6   
+VISION_DISPLAY_COLS = 11 
+VISION_DISPLAY_ROWS = 11   
 VISION_CELL_SIZE = 20     
 VISION_WIDTH = VISION_DISPLAY_COLS * VISION_CELL_SIZE   # 220 пикселей
 VISION_HEIGHT = VISION_DISPLAY_ROWS * VISION_CELL_SIZE    # 120 пикселей
@@ -91,77 +91,71 @@ def draw_game_area(snake, food):
 
 visible_state = ""
 def draw_vision_area(snake, food, direction):
-    # Для формирования вида из головы поворачиваем координаты так, чтобы "вперёд" всегда было вверх.
+    # Функция поворота координат для ориентации взгляда змейки:
+    # Поворот осуществляется так, чтобы независимо от текущего направления змейки,
+    # "вперёд" всегда располагалось вверх в видовой области.
     if direction == (0, -1):  # вверх – без поворота
         def rotate(dx, dy): 
             return (dx, dy)
-    elif direction == (1, 0):  # вправо – поворот на 90° по часовой стрелке: (dx, dy) -> (dy, -dx)
+    elif direction == (1, 0):  # вправо – поворот на 90° по часовой стрелке: (dx,dy) -> (dy, -dx)
         def rotate(dx, dy): 
             return (dy, -dx)
-    elif direction == (0, 1):  # вниз – поворот на 180°: (dx, dy) -> (-dx, -dy)
+    elif direction == (0, 1):  # вниз – поворот на 180°: (dx,dy) -> (-dx, -dy)
         def rotate(dx, dy): 
             return (-dx, -dy)
-    elif direction == (-1, 0):  # влево – поворот на 90° против часовой стрелки: (dx, dy) -> (-dy, dx)
+    elif direction == (-1, 0):  # влево – поворот на 90° против часовой стрелки: (dx,dy) -> (-dy, dx)
         def rotate(dx, dy): 
             return (-dy, dx)
     else:
-        def rotate(dx, dy): 
+        def rotate(dx, dy):
             return (dx, dy)
     
     head_x, head_y = snake[0]
     visible_cells = {}
-    
     global visible_state
     visible_state = ""
-    # Проходим по всем смещениям в пределах L1-радиуса
+    # Перебираем все клетки, удовлетворяющие |dx|+|dy| ≤ VISION_RADIUS.
     for dx in range(-VISION_RADIUS, VISION_RADIUS + 1):
         for dy in range(-VISION_RADIUS, VISION_RADIUS + 1):
             if abs(dx) + abs(dy) > VISION_RADIUS:
                 continue
-            # Для всех клеток, кроме головы, учитываем, что клетка должна быть "перед" головой
-            if (dx, dy) != (0, 0):
-                if (dx * direction[0] + dy * direction[1]) <= 0:
-                    continue
-            # Поворачиваем координаты так, чтобы "вперёд" оказалось вверх
+            # Здесь больше не отсекаем "непередовые" клетки – показываем весь ромб.
             r_x, r_y = rotate(dx, dy)
-            # Отображаем только клетки, находящиеся впереди (r_y < 0), кроме головы
-            if (dx, dy) != (0, 0) and r_y >= 0:
-                continue
-            # Фиксируем, что голова (r_x, r_y)=(0,0) будет отображаться в клетке (5,5) видового окна
-            disp_col = 5 + r_x
-            disp_row = 5 + r_y
+            # Фиксируем, что голова (0,0) всегда будет отображаться в центре видового окна.
+            disp_col = (VISION_DISPLAY_COLS // 2) + r_x
+            disp_row = (VISION_DISPLAY_ROWS // 2) + r_y
             if not (0 <= disp_col < VISION_DISPLAY_COLS and 0 <= disp_row < VISION_DISPLAY_ROWS):
                 continue
             
             global_x = (head_x + dx) % GRID_WIDTH
             global_y = (head_y + dy) % GRID_HEIGHT
             cell = (global_x, global_y)
-            ct = '' 
+            
+            # Определяем цвет клетки:
             if (dx, dy) == (0, 0):
-                color = GREEN
-                сt = 'H'
+                color = GREEN  # голова
+                c = 'H'
             #elif global_x == 0 or global_x == GRID_WIDTH - 1 or global_y == 0 or global_y == GRID_HEIGHT - 1:
-            #    color = WHITE
-            #    ct = 'F'
+            #    color = WHITE   # граница поля
             elif cell in snake:
                 color = DARKGREEN
-                ct = 'S'
+                c = 'S'
             elif cell == food:
                 color = RED
-                ct = 'A'
+                c = 'A'
             else:
                 color = WHITE
-                ct = 'F'
+                c = '_'
             
             visible_cells[(disp_col, disp_row)] = color
-            visible_state += ct
-    
-    #print(visible_state)
+            visible_state += c
+    # Вычисляем смещение для области видения (она расположена справа от игровой области)
     vision_x_offset = GAME_WIDTH
     vision_y_offset = (WINDOW_HEIGHT - (VISION_DISPLAY_ROWS * VISION_CELL_SIZE)) // 2
     vision_rect = pygame.Rect(vision_x_offset, vision_y_offset, VISION_DISPLAY_COLS * VISION_CELL_SIZE, VISION_DISPLAY_ROWS * VISION_CELL_SIZE)
     pygame.draw.rect(screen, DARKGRAY, vision_rect)
     
+    # Отрисовка клеток видовой области
     for col in range(VISION_DISPLAY_COLS):
         for row in range(VISION_DISPLAY_ROWS):
             cell_rect = pygame.Rect(vision_x_offset + col * VISION_CELL_SIZE,
@@ -170,6 +164,7 @@ def draw_vision_area(snake, food, direction):
             if (col, row) in visible_cells:
                 pygame.draw.rect(screen, visible_cells[(col, row)], cell_rect)
             pygame.draw.rect(screen, GRAY, cell_rect, 1)
+
 
 from collections import defaultdict
 import numpy as np
