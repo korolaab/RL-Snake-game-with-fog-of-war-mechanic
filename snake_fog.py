@@ -4,11 +4,11 @@ import sys
 
 # --- Настройки игры ---
 CELL_SIZE = 20
-GRID_WIDTH = 30
-GRID_HEIGHT = 30
+GRID_WIDTH = 10
+GRID_HEIGHT = 10
 GAME_WIDTH = GRID_WIDTH * CELL_SIZE   # 600 пикселей
 GAME_HEIGHT = GRID_HEIGHT * CELL_SIZE   # 600 пикселей
-FPS = 10000
+FPS = 60
 
 # --- Настройки окна видения змеи ---
 # Вид задаётся по L1-радиусу 5, но отображается со стороны головы.
@@ -140,9 +140,9 @@ def draw_vision_area(snake, food, direction):
             if (dx, dy) == (0, 0):
                 color = GREEN
                 сt = 'H'
-            elif global_x == 0 or global_x == GRID_WIDTH - 1 or global_y == 0 or global_y == GRID_HEIGHT - 1:
-                color = WHITE
-                ct = 'F'
+            #elif global_x == 0 or global_x == GRID_WIDTH - 1 or global_y == 0 or global_y == GRID_HEIGHT - 1:
+            #    color = WHITE
+            #    ct = 'F'
             elif cell in snake:
                 color = DARKGREEN
                 ct = 'S'
@@ -176,9 +176,9 @@ import numpy as np
 from tabulate import tabulate
 
 class QLearner():
-    def __init__(self, epsilon=0.1, learning_rate = 0.3, gamma = 0.9):
+    def __init__(self, epsilon=0.2, learning_rate = 1, gamma = 0.9):
         self.epsilon = epsilon
-        self.q_values = defaultdict(lambda: np.zeros(4))
+        self.q_values = defaultdict(lambda: np.zeros(3))
         self.last_state = ''
         self.last_action = 0
         self.gamma = gamma
@@ -186,7 +186,7 @@ class QLearner():
 
     def _egreedy_policy(self, state):
         if np.random.random() < self.epsilon:
-            return np.random.choice(4) 
+            return np.random.choice(3) 
         else:
             return np.argmax(self.q_values[state])
     
@@ -199,16 +199,35 @@ class QLearner():
         td_target = reward + self.gamma * max(self.q_values[next_state])
         td_error =  td_target - self.q_values[self.last_state][self.last_action]
         self.q_values[self.last_state][self.last_action] += self.learning_rate * td_error
+        #print(f"{reward=},{next_state=}\n{max(self.q_values[next_state])=}, {td_target=}, {td_error}")
 
     def q_values_table_str(self):
         # Convert dictionary to list of tuples
         table = [[key, *value] for key, value in self.q_values.items()]
-
         return table
+
 import csv
+
+def relative_turn(direction, turn_command):
+    """
+    Принимает текущий вектор направления (dx, dy) и строку "right" или "left",
+    возвращает новый вектор направления, повернутый на 90° относительно текущего.
+    
+    В нашей системе координат (y увеличивается вниз):
+      - Поворот "left" (от лица змейки) соответствует: (dx, dy) -> (dy, -dx)
+      - Поворот "right" соответствует: (dx, dy) -> (-dy, dx)
+    Если turn_command не равен "left" или "right", возвращается исходное направление.
+    """
+    if turn_command == "left":
+        return (direction[1], -direction[0])
+    elif turn_command == "right":
+        return (-direction[1], direction[0])
+    else:
+        return direction
 
 def main():
     # Инициализация начального состояния
+    random.seed(10)
     snake = [
         (GRID_WIDTH // 2, GRID_HEIGHT // 2),
         (GRID_WIDTH // 2 - 1, GRID_HEIGHT // 2),
@@ -219,23 +238,22 @@ def main():
     game_over = False
     game_over_time = None
     global visible_state
-    qlearner = QLearner(epsilon = 0.02,learning_rate=1)
+    qlearner = QLearner(epsilon = 0.1, learning_rate=1, gamma=0.9)
 
     
     # Define a custom event triggered every 1 second
     TIMER_QSTATE_SAVE_EVENT = pygame.USEREVENT + 1
-    pygame.time.set_timer(TIMER_QSTATE_SAVE_EVENT, 10000)  # 1000ms = 1 second
+    pygame.time.set_timer(TIMER_QSTATE_SAVE_EVENT, 5000)  # 1000ms = 1 second
 
     last_score = 0
     while True:
         # Очищаем весь экран в начале каждого кадра, чтобы не было "накладывания" старых рисунков
         screen.fill(BLACK)
         #print(visible_state) 
-        go = ["up","down","left", "right"]
+        go = ["straight","left", "right"]
         if game_over == False:
             action = qlearner.action(visible_state)
-            #print(go[action])
-            direction = turn_snake(direction, go[action]) 
+            direction = relative_turn(direction, go[action]) 
         
         
         for event in pygame.event.get():
@@ -245,7 +263,7 @@ def main():
             elif event.type == TIMER_QSTATE_SAVE_EVENT:
                 with open("q_values.csv", "w") as f:
                     writer = csv.writer(f)
-                    writer.writerow(["state", "up", "down", "left", "right"])  # Header
+                    writer.writerow(["state","straight", "left", "right"])  # Header
                     writer.writerows(qlearner.q_values_table_str())
                 print("saved_q_state")
             elif event.type == pygame.KEYDOWN and False:
@@ -265,10 +283,11 @@ def main():
             dx, dy = direction
             new_head = ((head_x + dx) % GRID_WIDTH, (head_y + dy) % GRID_HEIGHT)
             if new_head in snake:
+                random.seed(10)
+                print(f"reward: {len(snake) - 3}")
+                qlearner.update(visible_state, -1,True)
                 game_over = True
                 game_over_time = pygame.time.get_ticks()
-                print(f"reward: {len(snake) - 3}")
-                qlearner.update(visible_state, -1*(len(snake) - 3),True)
             else:
                 snake.insert(0, new_head)
                 if new_head == food:
@@ -276,8 +295,8 @@ def main():
                 else:
                     snake.pop()
         else:
-            # Автопрезапуск игры через 2 секунды после game over
-            if pygame.time.get_ticks() - game_over_time >= 2000:
+            # Автопрезапуск игры через 0.5 секунды после game over
+            if pygame.time.get_ticks() - game_over_time >= 500:
                 snake = [
                     (GRID_WIDTH // 2, GRID_HEIGHT // 2),
                     (GRID_WIDTH // 2 - 1, GRID_HEIGHT // 2),
@@ -295,7 +314,7 @@ def main():
         # Выводим текущее количество очков в правом верхнем углу
         score = len(snake) - 3  # очки = съеденная еда
         if game_over == False :
-            qlearner.update(visible_state, score - last_score, True)
+            qlearner.update(visible_state, last_score - score, True)
         last_score = score
 
         score_text = score_font.render(f"Score: {score}", True, WHITE)
