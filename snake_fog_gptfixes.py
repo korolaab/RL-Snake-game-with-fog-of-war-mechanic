@@ -12,7 +12,7 @@ GRID_WIDTH = 15
 GRID_HEIGHT = 15
 GAME_WIDTH = GRID_WIDTH * CELL_SIZE   # 300 pixels
 GAME_HEIGHT = GRID_HEIGHT * CELL_SIZE   # 300 pixels
-FPS = 5
+FPS = 10
 
 # --- Snake vision settings ---
 VISION_RADIUS = 5
@@ -88,33 +88,100 @@ def draw_game_area(snake, food):
         pygame.draw.line(screen, GRAY, (0, y), (GAME_WIDTH, y))
 
 def compute_visible_state(snake, food, direction):
+    """
+    Computes a state string and a visible_cells dictionary based on the snake’s first-person view (FPV).
+
+    The returned state_str encodes:
+      1) apple_visible: 1 if the apple is seen in the FPV, else 0.
+      2) apple_vertical: "above" if the apple is in front (rotated y < 0), "behind" if rotated y > 0, "center" if exactly 0.
+      3) apple_horizontal: "right" if rotated x > 0, "left" if rotated x < 0, "center" if 0.
+      4) apple_colinear: 1 if the apple is exactly in line horizontally or vertically (rotated x==0 or y==0), else 0.
+      5) snake_tail_above: 1 if any snake segment (excluding the head) is located above the head in FPV.
+      6) snake_tail_left: 1 if any snake segment is to the left.
+      7) snake_tail_right: 1 if any snake segment is to the right.
+      
+    It also returns visible_cells, a dict mapping (col, row) positions in the FPV grid to a color.
+    """
     head_x, head_y = snake[0]
     visible_cells = {}
-    state_str = ""
-    
-    if direction == (0, -1):
-        def rotate(dx, dy): 
+
+    # Define rotation so that "forward" is always up.
+    if direction == (0, -1):  # moving up: no rotation
+        def rotate(dx, dy):
             return (dx, dy)
-    elif direction == (1, 0):
-        def rotate(dx, dy): 
+    elif direction == (1, 0):  # moving right: rotate 90° clockwise
+        def rotate(dx, dy):
             return (dy, -dx)
-    elif direction == (0, 1):
-        def rotate(dx, dy): 
+    elif direction == (0, 1):  # moving down: rotate 180°
+        def rotate(dx, dy):
             return (-dx, -dy)
-    elif direction == (-1, 0):
-        def rotate(dx, dy): 
+    elif direction == (-1, 0):  # moving left: rotate 90° counterclockwise
+        def rotate(dx, dy):
             return (-dy, dx)
     else:
         def rotate(dx, dy):
             return (dx, dy)
-    has_apple = 0 
-    apple_x = 0
-    apple_y = 0 
 
-    snake_ahead_dist = 0
-    snake_on_right_dist = 0
-    snake_on_left_dist = 0
-    
+    # Initialize apple features
+    apple_visible = 0
+    apple_vertical = "none"
+    apple_horizontal = "none"
+    apple_colinear = 0
+
+    # Check if the apple is within FPV (diamond shape: |dx|+|dy| <= VISION_RADIUS)
+    for dx in range(-VISION_RADIUS, VISION_RADIUS + 1):
+        for dy in range(-VISION_RADIUS, VISION_RADIUS + 1):
+            if abs(dx) + abs(dy) > VISION_RADIUS:
+                continue
+            global_x = (head_x + dx) % GRID_WIDTH
+            global_y = (head_y + dy) % GRID_HEIGHT
+            if (global_x, global_y) == food:
+                apple_visible = 1
+                # Get rotated coordinates relative to the head.
+                r_x, r_y = rotate(dx, dy)
+                # Vertical: negative r_y means apple is "above" (in front), positive means "behind"
+                if r_y < 0:
+                    apple_vertical = "above"
+                elif r_y > 0:
+                    apple_vertical = "behind"
+                else:
+                    apple_vertical = "center"
+                # Horizontal: positive r_x means right, negative means left
+                if r_x > 0:
+                    apple_horizontal = "right"
+                elif r_x < 0:
+                    apple_horizontal = "left"
+                else:
+                    apple_horizontal = "center"
+                # Colinear if in the same row or column (rotated x==0 or rotated y==0)
+                if r_x == 0 or r_y == 0:
+                    apple_colinear = 1
+                break
+        if apple_visible:
+            break
+
+    # Compute snake tail features (exclude the head)
+    snake_tail_above = 0
+    snake_tail_left = 0
+    snake_tail_right = 0
+    for segment in snake[1:]:
+        # Compute relative position (without wrapping adjustment for simplicity)
+        seg_dx = segment[0] - head_x
+        seg_dy = segment[1] - head_y
+        r_seg = rotate(seg_dx, seg_dy)
+        if r_seg[1] < 0:
+            snake_tail_above = 1
+        if r_seg[0] < 0:
+            snake_tail_left = 1
+        if r_seg[0] > 0:
+            snake_tail_right = 1
+
+    # Build the state string.
+    state_str = f"{apple_visible}, {apple_vertical}, {apple_horizontal}, {apple_colinear}, {snake_tail_above}, {snake_tail_left}, {snake_tail_right}"
+
+    # Also compute the visible_cells dictionary for rendering the FPV grid.
+    # We assume a symmetric grid with VISION_DISPLAY_COLS x VISION_DISPLAY_ROWS cells,
+    # with the head always centered.
     for dx in range(-VISION_RADIUS, VISION_RADIUS + 1):
         for dy in range(-VISION_RADIUS, VISION_RADIUS + 1):
             if abs(dx) + abs(dy) > VISION_RADIUS:
@@ -124,38 +191,21 @@ def compute_visible_state(snake, food, direction):
             disp_row = (VISION_DISPLAY_ROWS // 2) + r_y
             if not (0 <= disp_col < VISION_DISPLAY_COLS and 0 <= disp_row < VISION_DISPLAY_ROWS):
                 continue
-            
             global_x = (head_x + dx) % GRID_WIDTH
             global_y = (head_y + dy) % GRID_HEIGHT
             cell = (global_x, global_y)
-            
             if (dx, dy) == (0, 0):
                 color = GREEN
             elif cell in snake:
                 color = DARKGREEN
-                if (dy > 0):
-                    snake_ahead_dist = 1
-                    #snake_ahead_dist = min(snake_ahead_dist, abs(dy)) 
-                if (dy == 0 and dx < 0):
-                    snake_on_left_dist = 1
-                    #snake_on_left_dist = min(snake_on_left_dist, abs(dx)) 
-                if (dy == 0 and dx > 0):
-                    snake_on_right_dist = 1
             elif cell == food:
                 color = RED
-                has_apple = 1
-                if dy > 0:
-                    apple_y = 1
-                if dx > 0:
-                    apple_x = 1
-                apple_dist = np.sqrt(dy**2 + dx**2)
             else:
                 color = WHITE
-            
             visible_cells[(disp_col, disp_row)] = color
 
-        state_str = f"{has_apple},{apple_x},{apple_y},{snake_ahead_dist},{snake_on_left_dist},{snake_on_right_dist}"
     return state_str, visible_cells
+
 
 def draw_vision_area(visible_cells):
     vision_x_offset = GAME_WIDTH + 100
@@ -217,14 +267,14 @@ class QLearner():
         td_target = reward + self.gamma * max(self.q_values[next_state])
         td_error = td_target - self.q_values[self.last_state][self.last_action]
         self.q_values[self.last_state][self.last_action] += self.learning_rate * td_error
-        if done:
-            print(f"{self.last_state=}")
-            print(f"{reward=}")
-            print(f"{max(self.q_values[next_state])=}")
-            print(f"{td_target=}")
-            print(f"{td_error=}")
-            print(f"{next_state=}")
-            print("Q-values:", self.q_values[self.last_state])
+       # if done:
+         #   print(f"{self.last_state=}")
+          #  print(f"{reward=}")
+          #  print(f"{max(self.q_values[next_state])=}")
+          #  print(f"{td_target=}")
+          #  print(f"{td_error=}")
+          #  print(f"{next_state=}")
+         #   print("Q-values:", self.q_values[self.last_state])
             #input("wait")
         self.last_state = next_state
 
@@ -250,7 +300,7 @@ def main():
 
     qlearner = QLearner(epsilon=0.1,
                         learning_rate=1,
-                        gamma=0.9999)
+                        gamma=0.9)
     
     # Custom event: save Q-state every 5 seconds.
     TIMER_QSTATE_SAVE_EVENT = pygame.USEREVENT + 1
@@ -270,6 +320,7 @@ def main():
         # compute current visible state.
         visible_state, visible_cells = compute_visible_state(snake, food, direction)
         
+        print(visible_state)
         reward = 0
         # Use Q-learner to choose an action if game is not over.
         go = ["straight", "left", "right"]
@@ -289,6 +340,10 @@ def main():
                 print("saved_q_state")
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_LEFT:
+                    direction = relative_turn(direction, "")
+                elif event.key == pygame.K_RIGHT:
+                    direction = relative_turn(direction, "")
+                if event.key == pygame.K_UP:
                     if FPS > 10:
                        FPS = 10
                     else:
@@ -304,10 +359,10 @@ def main():
             ate_food = (new_head == food)
             if ate_food:
                 # Reward for food eaten.
-                reward = 10
+                reward = 1
                 food = random_food_position(snake)
             else:
-                reward = -0.5
+                reward = 0
                 # Small time penalty.
                 if(ticks == 1000):
                     reward = -1
