@@ -256,10 +256,12 @@ class QLearner():
             return np.argmax(self.q_values[state])
     
     def action(self, state):
+        state = f"{state}, {self.last_action}"
         self.last_action = self._egreedy_policy(state)
         return self.last_action
 
     def update(self, next_state, reward, done): 
+        next_state = f"{next_state}, {self.last_action}"
         td_target = reward + self.gamma * max(self.q_values[next_state])
         td_error = td_target - self.q_values[self.last_state][self.last_action]
         self.q_values[self.last_state][self.last_action] += self.learning_rate * td_error
@@ -358,10 +360,10 @@ def main():
                 reward = 1
                 food = random_food_position(snake)
             else:
-                reward = -0.1
+                reward = -0.01
                 # Small time penalty.
-                if(ticks == 100 and 0):
-                    reward = 0
+                if(ticks == 500 ):
+                    reward = -0.02
                     snake.pop()
                     print("health - 1")
                     ticks = 0
@@ -369,7 +371,7 @@ def main():
                 snake.pop()
         if game_over:
             print(f"{score=}")
-            reward = 0 
+            reward = -1
             with open("score_history.csv","a") as f:
                 f.write(f"{episode},{score}\n")
             episode += 1
