@@ -4,7 +4,7 @@ GRID_WIDTH = 15
 GRID_HEIGHT = 15
 GAME_WIDTH = GRID_WIDTH * CELL_SIZE   # 300 pixels
 GAME_HEIGHT = GRID_HEIGHT * CELL_SIZE   # 300 pixels
-FPS = 100000
+FPS = 100000 # to speed up training. You can press UP (^) on your keyboard to slow down to 10 FPS
 
 # --- Snake vision settings ---
 VISION_RADIUS = 5
