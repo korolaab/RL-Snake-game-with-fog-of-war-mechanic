@@ -371,14 +371,13 @@ def main():
         dx, dy = direction
         new_head = ((head_x + dx) % GRID_WIDTH, (head_y + dy) % GRID_HEIGHT)
         done = False
-        reward = 0
-        #if new_head in snake or len(snake) == 1:
-        if len(snake) == 1:
+        reward = 1
+        if new_head in snake or len(snake) == 1:
             done = True
         else:
             snake.insert(0, new_head)
             if new_head == food:
-                reward = 1 
+                reward += 1 
                 food = random_food_position(snake)
             else:
                 if ticks == 50:
