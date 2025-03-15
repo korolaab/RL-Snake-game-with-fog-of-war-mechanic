@@ -204,13 +204,13 @@ class PolicyNet(nn.Module):
         self.num_actions = num_actions
         self.net = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(input_shape[0] * input_shape[1], 512),
+            nn.Linear(input_shape[0] * input_shape[1], 1024),
             nn.Tanh(),
             nn.Dropout(0.5),
-            nn.Linear(512,256),
+            nn.Linear(1024,512),
             nn.Tanh(),
             nn.Dropout(0.5),
-            nn.Linear(256, num_actions),
+            nn.Linear(512, num_actions),
             nn.Softmax(dim=-1)
         )
     def forward(self, x):
