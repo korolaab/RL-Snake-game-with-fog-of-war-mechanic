@@ -2,18 +2,39 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
-from network import PolicyNet
+from network import policy_net
 from torchsummary import summary
 
 class PolicyAgent:
-    def __init__(self, input_shape, num_actions, device, epsilon=0.2, lr=1e-3, gamma=0.99, update_interval=1):
+    def __init__(self, 
+                 input_shape, 
+                 num_actions, 
+                 device, 
+                 epsilon=0.2, 
+                 lr=1e-3,
+                 beta=0.1, 
+                 gamma=0.99, 
+                 update_interval=1,
+                 params = {"hidden_units_1": 8,
+                           "activation_1" : "Tanh",
+                           "hidden_units_2": 16,
+                           "activation_2": "Tanh",
+                           "dropout_rate": 0.5}):
         self.device = device
         self.gamma = gamma
         self.epsilon = epsilon
+        self.beta = beta  # Entropy regularization coefficient
         self.n_actions = num_actions
         
         # Initialize neural network
-        self.policy_net = PolicyNet(input_shape, num_actions).to(device)
+        #self.policy_net = PolicyNet(input_shape, num_actions).to(device)
+        self.policy_net = policy_net(input_shape = input_shape, 
+                                     num_actions = num_actions, 
+                                     hidden_units_1 = params['hidden_units_1'],
+                                     activation_1 = params['activation_1'],
+                                     hidden_units_2 = params['hidden_units_2'],
+                                     activation_2 = params['activation_2'],
+                                     dropout_rate = params['dropout_rate']).to(device)
         summary(self.policy_net, input_size=(1, input_shape[0], input_shape[1]))
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=lr)
         
@@ -96,8 +117,7 @@ class PolicyAgent:
                 entropy_term = 0
             
             # Combine policy loss with entropy bonus
-            beta = 0.1  # Entropy regularization coefficient
-            loss = torch.stack(policy_loss).sum() - beta * entropy_term
+            loss = torch.stack(policy_loss).sum() - self.beta * entropy_term
             
             print(f"Loss: {loss.item()}")
             

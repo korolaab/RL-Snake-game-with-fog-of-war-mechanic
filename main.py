@@ -6,6 +6,7 @@ from rendering import GameRenderer
 from agent import PolicyAgent
 import torch
 import csv
+import argparse
 
 def main():
     pygame.init()
@@ -23,9 +24,16 @@ def main():
         input_shape=(62, 2),
         num_actions=3,
         device=device,
-        lr=0.005,
-        gamma=0.5,
-        update_interval=1
+        lr=args.learning_rate,
+        gamma=args.gamma,
+        beta = args.beta,
+        update_interval=args.update_interval,
+        params = {"hidden_units_1": args.hidden_units_1,
+                  "activation_1" : args.activation_1,
+                  "hidden_units_2": args.hidden_units_2,
+                  "activation_2": args.activation_2,
+                  "dropout_rate": args.dropout_rate
+                 }
     )
     
     # Setup score tracking
@@ -40,7 +48,7 @@ def main():
     actions_map = {0: "straight", 1: "left", 2: "right"}
     fps = FPS
     
-    while True:
+    while True and episode < args.episodes:
         screen.fill(BLACK)
         
         # Get state information
@@ -98,4 +106,30 @@ def main():
         clock.tick(fps)
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Train an RL agent to play snake')
+    
+    # Add hyperparameters
+    parser.add_argument('--learning_rate', type=float, default=1e-3, help='Learning rate')
+    parser.add_argument('--gamma', type=float, default=0.99, help='Discount factor')
+    parser.add_argument('--beta', type=float, default=0.1, help='Exploration rate')
+    parser.add_argument('--update_interval', type=int, default=1, help='Policy update interval')
+    parser.add_argument('--dropout_rate', type=float, default=0.5, help='Dropout rate')
+    parser.add_argument('--hidden_units_1', type=int, default=8, help='Hidden units in first layer')
+    parser.add_argument('--hidden_units_2', type=int, default=16, help='Hidden units in second layer')
+    parser.add_argument('--activation_1', type=str, default='Tanh', 
+                        help='Activation function for first hidden layer')
+    parser.add_argument('--activation_2', type=str, default='Tanh', 
+                        help='Activation function for second hidden layer')
+    
+    # Add other parameters
+    parser.add_argument('--episodes', type=int, default=100, help='Number of episodes to train')
+    parser.add_argument('--seed', type=int, default=42, help='Random seed')
+    parser.add_argument('--verbose', action='store_true', help='Print verbose output')
+    parser.add_argument('--run_id', type=str, default=None, help='Unique ID for this run')
+    parser.add_argument('--save_dir', type=str, default='results', help='Directory to save results')
+    parser.add_argument('--params_file', type=str, default=None, 
+                        help='JSON file containing hyperparameters (overrides command line args)')
+    
+    args = parser.parse_args()
+
     main()
