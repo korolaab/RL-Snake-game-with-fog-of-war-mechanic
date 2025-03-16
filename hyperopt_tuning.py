@@ -13,7 +13,7 @@ def get_hyperparameter_space():
     return {
         'learning_rate': hp.loguniform('learning_rate', np.log(1e-5), np.log(1e-2)),
         'gamma': hp.uniform('gamma', 0.9, 0.9999),
-        'epsilon': hp.uniform('epsilon', 0.01, 0.3),
+        'beta': hp.uniform('beta', 0.01, 0.3),
         'update_interval': hp.quniform('update_interval', 1, 10, 1),
         'dropout_rate': hp.uniform('dropout_rate', 0.1, 0.7),
         'hidden_units_1': hp.quniform('hidden_units_1', 8, 128, 8),
@@ -54,7 +54,7 @@ def objective(params):
     args.append(f"--run_id={run_id}")
     
     # Run the training script as a subprocess
-    cmd = ["python", "main.py"] + args
+    cmd = ["python3", "main.py"] + args
     print(f"\nRunning command: {' '.join(cmd)}")
     
     try:
@@ -80,7 +80,7 @@ def objective(params):
                     json.dump(trial_result, f, indent=2)
                 
                 # Return negative reward since hyperopt minimizes
-                return {'loss': -reward, 'status': STATUS_OK, 'run_id': run_id}
+                return {'loss': -score, 'status': STATUS_OK, 'run_id': run_id}
         
         # If we didn't find the reward
         print("Warning: Couldn't find reward in output")
@@ -117,7 +117,7 @@ def plot_results(trials):
         try:
             plt.figure(figsize=(12, 8))
             # Extract parameters for visualization
-            params_to_plot = ['learning_rate', 'gamma', 'epsilon', 'dropout_rate']
+            params_to_plot = ['learning_rate', 'gamma', 'beta', 'dropout_rate']
             rewards = [-l for l in losses]
             
             for i, param in enumerate(params_to_plot):
@@ -252,7 +252,7 @@ def main():
     for param, value in best_params.items():
         if param in ['update_interval', 'hidden_units_1', 'hidden_units_2']:
             print(f"{param}: {int(value)}")
-        elif param in ['learning_rate', 'gamma', 'epsilon', 'dropout_rate']:
+        elif param in ['learning_rate', 'gamma', 'beta', 'dropout_rate']:
             print(f"{param}: {value:.6f}")
         elif param.startswith('activation_'):
             print(f"{param}: {value}")

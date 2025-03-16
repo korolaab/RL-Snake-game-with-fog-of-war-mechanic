@@ -104,6 +104,7 @@ def main():
         
         pygame.display.flip()
         clock.tick(fps)
+    return avg_score
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train an RL agent to play snake')
@@ -132,4 +133,5 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
 
-    main()
+    avg_score = main()
+    print(f"Average Score: {avg_score}")
