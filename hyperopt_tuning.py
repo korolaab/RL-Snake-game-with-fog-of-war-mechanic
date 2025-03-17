@@ -52,6 +52,8 @@ def objective(params):
     # Create a unique run ID
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     args.append(f"--run_id={run_id}")
+    # No render mode
+    args.append(f"--no_render")
     
     # Run the training script as a subprocess
     cmd = ["python3", "main.py"] + args

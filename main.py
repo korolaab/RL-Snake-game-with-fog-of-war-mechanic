@@ -10,13 +10,22 @@ import argparse
 
 def main():
     pygame.init()
-    screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-    pygame.display.set_caption("Snake + Vision (Policy Gradient with Batch Update)")
+    
+    # Initialize screen only if rendering is enabled
+    screen = None
+    if not args.no_render:
+        screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+        pygame.display.set_caption("Snake + Vision (Policy Gradient with Batch Update)")
+    
     clock = pygame.time.Clock()
     
     # Initialize game
     game = SnakeGame()
-    renderer = GameRenderer(screen)
+    
+    # Initialize renderer only if rendering is enabled
+    renderer = None
+    if not args.no_render:
+        renderer = GameRenderer(screen)
     
     # Initialize agent
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -26,14 +35,14 @@ def main():
         device=device,
         lr=args.learning_rate,
         gamma=args.gamma,
-        beta = args.beta,
+        beta=args.beta,
         update_interval=args.update_interval,
-        params = {"hidden_units_1": args.hidden_units_1,
-                  "activation_1" : args.activation_1,
-                  "hidden_units_2": args.hidden_units_2,
-                  "activation_2": args.activation_2,
-                  "dropout_rate": args.dropout_rate
-                 }
+        params={"hidden_units_1": args.hidden_units_1,
+                "activation_1": args.activation_1,
+                "hidden_units_2": args.hidden_units_2,
+                "activation_2": args.activation_2,
+                "dropout_rate": args.dropout_rate
+                }
     )
     
     # Setup score tracking
@@ -49,7 +58,8 @@ def main():
     fps = FPS
     
     while True and episode < args.episodes:
-        screen.fill(BLACK)
+        if not args.no_render:
+            screen.fill(BLACK)
         
         # Get state information
         visible_cells = game.get_visible_cells()
@@ -60,18 +70,19 @@ def main():
         last_action = action
         move = actions_map[action]
         
-        # Handle events
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_LEFT:
-                    move = "left"
-                elif event.key == pygame.K_RIGHT:
-                    move = "right"
-                if event.key == pygame.K_UP:
-                    fps = 10 if fps > 10 else FPS
+        # Handle events only if rendering is enabled
+        if not args.no_render:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_LEFT:
+                        move = "left"
+                    elif event.key == pygame.K_RIGHT:
+                        move = "right"
+                    if event.key == pygame.K_UP:
+                        fps = 10 if fps > 10 else FPS
         
         # Update game state
         reward, done = game.update(move, ticks)
@@ -93,17 +104,27 @@ def main():
             score = 0
             ticks = 0
         
-        # Rendering
-        visible_cells = game.get_visible_cells()
-        renderer.draw_game_area(game.snake, game.food)
-        renderer.draw_vision_area(visible_cells)
-        pygame.draw.line(screen, GRAY, (GAME_WIDTH, 0), (GAME_WIDTH, WINDOW_HEIGHT), 2)
+        # Rendering only if rendering is enabled
+        if not args.no_render:
+            visible_cells = game.get_visible_cells()
+            renderer.draw_game_area(game.snake, game.food)
+            renderer.draw_vision_area(visible_cells)
+            pygame.draw.line(screen, GRAY, (GAME_WIDTH, 0), (GAME_WIDTH, WINDOW_HEIGHT), 2)
+            
+            score = max(score, len(game.snake) - 3)
+            renderer.draw_score(episode, avg_score, score)
+            
+            pygame.display.flip()
+        else:
+            # Update score calculation even when not rendering
+            score = max(score, len(game.snake) - 3)
         
-        score = max(score, len(game.snake) - 3)
-        renderer.draw_score(episode, avg_score, score)
-        
-        pygame.display.flip()
-        clock.tick(fps)
+        # Use a very high FPS if no_render is true for faster execution
+        if args.no_render:
+            clock.tick(0)  # Run as fast as possible
+        else:
+            clock.tick(fps)
+            
     return avg_score
 
 if __name__ == "__main__":
@@ -130,6 +151,7 @@ if __name__ == "__main__":
     parser.add_argument('--save_dir', type=str, default='results', help='Directory to save results')
     parser.add_argument('--params_file', type=str, default=None, 
                         help='JSON file containing hyperparameters (overrides command line args)')
+    parser.add_argument('--no_render', action='store_true', help='No rendering mode')
     
     args = parser.parse_args()
 
