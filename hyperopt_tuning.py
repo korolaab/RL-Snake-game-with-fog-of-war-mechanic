@@ -47,7 +47,7 @@ def objective(params):
     args.append("--seed=42")
     
     # Add any other fixed parameters you need
-    args.append("--episodes=50")  # Run for 50 episodes per trial
+    args.append("--episodes=1000")  # Run for 1000 episodes per trial
     
     # Create a unique run ID
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
