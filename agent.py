@@ -119,7 +119,7 @@ class PolicyAgent:
             # Combine policy loss with entropy bonus
             loss = torch.stack(policy_loss).sum() - self.beta * entropy_term
             
-            print(f"Loss: {loss.item()}")
+            #print(f"Loss: {loss.item()}")
             
             # Perform backpropagation
             self.optimizer.zero_grad()

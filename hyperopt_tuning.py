@@ -1,26 +1,27 @@
 import torch
 import numpy as np
-from hyperopt import fmin, tpe, hp, STATUS_OK, Trials, space_eval
+from hyperopt import fmin, tpe, hp, STATUS_FAIL, STATUS_OK, SparkTrials, space_eval
 import os
 import json
 import argparse
 from datetime import datetime
 import subprocess
 import matplotlib.pyplot as plt
+import re
 
 # Define the search space for hyperparameters
 def get_hyperparameter_space():
     return {
         'learning_rate': hp.loguniform('learning_rate', np.log(1e-5), np.log(1e-2)),
-        'gamma': hp.uniform('gamma', 0.9, 0.9999),
-        'beta': hp.uniform('beta', 0.01, 0.3),
-        'update_interval': hp.quniform('update_interval', 1, 10, 1),
+        'gamma': hp.uniform('gamma', 0.1, 0.9999),
+        'beta': hp.uniform('beta', 0.01, 0.5),
+        # 'update_interval': hp.quniform('update_interval', 1, 10, 1),
         'dropout_rate': hp.uniform('dropout_rate', 0.1, 0.7),
-        'hidden_units_1': hp.quniform('hidden_units_1', 8, 128, 8),
-        'hidden_units_2': hp.quniform('hidden_units_2', 16, 256, 8),
+        'hidden_units_1': hp.quniform('hidden_units_1', 1, 16, 2),
+        'hidden_units_2': hp.quniform('hidden_units_2', 1, 32, 2),
         # Add activation function choices
-        'activation_1': hp.choice('activation_1', ['ReLU', 'Tanh', 'LeakyReLU', 'GELU', 'ELU']),
-        'activation_2': hp.choice('activation_2', ['ReLU', 'Tanh', 'LeakyReLU', 'GELU', 'ELU'])
+        'activation_1': hp.choice('activation_1', ['Sigmoid', 'Tanh']),
+        'activation_2': hp.choice('activation_2', ['Sigmoid', 'Tanh'])
     }
 
 def objective(params):
@@ -64,26 +65,45 @@ def objective(params):
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, universal_newlines=True)
         
         # Parse the results from output - assuming main.py prints "Average Score: X.XX" at the end
-        for line in output.split('\n'):
+        # Process each line of output
+        for line in output.splitlines():
             if "Average Score:" in line:
-                score = float(line.split("Average Score:")[1].strip())
-                print(f"Trial completed with score: {score}")
+                # Use a regular expression to extract the numeric score
+                match = re.search(r"Average Score:\s*([\d\.]+)", line)
+                if match:
+                    score = float(match.group(1))
+                    print(f"Trial completed with score: {score}")
+            elif "Total params:" in line:
+                # Use regex to extract the params string, which may contain commas
+                match = re.search(r"Total params:\s*([\d,]+)", line)
+                if match:
+                    # Remove commas and convert to an integer
+                    total_params = int(match.group(1).replace(",", ""))
+                    print(f"Total params: {total_params}")
                 
-                # Store parameters and results
-                trial_result = {
-                    'params': params,
-                    'avg_score': score,
-                    'run_id': run_id
-                }
-                
-                # Save trial results to a JSON file
-                os.makedirs('hyperopt_results', exist_ok=True)
-                with open(f'hyperopt_results/trial_{run_id}.json', 'w') as f:
-                    json.dump(trial_result, f, indent=2)
-                
-                # Return negative reward since hyperopt minimizes
-                return {'loss': -score, 'status': STATUS_OK, 'run_id': run_id}
+        if score < 15:
+            penalty = (15 - score)
+        else:
+            penalty = 1
+
+        loss =  total_params * penalty
+
+        # Store parameters and results
+        trial_result = {
+            'params': params,
+            'avg_score': score,
+            'total_params': total_params,
+            'run_id': run_id
+        }
+            
+        # Save trial results to a JSON file
+        os.makedirs('hyperopt_results', exist_ok=True)
+        with open(f'hyperopt_results/trial_{run_id}.json', 'w') as f:
+            json.dump(trial_result, f, indent=2)
         
+        # Return negative reward since hyperopt minimizes
+        return {'loss': score, 'status': STATUS_FAIL, 'run_id': run_id}
+    
         # If we didn't find the reward
         print("Warning: Couldn't find reward in output")
         return {'loss': 0, 'status': STATUS_OK, 'run_id': run_id}
@@ -213,17 +233,18 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
     
     # Initialize or load trials
-    if args.resume and os.path.exists(f'{args.output_dir}/trials.pkl'):
-        try:
-            import pickle
-            with open(f'{args.output_dir}/trials.pkl', 'rb') as f:
-                trials = pickle.load(f)
-            print(f"Resuming optimization from {len(trials.trials)} previous trials")
-        except Exception as e:
-            print(f"Error loading previous trials: {e}")
-            trials = Trials()
-    else:
-        trials = Trials()
+#     if args.resume and os.path.exists(f'{args.output_dir}/trials.pkl'):
+#         try:
+#             import pickle
+#             with open(f'{args.output_dir}/trials.pkl', 'rb') as f:
+#                 trials = pickle.load(f)
+#             print(f"Resuming optimization from {len(trials.trials)} previous trials")
+#         except Exception as e:
+#             print(f"Error loading previous trials: {e}")
+#             trials = Trials()
+#     else:
+#         trials = Trials()
+    trials = SparkTrials(parallelism=4)
     
     print(f"Starting hyperparameter optimization with {args.max_evals} evaluations...")
     print(f"Results will be saved to {args.output_dir}")

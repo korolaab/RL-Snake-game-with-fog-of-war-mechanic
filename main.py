@@ -98,7 +98,7 @@ def main():
             
             episode += 1
             avg_score = (avg_score * (episode - 1) + (len(game.snake) - 3)) / episode
-            print(f"{episode} avg_score={avg_score}")
+            #print(f"{episode} avg_score={avg_score}")
             
             game.reset()
             done = False
