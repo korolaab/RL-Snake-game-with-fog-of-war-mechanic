@@ -35,7 +35,7 @@ class PolicyAgent:
                                      hidden_units_2 = params['hidden_units_2'],
                                      activation_2 = params['activation_2'],
                                      dropout_rate = params['dropout_rate']).to(device)
-        summary(self.policy_net, input_size=(1, input_shape[0], input_shape[1]))
+        summary(self.policy_net, input_size=(1, input_shape[0], input_shape[1]), device=device)
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=lr)
         
         # Data storage for one episode

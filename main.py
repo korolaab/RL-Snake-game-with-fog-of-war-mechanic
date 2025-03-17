@@ -28,7 +28,8 @@ def main():
         renderer = GameRenderer(screen)
     
     # Initialize agent
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cpu")
     agent = PolicyAgent(
         input_shape=(62, 2),
         num_actions=3,
