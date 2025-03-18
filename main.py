@@ -55,6 +55,9 @@ def main():
     ticks = 0
     score = 0
     last_action = 0
+    steps_without_improvement = 0
+    max_snake_len = 0
+
     actions_map = {0: "straight", 1: "left", 2: "right"}
     fps = FPS
     
@@ -90,6 +93,17 @@ def main():
         ticks += 1
         agent.store_reward(reward)
         
+        # Check if snake len is stuck in a narrow range
+        if max_snake_len <= len(game.snake):
+            max_snake_len = len(game.snake)
+            steps_without_improvement = 0
+        else:
+            steps_without_improvement+= 1
+
+        if steps_without_improvement > args.steps_without_improvement:
+            done = True
+            print(f"Terminating episode: No score improvement for {args.steps_without_improvement} steps")
+        
         # Handle episode completion
         if done:
             agent.finish_episode()
@@ -104,6 +118,8 @@ def main():
             done = False
             score = 0
             ticks = 0
+            steps_without_improvement = 0
+            max_snake_len = 0
         
         # Rendering only if rendering is enabled
         if not args.no_render:
@@ -152,6 +168,8 @@ if __name__ == "__main__":
     parser.add_argument('--save_dir', type=str, default='results', help='Directory to save results')
     parser.add_argument('--params_file', type=str, default=None, 
                         help='JSON file containing hyperparameters (overrides command line args)')
+    parser.add_argument('--steps_without_improvement', type=int, default=10000, 
+                        help='Maximum number of steps allowed without score improved')
     parser.add_argument('--no_render', action='store_true', help='No rendering mode')
     
     args = parser.parse_args()
