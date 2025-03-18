@@ -36,29 +36,29 @@ def objective(params):
         Dictionary with 'loss' (negative reward), 'status', and other info
     """
     # Convert parameters to command line arguments
-    args = []
+    try_args = []
     for key, value in params.items():
         # Handle special cases for types
         if key in ['update_interval', 'hidden_units_1', 'hidden_units_2']:
             value = int(value)
         
-        args.append(f"--{key}={value}")
+        try_args.append(f"--{key}={value}")
     
     # Set a specific seed for reproducibility
-    args.append("--seed=42")
+    try_args.append(f"--seed={args.seed}")
     
     # Add any other fixed parameters you need
-    args.append("--episodes=1000")  # Run for 1000 episodes per trial
+    try_args.append(f"--episodes={args.max_episodes}")  
     
     # Create a unique run ID
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-    args.append(f"--run_id={run_id}")
+    try_args.append(f"--run_id={run_id}")
     # No render mode
-    args.append(f"--no_render")
+    try_args.append(f"--no_render")
     
     # Run the training script as a subprocess
-    cmd = ["python3", "main.py"] + args
-    print(f"\nRunning command: {' '.join(cmd)}")
+    cmd = ["python3", "main.py"] + try_args
+    #print(f"\nRunning command: {' '.join(cmd)}")
     
     try:
         # Run the training script and capture output
@@ -72,14 +72,14 @@ def objective(params):
                 match = re.search(r"Average Score:\s*([\d\.]+)", line)
                 if match:
                     score = float(match.group(1))
-                    print(f"Trial completed with score: {score}")
+                    #print(f"Trial completed with score: {score}")
             elif "Total params:" in line:
                 # Use regex to extract the params string, which may contain commas
                 match = re.search(r"Total params:\s*([\d,]+)", line)
                 if match:
                     # Remove commas and convert to an integer
                     total_params = int(match.group(1).replace(",", ""))
-                    print(f"Total params: {total_params}")
+                    #print(f"Total params: {total_params}")
                 
         if score < 15:
             penalty = (15 - score)
@@ -93,7 +93,8 @@ def objective(params):
             'params': params,
             'avg_score': score,
             'total_params': total_params,
-            'run_id': run_id
+            'run_id': run_id,
+            'cmd': cmd
         }
             
         # Save trial results to a JSON file
@@ -102,16 +103,12 @@ def objective(params):
             json.dump(trial_result, f, indent=2)
         
         # Return negative reward since hyperopt minimizes
-        return {'loss': score, 'status': STATUS_FAIL, 'run_id': run_id}
+        return {'loss': loss, 'status': STATUS_OK, 'run_id': run_id, 'total_params': total_params, 'avg_score':score}
     
-        # If we didn't find the reward
-        print("Warning: Couldn't find reward in output")
-        return {'loss': 0, 'status': STATUS_OK, 'run_id': run_id}
-        
     except subprocess.CalledProcessError as e:
         print(f"Error running training script: {e}")
         print(f"Output: {e.output}")
-        return {'loss': 0, 'status': STATUS_OK, 'run_id': run_id}
+        return {'loss': 1e15, 'status': STATUS_FAIL, 'run_id': run_id}
 
 def plot_results(trials):
     """Plot the results of hyperparameter optimization"""
@@ -214,21 +211,16 @@ def plot_results(trials):
     
     # Print best parameters and corresponding reward
     best_idx = np.argmin(losses)
-    best_reward = -losses[best_idx]
+    best_total_params = trials.trials[best_idx]['result'].get('total_params', 'unknown')
+    best_score = trials.trials[best_idx]['result'].get('avg_score', 'unknown')
     best_run_id = trials.trials[best_idx]['result'].get('run_id', 'unknown')
+
     print(f"\nBest run ID: {best_run_id}")
-    print(f"Best reward: {best_reward:.4f}")
+    print(f"Best score: {best_score}")
+    print(f"Best total param: {best_total_params}")
 
 def main():
-    parser = argparse.ArgumentParser(description='Hyperparameter optimization for RL agent')
-    parser.add_argument('--max_evals', type=int, default=100,
-                        help='Maximum number of parameter combinations to try')
-    parser.add_argument('--output_dir', type=str, default='hyperopt_results',
-                        help='Directory to save results')
-    parser.add_argument('--resume', action='store_true',
-                        help='Resume optimization from saved trials')
-    args = parser.parse_args()
-    
+   
     # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
     
@@ -244,7 +236,7 @@ def main():
 #             trials = Trials()
 #     else:
 #         trials = Trials()
-    trials = SparkTrials(parallelism=4)
+    trials = SparkTrials(parallelism=args.workers)
     
     print(f"Starting hyperparameter optimization with {args.max_evals} evaluations...")
     print(f"Results will be saved to {args.output_dir}")
@@ -271,7 +263,7 @@ def main():
     
     # Format best parameters for printing
     print("\nBest hyperparameters found:")
-    activation_list = ['ReLU', 'Tanh', 'LeakyReLU', 'GELU', 'ELU']
+    activation_list = ['Sigmoid', 'Tanh']
     for param, value in best_params.items():
         if param in ['update_interval', 'hidden_units_1', 'hidden_units_2']:
             print(f"{param}: {int(value)}")
@@ -302,4 +294,20 @@ def main():
     print(f"To use these parameters, run: python main.py --params_file={args.output_dir}/best_params.json")
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Hyperparameter optimization for RL agent')
+    parser.add_argument('--max_evals', type=int, default=100,
+                        help='Maximum number of parameter combinations to try')
+    parser.add_argument('--max_episodes', type=int, default=500,
+                        help='Maximum number of the agent\'s episodes to try')
+    parser.add_argument('--workers', type=int, default=1,
+                        help='Number of parralel trias')
+    parser.add_argument('--seed', type=int, default=42,
+                        help='Random number generator seed')
+    parser.add_argument('--output_dir', type=str, default='hyperopt_results',
+                        help='Directory to save results')
+    # TODO rewrite resume feature
+    parser.add_argument('--resume', action='store_true',
+                       help='Resume optimization from saved trials')
+    args = parser.parse_args()
+
     main()
