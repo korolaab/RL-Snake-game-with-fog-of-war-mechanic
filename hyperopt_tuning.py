@@ -17,8 +17,8 @@ def get_hyperparameter_space():
         'beta': hp.uniform('beta', 0.01, 0.5),
         # 'update_interval': hp.quniform('update_interval', 1, 10, 1),
         'dropout_rate': hp.uniform('dropout_rate', 0.1, 0.7),
-        'hidden_units_1': hp.quniform('hidden_units_1', 1, 16, 2),
-        'hidden_units_2': hp.quniform('hidden_units_2', 1, 32, 2),
+        'hidden_units_1': hp.quniform('hidden_units_1', 1, 64, 1),
+        'hidden_units_2': hp.quniform('hidden_units_2', 1, 64, 1),
         # Add activation function choices
         'activation_1': hp.choice('activation_1', ['Sigmoid', 'Tanh']),
         'activation_2': hp.choice('activation_2', ['Sigmoid', 'Tanh'])
@@ -82,7 +82,7 @@ def objective(params):
                     #print(f"Total params: {total_params}")
                 
         if score < 15:
-            penalty = (15 - score)
+            penalty = (15 - score)**2 * 100
         else:
             penalty = 1
 
