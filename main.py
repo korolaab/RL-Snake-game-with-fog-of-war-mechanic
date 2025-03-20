@@ -7,6 +7,8 @@ from agent import PolicyAgent
 import torch
 import csv
 import argparse
+from collections import deque
+import numpy as np
 
 def main():
     pygame.init()
@@ -52,16 +54,19 @@ def main():
     
     episode = 0
     avg_score = 0
+    score_queue = deque(maxlen=100)
     ticks = 0
     score = 0
     last_action = 0
     steps_without_improvement = 0
     max_snake_len = 0
-
+    max_avg_score = 0
+    early_stoping = False
+    episodes_without_score_improvement = 0
     actions_map = {0: "straight", 1: "left", 2: "right"}
     fps = FPS
     
-    while True and episode < args.episodes:
+    while episode < args.episodes and early_stoping == False:
         if not args.no_render:
             screen.fill(BLACK)
         
@@ -94,7 +99,7 @@ def main():
         agent.store_reward(reward)
         
         # Check if snake len is stuck in a narrow range
-        if max_snake_len <= len(game.snake):
+        if max_snake_len < len(game.snake):
             max_snake_len = len(game.snake)
             steps_without_improvement = 0
         else:
@@ -111,9 +116,26 @@ def main():
                 f.write(f"{episode},{score}\n")
             
             episode += 1
-            avg_score = (avg_score * (episode - 1) + (len(game.snake) - 3)) / episode
+            score_queue.append(max_snake_len - 3)
+            np_score_queue = np.array(score_queue)
+            low_p = np.percentile(np_score_queue, 10)
+            high_p = np.percentile(np_score_queue, 90)
+            std = np_score_queue.std()
+            if std > 1 and len(np_score_queue) > 5:
+                np_score_queue = np_score_queue[(np_score_queue > low_p) & (np_score_queue < high_p)]
+            avg_score = np_score_queue.mean()
             #print(f"{episode} avg_score={avg_score}")
             
+            # Check if avg_score is not growing
+            if max_avg_score < avg_score:
+                max_avg_score = avg_score
+                episodes_without_score_improvement = 0
+            else:
+                episodes_without_score_improvement+= 1
+
+            if episodes_without_score_improvement > args.episodes_without_score_improvement:
+                early_stoping = True
+                print(f"Terminating game: No avg_score improvement for {args.episodes_without_score_improvement} steps")
             game.reset()
             done = False
             score = 0
@@ -142,14 +164,14 @@ def main():
         else:
             clock.tick(fps)
             
-    return avg_score
+    return max_avg_score
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train an RL agent to play snake')
     
     # Add hyperparameters
-    parser.add_argument('--learning_rate', type=float, default=1e-3, help='Learning rate')
-    parser.add_argument('--gamma', type=float, default=0.99, help='Discount factor')
+    parser.add_argument('--learning_rate', type=float, default=1e-2, help='Learning rate')
+    parser.add_argument('--gamma', type=float, default=0.5, help='Discount factor')
     parser.add_argument('--beta', type=float, default=0.1, help='Exploration rate')
     parser.add_argument('--update_interval', type=int, default=1, help='Policy update interval')
     parser.add_argument('--dropout_rate', type=float, default=0.5, help='Dropout rate')
@@ -170,6 +192,8 @@ if __name__ == "__main__":
                         help='JSON file containing hyperparameters (overrides command line args)')
     parser.add_argument('--steps_without_improvement', type=int, default=10000, 
                         help='Maximum number of steps allowed without score improved')
+    parser.add_argument('--episodes_without_score_improvement', type=int, default=100, 
+                        help='Maximum number of episodes allowed without avg_score improved')
     parser.add_argument('--no_render', action='store_true', help='No rendering mode')
     
     args = parser.parse_args()
