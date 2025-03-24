@@ -9,6 +9,7 @@ import csv
 import argparse
 from collections import deque
 import numpy as np
+import cProfile
 
 def main():
     pygame.init()
@@ -195,8 +196,11 @@ if __name__ == "__main__":
     parser.add_argument('--episodes_without_score_improvement', type=int, default=100, 
                         help='Maximum number of episodes allowed without avg_score improved')
     parser.add_argument('--no_render', action='store_true', help='No rendering mode')
+    parser.add_argument('--cProfile', action='store_true', help='Run cProfile on main function')
     
     args = parser.parse_args()
-
-    avg_score = main()
-    print(f"Average Score: {avg_score}")
+    if args.cProfile == True:
+        cProfile.run('main()', 'main_rpofile_output.prof')
+    else:
+        avg_score = main()
+        print(f"Average Score: {avg_score}")
