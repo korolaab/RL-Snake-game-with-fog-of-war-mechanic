@@ -4,6 +4,63 @@ import torch.optim as optim
 import numpy as np
 from network import policy_net
 from torchsummary import summary
+import time
+
+class FastLogTable:
+    def __init__(self, num_points=1000, x_min=1e-6, x_max=1.0, device='cpu'):
+        self.num_points = num_points
+        self.x_min = x_min
+        self.x_max = x_max
+        self.device = device
+
+        self.x_vals = torch.linspace(x_min, x_max, steps=num_points, device=device)
+        self.log_vals = torch.log(self.x_vals)
+        self.step = (x_max - x_min) / (num_points - 1)
+
+    def __call__(self, x: torch.Tensor):
+        #x = torch.clamp(x, min=self.x_min, max=self.x_max)
+        #print(x)
+        indices = ((x - self.x_min) / self.step ).long()
+        #print(indices)
+        indices = torch.clamp(indices, 0, self.num_points - 1)
+        #print(indices)
+        return self.log_vals[indices]
+
+log_table = FastLogTable(num_points=100000,device='cpu')  # встроенный fast log
+
+class WrappedCategorical:
+    def __init__(self, probs: torch.Tensor):
+        """
+        probs: Tensor of shape [num_actions] or [batch_size, num_actions]
+        """
+        self.probs = probs
+        self.device = probs.device
+        self.log_p = log_table(probs) 
+        self.entropy = self.entropy()
+        self.base = torch.distributions.Categorical(probs)
+
+    def sample(self):
+        return self.base.sample()
+
+    def log_prob(self, actions: torch.Tensor) -> torch.Tensor:
+        """
+        actions: [batch_size] или int
+        Возвращает log(p) через fast log
+        """
+        #if self.probs.dim() == 1:
+        #p = self.probs[actions]
+        #else:
+        #    p = self.probs.gather(1, actions.unsqueeze(1)).squeeze(1)
+        #print(f"{p=}")
+        action = actions.data[0]
+
+        return self.log_p.data[0][action]
+
+    def entropy(self) -> torch.Tensor:
+        """
+        Возвращает энтропию: -Σ p * log(p), по строкам (батч-совместимо)
+        """
+        return -(self.probs * self.log_p).sum(dim=-1)
 
 class PolicyAgent:
     def __init__(self, 
@@ -25,7 +82,6 @@ class PolicyAgent:
         self.epsilon = epsilon
         self.beta = beta  # Entropy regularization coefficient
         self.n_actions = num_actions
-        
         # Initialize neural network
         #self.policy_net = PolicyNet(input_shape, num_actions).to(device)
         self.policy_net = policy_net(input_shape = input_shape, 
@@ -56,16 +112,47 @@ class PolicyAgent:
     def _network(self, state):
         state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(self.device)
         probs = self.policy_net(state_tensor)
-        
-        m = torch.distributions.Categorical(probs)
-        action = m.sample()
-        self.current_log_probs.append(m.log_prob(action))
+        #m = torch.distributions.Categorical(probs)
+        #action = m.sample()
+        #start = time.time()
+        #print(probs)
+        #print(m)
+        #print(action)
+        #print(m.log_prob(action))
         
         # Save entropy for the current action distribution
-        entropy = m.entropy().unsqueeze(0)
-        self.entropy_history.append(entropy)
+        #entropy = m.entropy().unsqueeze(0)
+        #print(entropy)
+        #print(f'time:{time.time()-start}')
+
+        #print("====")
+        m = WrappedCategorical(probs)
+        action = m.sample()
+        self.current_log_probs.append(m.log_prob(action))
+        #start = time.time()
+        #print(f"{probs=}")
+        #print(f"{m=}")
+        #print(f"{action=}")
+        #print(m.log_prob(action))
         
-        return int(action.item())
+        # Save entropy for the current action distribution
+        entropy = m.entropy.unsqueeze(0)
+        #print(entropy)
+        #print(f'time:{time.time()-start}')
+        #exit()
+        #start = time.time()
+       # probs = probs.numpy().flatten()
+       # print(probs)
+       # index = np.random.choice(len(probs), p=probs)
+       # log_probs = self.logTable(probs)
+       # print(log_probs[index]) 
+       # entropy = - (log_probs*probs).sum()
+       # print(entropy)
+       # print(f'time:{time.time()-start}')
+       # exit()
+        self.entropy_history.append(entropy)
+        return action.item()
+    #return int(action.item())
 
     def select_action(self, state):
         return self._network(state) 
@@ -112,7 +199,7 @@ class PolicyAgent:
             
             # Add entropy term for exploration
             if self.entropy_history:
-                entropy_term = torch.cat(self.entropy_history).sum()
+                entropy_term = sum(self.entropy_history)
             else:
                 entropy_term = 0
             
