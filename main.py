@@ -165,7 +165,7 @@ def main():
         else:
             clock.tick(fps)
             
-    return max_avg_score
+    return max_avg_score, episode
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train an RL agent to play snake')
@@ -197,10 +197,12 @@ if __name__ == "__main__":
                         help='Maximum number of episodes allowed without avg_score improved')
     parser.add_argument('--no_render', action='store_true', help='No rendering mode')
     parser.add_argument('--cProfile', action='store_true', help='Run cProfile on main function')
+    # TODO mlflow
     
     args = parser.parse_args()
     if args.cProfile == True:
         cProfile.run('main()', 'main_rpofile_output.prof')
     else:
-        avg_score = main()
+        avg_score, episodes = main()
         print(f"Average Score: {avg_score}")
+        print(f"Completed Episodes: {episodes}")
