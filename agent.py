@@ -25,7 +25,10 @@ class PolicyAgent:
         self.epsilon = epsilon
         self.beta = beta  # Entropy regularization coefficient
         self.n_actions = num_actions
-        
+
+        self.states_history = [] 
+        self.actions_history = []
+
         # Initialize neural network
         #self.policy_net = PolicyNet(input_shape, num_actions).to(device)
         self.policy_net = policy_net(input_shape = input_shape, 
@@ -55,15 +58,19 @@ class PolicyAgent:
 
     def _network(self, state):
         state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(self.device)
-        probs = self.policy_net(state_tensor)
+        with torch.no_grad():
+            probs = self.policy_net(state_tensor)
         
         m = torch.distributions.Categorical(probs)
         action = m.sample()
-        self.current_log_probs.append(m.log_prob(action))
+        #self.current_log_probs.append(m.log_prob(action))
         
         # Save entropy for the current action distribution
-        entropy = m.entropy().unsqueeze(0)
-        self.entropy_history.append(entropy)
+        #entropy = m.entropy().unsqueeze(0)
+        #self.entropy_history.append(entropy)
+
+        self.actions_history.append(action)
+        self.states_history.append(state)
         
         return int(action.item())
 
@@ -75,57 +82,60 @@ class PolicyAgent:
         self.current_rewards.append(reward)
     
     def finish_episode(self):
+        states_tensor = torch.tensor(self.states_history, dtype=torch.float32).to(self.device)
+        actions = torch.tensor(self.actions_history)
+        probs = self.policy_net(states_tensor)
+        m = torch.distributions.Categorical(probs)
+        action = m.sample()
+        log_probs = m.log_prob(actions)
+        entropy = m.entropy()
+        #self.entropy_history.append(entropy)
+
         # Store current episode data and reset for next episode
-        self.episode_buffer.append((self.current_log_probs, self.current_rewards))
-        self.current_log_probs = []
-        self.current_rewards = []
+        #self.current_log_probs = []
+        #self.current_rewards = []
+        # Calculate returns for each episode
+        all_returns = []
+
+        R = 0
+        ep_returns = []
         
-        # If we've accumulated enough episodes, perform a batch update
-        if len(self.episode_buffer) >= self.update_interval:
-            all_log_probs = []
-            all_returns = []
-            
-            # Calculate returns for each episode
-            for ep_log_probs, ep_rewards in self.episode_buffer:
-                R = 0
-                ep_returns = []
-                
-                # Calculate discounted returns
-                for r in reversed(ep_rewards):
-                    R = r + self.gamma * R
-                    ep_returns.insert(0, R)
-                
-                # Normalize returns
-                ep_returns = torch.tensor(ep_returns, dtype=torch.float32).to(self.device)
-                ep_returns = (ep_returns - ep_returns.mean()) / (ep_returns.std() + 1e-5)
-                
-                all_log_probs.extend(ep_log_probs)
-                all_returns.append(ep_returns)
-            
-            # Concatenate returns from all episodes
-            all_returns = torch.cat(all_returns)
-            
-            # Calculate policy loss
-            policy_loss = []
-            for log_prob, R in zip(all_log_probs, all_returns):
-                policy_loss.append(-log_prob * R)
-            
-            # Add entropy term for exploration
-            if self.entropy_history:
-                entropy_term = torch.cat(self.entropy_history).sum()
-            else:
-                entropy_term = 0
-            
-            # Combine policy loss with entropy bonus
-            loss = torch.stack(policy_loss).sum() - self.beta * entropy_term
-            
-            #print(f"Loss: {loss.item()}")
-            
-            # Perform backpropagation
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
-            
-            # Clear buffers
-            self.episode_buffer = []
-            self.entropy_history = []
+        # Calculate discounted returns
+        for r in reversed(self.current_rewards):
+            R = r + self.gamma * R
+            ep_returns.insert(0, R)
+        
+        # Normalize returns
+        ep_returns = torch.tensor(ep_returns, dtype=torch.float32).to(self.device)
+        ep_returns = (ep_returns - ep_returns.mean()) / (ep_returns.std() + 1e-5)
+        
+        
+        # Concatenate returns from all episodes
+        
+        # Calculate policy loss
+        #policy_loss = []
+        #for log_prob, R in zip(all_log_probs, all_returns):
+        #    policy_loss.append(-log_prob * R)
+        
+        # Add entropy term for exploration
+        #if self.entropy_history:
+        #    entropy_term = torch.cat(self.entropy_history).sum()
+        #else:
+        #    entropy_term = 0
+        
+        # Combine policy loss with entropy bonus
+        loss = -(log_probs * ep_returns).sum() - self.beta * entropy.sum()
+        
+        #print(f"Loss: {loss.item()}")
+
+        # Perform backpropagation
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        
+        # Clear buffers
+        self.episode_buffer = []
+        self.entropy_history = []
+        self.states_history = []
+        self.actions_history = []
+        self.current_rewards = []
