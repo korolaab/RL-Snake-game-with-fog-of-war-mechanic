@@ -45,7 +45,9 @@ def main():
                 "activation_2": args.activation_2,
                 "dropout_rate": args.dropout_rate
                 }
-    agent = PolicyAgent(
+
+	#TODO
+    agent_sample = PolicyAgent(
         input_shape=(62, 2),
         num_actions=3,
         device=device,
@@ -55,6 +57,8 @@ def main():
         update_interval=args.update_interval,
         params=net_params
     )
+	
+	agents = [agent_samp
     
     # Setup score tracking
     with open("score_history.csv", "w") as f:
@@ -84,7 +88,7 @@ def main():
             state_matrix = game.get_state_matrix(visible_cells, last_action)
             
             # Agent selects action
-            action = agent.select_action(state_matrix)
+            action = agent1.select_action(state_matrix)
             last_action = action
             move = actions_map[action]
             
