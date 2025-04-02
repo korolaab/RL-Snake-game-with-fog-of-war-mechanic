@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from hyperopt import fmin, tpe, hp, STATUS_FAIL, STATUS_OK, SparkTrials, space_eval
+from hyperopt import fmin, tpe,rand, hp, STATUS_FAIL, STATUS_OK, SparkTrials, space_eval
 import os
 import json
 import argparse
@@ -12,16 +12,22 @@ import re
 # Define the search space for hyperparameters
 def get_hyperparameter_space():
     return {
-        'learning_rate': hp.loguniform('learning_rate', np.log(1e-5), np.log(1e-2)),
-        'gamma': hp.uniform('gamma', 0.1, 0.9999),
-        'beta': hp.uniform('beta', 0.01, 0.5),
+       # 'learning_rate': hp.loguniform('learning_rate', np.log(1e-5), np.log(1e-2)),
+        #'gamma': hp.uniform('gamma', 0.1, 0.9999),
+        'learning_rate': 0.009,
+        'gamma': 0.6,
+        'beta': 0.16,
+        #'beta': hp.uniform('beta', 0.01, 0.5),
         # 'update_interval': hp.quniform('update_interval', 1, 10, 1),
-        'dropout_rate': hp.uniform('dropout_rate', 0.1, 0.7),
-        'hidden_units_1': hp.quniform('hidden_units_1', 1, 64, 1),
-        'hidden_units_2': hp.quniform('hidden_units_2', 1, 64, 1),
+        #'dropout_rate': hp.uniform('dropout_rate', 0.4, 0.7),
+        'dropout_rate': 0.6,
+        'hidden_units_1': hp.quniform('hidden_units_1', 1, 15, 1),
+        'hidden_units_2': hp.quniform('hidden_units_2', 1, 15, 1),
         # Add activation function choices
-        'activation_1': hp.choice('activation_1', ['Sigmoid', 'Tanh']),
-        'activation_2': hp.choice('activation_2', ['Sigmoid', 'Tanh'])
+        #'activation_1': hp.choice('activation_1', ['Sigmoid', 'Tanh']),
+        'activation_1': 'Tanh',
+        #'activation_2': hp.choice('activation_2', ['Sigmoid', 'Tanh'])
+        'activation_2': 'Tanh'
     }
 
 def objective(params):
@@ -56,6 +62,8 @@ def objective(params):
     # No render mode
     try_args.append(f"--no_render")
     
+    try_args.append(f"--mlflow_experiment_name={args.mlflow_experiment_name}")
+    
     # Run the training script as a subprocess
     cmd = ["python3", "main.py"] + try_args
     #print(f"\nRunning command: {' '.join(cmd)}")
@@ -81,10 +89,10 @@ def objective(params):
                     total_params = int(match.group(1).replace(",", ""))
                     #print(f"Total params: {total_params}")
                 
-        if score < 15:
-            penalty = (15 - score)**2 * 100
-        else:
+        if (args.target_score - score)**2 < 1:
             penalty = 1
+        else:
+            penalty = 1000
 
         loss =  total_params * penalty
 
@@ -216,7 +224,7 @@ def plot_results(trials):
     best_run_id = trials.trials[best_idx]['result'].get('run_id', 'unknown')
 
     print(f"\nBest run ID: {best_run_id}")
-    print(f"Best score: {best_score}")
+    print(f"Best avg_score: {best_score}")
     print(f"Best total param: {best_total_params}")
 
 def main():
@@ -245,7 +253,7 @@ def main():
     best = fmin(
         fn=objective,
         space=get_hyperparameter_space(),
-        algo=tpe.suggest,
+        algo=rand.suggest,
         max_evals=args.max_evals if not args.resume else len(trials.trials) + args.max_evals,
         trials=trials
     )
@@ -305,9 +313,15 @@ if __name__ == "__main__":
                         help='Random number generator seed')
     parser.add_argument('--output_dir', type=str, default='hyperopt_results',
                         help='Directory to save results')
+    parser.add_argument('--target_score', type=int, default=15,
+                        help='Target score which will used to find mininum number of parameters')
     # TODO rewrite resume feature
     parser.add_argument('--resume', action='store_true',
                        help='Resume optimization from saved trials')
+    parser.add_argument('--mlflow_experiment_name', type=str, required=True,
+                       help='Mlflow experiment name')
+
+
     args = parser.parse_args()
 
     main()
