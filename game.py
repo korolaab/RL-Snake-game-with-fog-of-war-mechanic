@@ -10,7 +10,7 @@ class SnakeGame:
         self.snake = [
             (GRID_WIDTH // 2, GRID_HEIGHT // 2),
             (GRID_WIDTH // 2 - 1, GRID_HEIGHT // 2),
-            (GRID_WIDTH // 2 - 2, GRID_HEIGHT // 2)
+            (GRID_WIDTH // 2 - 2, GRID_HEIGHT // 2),
         ]
         self.direction = (1, 0)
         self.food = self.random_food_position()
@@ -52,9 +52,9 @@ class SnakeGame:
             self.food = self.random_food_position()
         else:
             # Remove tail unless periodic tick condition or food was eaten
-            if ticks == 50:
-                self.snake.pop()
-                ticks = 0
+        #    if ticks == 50:
+        #        self.snake.pop()
+        #        ticks = 0
             self.snake.pop()
         
         return reward, False
