@@ -30,13 +30,15 @@ class Snake(list):
 class SnakeGame:
     def __init__(self, N_snakes=1):
         self.N_snakes = 1
+	    self.field = [[None for _ in range(width)] for _ in range(height)]
         self.reset()
     
     def reset(self):
         self.snakes = [Snake(id) for i in range(N_snakes)]
-
+    
         self.direction = (1, 0)
         self.food = self.random_food_position()
+		self.fill_game_grid()
     
     def random_food_position(self):
         while True:
@@ -52,26 +54,39 @@ class SnakeGame:
         else:
             return self.direction
     
-    def update(self, move, ticks):
-        # Apply the move
-        self.direction = self.relative_turn(move) #TODO
-        for snake in self.snakes:  
-            # Check if snake ate food
-			if snake.head in snake or len(snake) == 1:
-				return 0, True  # Game over
+    def update(self, move, ticks, agent_id):
+        snake = self.snakes[agent_id]
 
-            snake.reward = 1
-            if snake.head == self.food:
-                snake.reward += 1
-                self.food = self.random_food_position()
-            else:
-                # Remove tail unless periodic tick condition or food was eaten
-            #    if ticks == 50:
-            #        self.snake.pop()
-            #        ticks = 0
-                snake.pop()
+        # Apply the move
+        snake.direction = self.relative_turn(move)
+        snake.step()
+        
+        # Check if snake head inside snake tail
+        if snake.head in snake or len(snake) == 1:
+            return 0, True  # Game over
+
+        snake.reward = 1
+        # Check if snake ate food
+        if snake.head == self.food or self.food_is_eaten:
+            snake.reward += 1
+            self.food_is_eaten = True
+        else:
+            # Remove tail unless periodic tick condition or food was eaten
+        #    if ticks == 50:
+        #        self.snake.pop()
+        #        ticks = 0
+            snake.pop()
+
+		self.fill_game_grid()
         
         return snake.reward, False
+
+
+    def food_position_update(self):
+        if self.food_is_eaten == True:
+            self.food = self.random_food_position()
+            self.food_is_eaten = False
+
     
     def get_visible_cells(self, snake_id):
         snake = self.snakes[snake_id]
