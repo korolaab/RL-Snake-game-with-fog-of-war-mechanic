@@ -39,11 +39,21 @@ class SnakeGame:
         self.direction = (1, 0)
         self.food = self.random_food_position()
 		self.fill_game_grid()
+
+    def fill_game_grid(self):
+        self.field = [[{"type": None, "id": 0} for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
+        for snake in snakes:
+            for segment in snake:
+                if self.field[segment[1]][segment[0]]["type"] == "snake":
+                    return True
+                self.field[segment[1]][segment[0]] = {"type": "snake", "id": snake.id} 
+        self.field[self.food[1]][self.food[0]] = {"type": "food", "id": 0}
+        return False
     
     def random_food_position(self):
         while True:
             pos = (random.randint(0, GRID_WIDTH - 1), random.randint(0, GRID_HEIGHT - 1))
-            if pos not in [snake.head for snake in self.snakes]:
+            if pos not in [x for snake in self.snakes for x in snake]:
                 return pos
     
     def relative_turn(self, turn_command):
