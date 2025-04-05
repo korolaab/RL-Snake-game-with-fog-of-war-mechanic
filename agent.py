@@ -10,6 +10,7 @@ class PolicyAgent:
                  input_shape, 
                  num_actions, 
                  device, 
+                 agent_id,
                  epsilon=0.2, 
                  lr=1e-3,
                  beta=0.1, 
@@ -25,6 +26,7 @@ class PolicyAgent:
         self.epsilon = epsilon
         self.beta = beta  # Entropy regularization coefficient
         self.n_actions = num_actions
+        self.id = agent_id
 
         self.states_history = [] 
         self.actions_history = []
@@ -60,14 +62,8 @@ class PolicyAgent:
         state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(self.device)
         with torch.no_grad():
             probs = self.policy_net(state_tensor)
-        
         m = torch.distributions.Categorical(probs)
         action = m.sample()
-        #self.current_log_probs.append(m.log_prob(action))
-        
-        # Save entropy for the current action distribution
-        #entropy = m.entropy().unsqueeze(0)
-        #self.entropy_history.append(entropy)
 
         self.actions_history.append(action)
         self.states_history.append(state)

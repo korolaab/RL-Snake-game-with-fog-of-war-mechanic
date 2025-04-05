@@ -5,51 +5,56 @@ class GameRenderer:
     def __init__(self, screen):
         self.screen = screen
         self.score_font = pygame.font.SysFont("Arial", 24)
-        self.snakes
 
-	def generate_color_by_number(num):
-		"""
-		Color generator based on number, compatible with Pygame
-		0 - light blue
-		1 - pink
-		Other numbers - pseudorandom colors
-		
-		Args:
-			num (int): Number for color generation
-		
-		Returns:
-			tuple: Color in (R, G, B) format for Pygame
-		"""
-		# Predefined colors
-		if num == 0:
-			return (0, 191, 255)  # Light blue (#00BFFF)
-		elif num == 1:
-			return (255, 105, 180)  # Pink (#FF69B4)
-		else:
-			# For other numbers, generate pseudorandom color based on the number
-			# Use the number as seed for generation
-			random.seed(num)
-			r = random.randint(0, 255)
-			g = random.randint(0, 255)
-			b = random.randint(0, 255)
-			return (r, g, b)
+    def generate_color_by_number(num):
+        """
+        Color generator based on number, compatible with Pygame
+        0 - light blue
+        1 - pink
+        Other numbers - pseudorandom colors
+        
+        Args:
+            num (int): Number for color generation
+        
+        Returns:
+            tuple: Color in (R, G, B) format for Pygame
+        """
+        # Predefined colors
+        if num == 0:
+            return (0, 191, 255)  # Light blue (#00BFFF)
+        elif num == 1:
+            return (255, 105, 180)  # Pink (#FF69B4)
+        else:
+            # For other numbers, generate pseudorandom color based on the number
+            # Use the number as seed for generation
+            random.seed(num)
+            r = random.randint(0, 255)
+            g = random.randint(0, 255)
+            b = random.randint(0, 255)
+            return (r, g, b)
     
-    def draw_game_area(self, matrix):
+    def draw_game_area(self, game_field):
         # Draw game background
         game_rect = pygame.Rect(0, 0, GAME_WIDTH, GAME_HEIGHT)
         pygame.draw.rect(self.screen, BLACK, game_rect)
         
-        # Draw food
-        food_rect = pygame.Rect(food[0] * CELL_SIZE, food[1] * CELL_SIZE, CELL_SIZE, CELL_SIZE)
-        pygame.draw.rect(self.screen, RED, food_rect)
+        for y, row in enumerate(game_field):          # y — строка
+            for x, cell in enumerate(row):     # x — колонка
+                if cell['type'] == "food":
+                    # Draw food
+                    food_rect = pygame.Rect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+                    pygame.draw.rect(self.screen, RED, food_rect)
         
-        # Draw snakes
-        for snake in snakes:
-            for i, cell in enumerate(snake):
-                x, y = cell
-                rect = pygame.Rect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
-                color = GREEN if i == 0 else DARKGREEN
-                pygame.draw.rect(self.screen, color, rect)
+                # Draw snakes
+                if cell['type'] == "snake":
+                    rect = pygame.Rect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+                    color = DARKGREEN #if i == 0 else DARKGREEN
+                    pygame.draw.rect(self.screen, color, rect)
+
+                if cell['type'] == "snake_head":
+                    rect = pygame.Rect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+                    color = GREEN
+                    pygame.draw.rect(self.screen, color, rect)
         
         # Draw grid lines
         for x in range(0, GAME_WIDTH, CELL_SIZE):

@@ -3,7 +3,7 @@ import numpy as np
 from config import *
 
 class Snake(list):
-    def __init__(self, id, direction = (1,0), start_length = 2):
+    def __init__(self, id, direction = (1,0), start_length = 4):
         start_tail = [
             (GRID_WIDTH // 2 - i, GRID_HEIGHT // 2) for i in range(start_length)
         ]
@@ -21,33 +21,37 @@ class Snake(list):
 
         self.insert(0, new_head)
 
+    @property
     def head(self):
-        return self[-1]
-
-    def tail(self):
         return self[0]
+
+    @property
+    def tail(self):
+        return self[1:]
 
 class SnakeGame:
     def __init__(self, N_snakes=1):
-        self.N_snakes = 1
-	    self.field = [[None for _ in range(width)] for _ in range(height)]
+        self.N_snakes = N_snakes
+        self.field = [[None for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
         self.reset()
+        self.food_is_eaten = False
     
     def reset(self):
-        self.snakes = [Snake(id) for i in range(N_snakes)]
+        self.snakes = [Snake(id) for i in range(self.N_snakes)]
     
         self.direction = (1, 0)
         self.food = self.random_food_position()
-		self.fill_game_grid()
+        self.fill_game_grid()
 
     def fill_game_grid(self):
         self.field = [[{"type": None, "id": 0} for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
-        for snake in snakes:
-            for segment in snake:
-                if self.field[segment[1]][segment[0]]["type"] == "snake":
-                    return True
-                self.field[segment[1]][segment[0]] = {"type": "snake", "id": snake.id} 
-        self.field[self.food[1]][self.food[0]] = {"type": "food", "id": 0}
+        for snake in self.snakes:
+            self.field[ snake.head[0]][snake.head[1]] = {"type": "snake_head", "id": snake.id} 
+            for segment in snake.tail:
+                #if self.field[ segment[0] ][segment[1]]["type"] == "snake":
+                #    return True
+                self.field[segment[0]][segment[1]] = {"type": "snake", "id": snake.id} 
+        self.field[self.food[0]][self.food[1]] = {"type": "food", "id": 0}
         return False
     
     def random_food_position(self):
@@ -56,23 +60,23 @@ class SnakeGame:
             if pos not in [x for snake in self.snakes for x in snake]:
                 return pos
     
-    def relative_turn(self, turn_command):
+    def relative_turn(self, direction, turn_command):
         if turn_command == "left":
-            return (self.direction[1], -self.direction[0])
+            return (direction[1], -direction[0])
         elif turn_command == "right":
-            return (-self.direction[1], self.direction[0])
+            return (-direction[1], direction[0])
         else:
-            return self.direction
+            return direction
     
     def update(self, move, ticks, agent_id):
         snake = self.snakes[agent_id]
 
         # Apply the move
-        snake.direction = self.relative_turn(move)
+        snake.direction = self.relative_turn(snake.direction, move)
         snake.step()
         
         # Check if snake head inside snake tail
-        if snake.head in snake or len(snake) == 1:
+        if snake.head in snake.tail or len(snake) == 1:
             return 0, True  # Game over
 
         snake.reward = 1
@@ -87,7 +91,7 @@ class SnakeGame:
         #        ticks = 0
             snake.pop()
 
-		self.fill_game_grid()
+        self.fill_game_grid()
         
         return snake.reward, False
 
@@ -96,6 +100,9 @@ class SnakeGame:
         if self.food_is_eaten == True:
             self.food = self.random_food_position()
             self.food_is_eaten = False
+            return 1
+        else:
+            return 0
 
     
     def get_visible_cells(self, snake_id):
@@ -131,17 +138,19 @@ class SnakeGame:
                 global_x = (head_x + dx) % GRID_WIDTH
                 global_y = (head_y + dy) % GRID_HEIGHT
                 cell = (global_x, global_y)
-                
+                 
+                cell = self.field[global_x][global_y]
+
                 if (dx, dy) == (0, 0):
                     color = GREEN
-                elif cell in snake:
+                elif cell['type'] == "snake":
                     color = DARKGREEN
-                elif cell == food:
+                elif cell['type'] == "food":
                     color = RED
                 else:
                     color = WHITE
                     
-                visible_cells[(disp_col, disp_row)] = color
+                visible_cells[(VISION_DISPLAY_COLS - disp_col-1, disp_row)] = color
                 
         return visible_cells
     

@@ -46,18 +46,19 @@ def main():
                 "dropout_rate": args.dropout_rate
                 }
 
-	#TODO
-	
-	agents = [ PolicyAgent(
+    #TODO
+    
+    agents = [ PolicyAgent(
         input_shape=(62, 2),
         num_actions=3,
         device=device,
+        agent_id=i,
         lr=args.learning_rate,
         gamma=args.gamma,
         beta=args.beta,
         update_interval=args.update_interval,
         params=net_params
-    ) for i in range(args.N_snake)]
+    ) for i in range(args.N_snakes)]
     
     # Setup score tracking
     with open("score_history.csv", "w") as f:
@@ -73,6 +74,7 @@ def main():
     max_snake_len = 0
     max_avg_score = 0
     max_score = 0
+    done = False
     early_stoping = False
     episodes_without_score_improvement = 0
     actions_map = {0: "straight", 1: "left", 2: "right"}
@@ -84,38 +86,38 @@ def main():
                 screen.fill(BLACK)
             
             # Agent selects action
-			for agent in agents:
-            	# Get state information
-            	visible_cells = game.get_visible_cells(snake_id)
-            	state_matrix = game.get_state_matrix(visible_cells, last_action, snake_id)
-				action = agent.select_action(state_matrix)
-				last_action = action
-				move = actions_map[action]
+            for agent in agents:
+                # Get state information
+                visible_cells = game.get_visible_cells(agent.id)
+                state_matrix = game.get_state_matrix(visible_cells, last_action, agent.id)
+                action = agent.select_action(state_matrix)
+                last_action = action
+                move = actions_map[action]
             
-				# Handle events only if rendering is enabled
-				if not args.no_render:
-					for event in pygame.event.get():
-						if event.type == pygame.QUIT:
-							pygame.quit()
-							sys.exit()
-						elif event.type == pygame.KEYDOWN:
-							if event.key == pygame.K_LEFT and args.N_snakes == 1:
-								move = "left"
-							elif event.key == pygame.K_RIGHT and args.N_snakes == 1:
-								move = "right"
-							if event.key == pygame.K_UP:
-								fps = 10 if fps > 10 else FPS
-                				
-				# Update game state
-				reward, game_over = game.update(move, ticks, agent.id)
+                # Handle events only if rendering is enabled
+                if not args.no_render:
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
+                            pygame.quit()
+                            sys.exit()
+                        elif event.type == pygame.KEYDOWN:
+                            if event.key == pygame.K_LEFT and args.N_snakes == 1:
+                                move = "left"
+                            elif event.key == pygame.K_RIGHT and args.N_snakes == 1:
+                                move = "right"
+                            if event.key == pygame.K_UP:
+                                fps = 10 if fps > 10 else FPS
+                                
+                # Update game state
+                reward, game_over = game.update(move, ticks, agent.id)
                 done = max(done, game_over)
                 agent.store_reward(reward)
                 
-            game.food_position_update()
-			ticks += 1
+            score += game.food_position_update()
+            ticks += 1
             # Check if score is stuck
             if max_score < score:
-                max_score = game.snake
+                max_score = score
                 steps_without_improvement = 0
             else:
                 steps_without_improvement+= 1
@@ -126,8 +128,8 @@ def main():
             
             # Handle episode completion
             if done:
-				for agent in agents:
-                	agent.finish_episode()
+                for agent in agents:
+                    agent.finish_episode()
 
                 with open("score_history.csv", "a") as f:
                     f.write(f"{episode},{score}\n")
@@ -135,7 +137,7 @@ def main():
                 mlflow.log_metric("score", score,step=episode)
                 
                 episode += 1
-                score_queue.append(max_snake_len - 3)
+                score_queue.append(score)
                 np_score_queue = np.array(score_queue)
                 low_p = np.percentile(np_score_queue, 10)
                 high_p = np.percentile(np_score_queue, 90)
@@ -165,12 +167,13 @@ def main():
             
             # Rendering only if rendering is enabled
             if not args.no_render:
-                visible_cells = game.get_visible_cells()
-                renderer.draw_game_area(game.snake, game.food)
+                visible_cells = game.get_visible_cells(0)
+                renderer.draw_game_area(game.field)
                 renderer.draw_vision_area(visible_cells)
                 pygame.draw.line(screen, GRAY, (GAME_WIDTH, 0), (GAME_WIDTH, WINDOW_HEIGHT), 2)
                 
-                score = max(score, len(game.snake) - 3)
+                #score = max(score, len(game.snake) - 3)
+                print(avg_score)
                 renderer.draw_score(episode, avg_score, score)
                 
                 pygame.display.flip()
@@ -182,7 +185,7 @@ def main():
             if args.no_render:
                 clock.tick(0)  # Run as fast as possible
             else:
-                clock.tick(fps)
+                clock.tick(1)
             
     return max_avg_score, episode
 
@@ -216,9 +219,9 @@ if __name__ == "__main__":
                         help='Maximum number of episodes allowed without avg_score improved')
     parser.add_argument('--no_render', action='store_true', help='No rendering mode')
     parser.add_argument('--cProfile', action='store_true', help='Run cProfile on main function')
-    # TODO mlflow
     parser.add_argument('--mlflow_server', type=str, default=None, help='Mlflow server host')
     parser.add_argument('--mlflow_experiment_name', required=True, type=str, help='Mlflow experiment')
+    parser.add_argument('--N_snakes', type=int, default=1, help='Number of snakes playing the Game')
 
     args = parser.parse_args()
     if args.cProfile == True:
