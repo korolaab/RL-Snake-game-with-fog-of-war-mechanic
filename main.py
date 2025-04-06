@@ -29,7 +29,7 @@ def main():
     clock = pygame.time.Clock()
     
     # Initialize game
-    game = SnakeGame()
+    game = SnakeGame(N_snakes=args.N_snakes)
     
     # Initialize renderer only if rendering is enabled
     renderer = None

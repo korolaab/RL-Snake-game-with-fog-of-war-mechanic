@@ -3,14 +3,14 @@ import numpy as np
 from config import *
 
 class Snake(list):
-    def __init__(self, id, direction = (1,0), start_length = 4):
+    def __init__(self, snake_id, direction = (1,0), start_length = 4):
         start_tail = [
             (GRID_WIDTH // 2 - i, GRID_HEIGHT // 2) for i in range(start_length)
         ]
         super().__init__(start_tail)
         
         self.direction = direction
-        self.id = id
+        self.id = snake_id
         self.reward = 0
 
     def step(self):
@@ -37,7 +37,7 @@ class SnakeGame:
         self.food_is_eaten = False
     
     def reset(self):
-        self.snakes = [Snake(id) for i in range(self.N_snakes)]
+        self.snakes = [Snake(i) for i in range(self.N_snakes)]
     
         self.direction = (1, 0)
         self.food = self.random_food_position()
@@ -46,7 +46,7 @@ class SnakeGame:
     def fill_game_grid(self):
         self.field = [[{"type": None, "id": 0} for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
         for snake in self.snakes:
-            self.field[ snake.head[0]][snake.head[1]] = {"type": "snake_head", "id": snake.id} 
+            self.field[snake.head[0]][snake.head[1]] = {"type": "snake_head", "id": snake.id} 
             for segment in snake.tail:
                 #if self.field[ segment[0] ][segment[1]]["type"] == "snake":
                 #    return True
