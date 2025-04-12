@@ -49,7 +49,7 @@ def main():
     #TODO
     
     agents = [ PolicyAgent(
-        input_shape=(62, 2),
+        input_shape=(62, 3),
         num_actions=3,
         device=device,
         agent_id=i,
@@ -84,12 +84,24 @@ def main():
         while episode < args.episodes and early_stoping == False:
             if not args.no_render:
                 screen.fill(BLACK)
+
+            # Rendering only if rendering is enabled
+            if not args.no_render:
+                renderer.draw_game_area(game.field)
+                renderer.draw_vision_area(game.snakes)
+                pygame.draw.line(screen, GRAY, (GAME_WIDTH, 0), (GAME_WIDTH, WINDOW_HEIGHT), 2)
+                #score = max(score, len(game.snake) - 3)
+                renderer.draw_score(episode, avg_score, score)
+                pygame.display.flip()
+            else:
+                # Update score calculation even when not rendering
+                score = max(score, len(game.snake) - 3)
             
             # Agent selects action
             for agent in agents:
                 # Get state information
                 visible_cells = game.get_visible_cells(agent.id)
-                state_matrix = game.get_state_matrix(visible_cells, last_action, agent.id)
+                state_matrix = game.get_state_matrix(last_action, agent.id)
                 action = agent.select_action(state_matrix)
                 last_action = action
                 move = actions_map[action]
@@ -109,11 +121,10 @@ def main():
                                 fps = 10 if fps > 10 else FPS
                                 
                 # Update game state
-                reward, game_over = game.update(move, ticks, agent.id)
-                done = max(done, game_over)
+                reward = game.update(move, ticks, agent.id)
                 agent.store_reward(reward)
-                
-            score += game.food_position_update()
+            done = game.update_game_grid() 
+            score = max(score, len(game.snakes[0]))
             ticks += 1
             # Check if score is stuck
             if max_score < score:
@@ -165,27 +176,12 @@ def main():
                 steps_without_improvement = 0
                 max_snake_len = 0
             
-            # Rendering only if rendering is enabled
-            if not args.no_render:
-                visible_cells = game.get_visible_cells(0)
-                renderer.draw_game_area(game.field)
-                renderer.draw_vision_area(visible_cells)
-                pygame.draw.line(screen, GRAY, (GAME_WIDTH, 0), (GAME_WIDTH, WINDOW_HEIGHT), 2)
-                
-                #score = max(score, len(game.snake) - 3)
-                print(avg_score)
-                renderer.draw_score(episode, avg_score, score)
-                
-                pygame.display.flip()
-            else:
-                # Update score calculation even when not rendering
-                score = max(score, len(game.snake) - 3)
             
             # Use a very high FPS if no_render is true for faster execution
             if args.no_render:
                 clock.tick(0)  # Run as fast as possible
             else:
-                clock.tick(1)
+                clock.tick(FPS)
             
     return max_avg_score, episode
 

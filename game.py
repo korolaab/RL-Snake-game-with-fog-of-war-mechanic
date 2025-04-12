@@ -5,13 +5,14 @@ from config import *
 class Snake(list):
     def __init__(self, snake_id, direction = (1,0), start_length = 4):
         start_tail = [
-            (GRID_WIDTH // 2 - i, GRID_HEIGHT // 2) for i in range(start_length)
+            (GRID_WIDTH // 2 - i, (GRID_HEIGHT // 2) + snake_id*2) for i in range(start_length)
         ]
         super().__init__(start_tail)
         
         self.direction = direction
         self.id = snake_id
         self.reward = 0
+        self.fpv = {}
 
     def step(self):
         # Calculate new head position
@@ -35,23 +36,42 @@ class SnakeGame:
         self.field = [[None for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
         self.reset()
         self.food_is_eaten = False
-    
+        
     def reset(self):
         self.snakes = [Snake(i) for i in range(self.N_snakes)]
     
+        self.score = 0
         self.direction = (1, 0)
         self.food = self.random_food_position()
-        self.fill_game_grid()
+        self.update_game_grid()
 
-    def fill_game_grid(self):
-        self.field = [[{"type": None, "id": 0} for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
         for snake in self.snakes:
+            self.get_visible_cells(snake.id)
+    
+
+    def update_game_grid(self):
+        self.field = [[{"type": None, "id": 0} for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
+        food_is_eaten = False
+        for snake in self.snakes:
+            if snake.head == self.food:
+                food_is_eaten = True
+                print('apple_eaten')
+                self.food = self.random_food_position()
+                self.score += 1
+            if self.field[snake.head[0]][snake.head[1]]["type"] == "snake_head":
+                return True
             self.field[snake.head[0]][snake.head[1]] = {"type": "snake_head", "id": snake.id} 
+
+        for snake in self.snakes: 
+            if food_is_eaten == False:
+                snake.pop()
             for segment in snake.tail:
-                #if self.field[ segment[0] ][segment[1]]["type"] == "snake":
-                #    return True
+                if self.field[segment[0]][segment[1]]["type"] == "snake" or self.field[segment[0]][segment[1]]["type"] == "snake_head":
+                        return True
                 self.field[segment[0]][segment[1]] = {"type": "snake", "id": snake.id} 
+
         self.field[self.food[0]][self.food[1]] = {"type": "food", "id": 0}
+        
         return False
     
     def random_food_position(self):
@@ -80,29 +100,13 @@ class SnakeGame:
             return 0, True  # Game over
 
         snake.reward = 1
-        # Check if snake ate food
-        if snake.head == self.food or self.food_is_eaten:
-            snake.reward += 1
-            self.food_is_eaten = True
-        else:
-            # Remove tail unless periodic tick condition or food was eaten
-        #    if ticks == 50:
-        #        self.snake.pop()
-        #        ticks = 0
-            snake.pop()
 
-        self.fill_game_grid()
         
-        return snake.reward, False
+        return snake.reward
 
 
     def food_position_update(self):
-        if self.food_is_eaten == True:
-            self.food = self.random_food_position()
-            self.food_is_eaten = False
-            return 1
-        else:
-            return 0
+        self.food = self.random_food_position()
 
     
     def get_visible_cells(self, snake_id):
@@ -140,38 +144,30 @@ class SnakeGame:
                 cell = (global_x, global_y)
                  
                 cell = self.field[global_x][global_y]
-
-                if (dx, dy) == (0, 0):
-                    color = GREEN
-                elif cell['type'] == "snake":
-                    color = DARKGREEN
-                elif cell['type'] == "food":
-                    color = RED
-                else:
-                    color = WHITE
-                    
-                visible_cells[(VISION_DISPLAY_COLS - disp_col-1, disp_row)] = color
                 
-        return visible_cells
+                snake.fpv[(VISION_DISPLAY_COLS - disp_col-1, disp_row)] = cell
     
-    def get_state_matrix(self, visible_cells, last_action, snake_id):
+    def get_state_matrix(self, last_action, snake_id):
         snake = self.snakes[snake_id]
         # Convert visible cells to numerical matrix for neural network input
         matrix = []
-        for (col, row), color in visible_cells.items():
-            if color == DARKGREEN:
-                matrix.append([1, 0])
-            elif color == RED:
-                matrix.append([0, 1])
-            elif color == WHITE:
-                matrix.append([0, 0])
+        for (col, row), cell in snake.fpv.items():
+            if cell['type'] == "snake" and cell['id'] == snake_id:
+                matrix.append([1, 0, 0])
+            elif (cell['type'] == "snake" or cell['type'] == "snake_head") and cell['id'] != snake_id:
+                matrix.append([0, 1, 0])
+            elif cell['type'] == "food":
+                matrix.append([0, 0, 1])
+            elif cell['type'] == None:
+                matrix.append([0, 0, 0])
+        
         
         # Add snake length information
         is_alive = np.exp(-np.abs(len(snake)))
-        matrix.append([is_alive, 1 - is_alive])
+        matrix.append([is_alive, 1 - is_alive, 0])
         
         # Add last action information
-        last_action_vector = [1, 0] if last_action != 1 else [0, 1]
+        last_action_vector = [1, 0, 0] if last_action != 1 else [0, 1, 0]
         matrix.append(last_action_vector)
         
         return np.array(matrix)

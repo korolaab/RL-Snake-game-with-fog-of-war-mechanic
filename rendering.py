@@ -24,7 +24,7 @@ class GameRenderer:
         Returns:
             tuple: Color in (R, G, B) format for Pygame
         """
-        print(num)
+        #print(num)
         # Predefined colors
         if num == 0:
             # Light blue (#00BFFF)
