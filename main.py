@@ -46,8 +46,6 @@ def main():
                 "dropout_rate": args.dropout_rate
                 }
 
-    #TODO
-    
     agents = [ PolicyAgent(
         input_shape=(62, 3),
         num_actions=3,
@@ -106,25 +104,11 @@ def main():
                 last_action = action
                 move = actions_map[action]
             
-                # Handle events only if rendering is enabled
-                if not args.no_render:
-                    for event in pygame.event.get():
-                        if event.type == pygame.QUIT:
-                            pygame.quit()
-                            sys.exit()
-                        elif event.type == pygame.KEYDOWN:
-                            if event.key == pygame.K_LEFT and args.N_snakes == 1:
-                                move = "left"
-                            elif event.key == pygame.K_RIGHT and args.N_snakes == 1:
-                                move = "right"
-                            if event.key == pygame.K_UP:
-                                fps = 10 if fps > 10 else FPS
-                                
                 # Update game state
                 reward = game.update(move, ticks, agent.id)
                 agent.store_reward(reward)
             done = game.update_game_grid() 
-            score = max(score, len(game.snakes[0]))
+            score = max(score, len(game.snakes[0]) - 3)
             ticks += 1
             # Check if score is stuck
             if max_score < score:
@@ -176,12 +160,22 @@ def main():
                 steps_without_improvement = 0
                 max_snake_len = 0
             
+                # Handle events only if rendering is enabled
+                if not args.no_render:
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
+                            pygame.quit()
+                            sys.exit()
+                        elif event.type == pygame.KEYDOWN:
+                            if event.key == pygame.K_UP:
+                                fps = 10 if fps > 10 else FPS
+                                
             
             # Use a very high FPS if no_render is true for faster execution
             if args.no_render:
                 clock.tick(0)  # Run as fast as possible
             else:
-                clock.tick(FPS)
+                clock.tick(fps)
             
     return max_avg_score, episode
 
@@ -189,7 +183,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train an RL agent to play snake')
     
     # Add hyperparameters
-    parser.add_argument('--learning_rate', type=float, default=1e-2, help='Learning rate')
+    parser.add_argument('--learning_rate', type=float, default=1e-3, help='Learning rate')
     parser.add_argument('--gamma', type=float, default=0.5, help='Discount factor')
     parser.add_argument('--beta', type=float, default=0.1, help='Exploration rate')
     parser.add_argument('--update_interval', type=int, default=1, help='Policy update interval')

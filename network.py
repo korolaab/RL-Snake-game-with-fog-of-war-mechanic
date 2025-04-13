@@ -31,12 +31,15 @@ def policy_net(input_shape, num_actions, hidden_units_1, hidden_units_2, dropout
             self.net = nn.Sequential(
                 nn.Flatten(),
                 nn.Linear(input_shape[0] * input_shape[1], hidden_units_1),
+                nn.LayerNorm(hidden_units_1),
                 get_activation(activation_1),
                 nn.Dropout(dropout_rate),
                 nn.Linear(hidden_units_1, hidden_units_2),
+                nn.LayerNorm(hidden_units_2),
                 get_activation(activation_2),
                 nn.Dropout(dropout_rate),
                 nn.Linear(hidden_units_2, num_actions),
+                nn.LayerNorm(num_actions),
                 nn.Softmax(dim=-1)
             )
         

@@ -121,6 +121,8 @@ class PolicyAgent:
         
         # Combine policy loss with entropy bonus
         loss = -(log_probs * ep_returns).sum() - self.beta * entropy.sum()
+        if torch.isnan(loss):
+            raise ValueError("Loss is NaN!")
         
         #print(f"Loss: {loss.item()}")
 

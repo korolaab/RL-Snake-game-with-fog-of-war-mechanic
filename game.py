@@ -5,7 +5,7 @@ from config import *
 class Snake(list):
     def __init__(self, snake_id, direction = (1,0), start_length = 4):
         start_tail = [
-            (GRID_WIDTH // 2 - i, (GRID_HEIGHT // 2) + snake_id*2) for i in range(start_length)
+            (GRID_WIDTH // 2 - i, (GRID_HEIGHT // 2) + snake_id*3) for i in range(start_length)
         ]
         super().__init__(start_tail)
         
@@ -33,13 +33,13 @@ class Snake(list):
 class SnakeGame:
     def __init__(self, N_snakes=1):
         self.N_snakes = N_snakes
-        self.field = [[None for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
         self.reset()
         self.food_is_eaten = False
         
     def reset(self):
         self.snakes = [Snake(i) for i in range(self.N_snakes)]
     
+        self.field = [[None for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
         self.score = 0
         self.direction = (1, 0)
         self.food = self.random_food_position()
@@ -59,6 +59,7 @@ class SnakeGame:
                 self.food = self.random_food_position()
                 self.score += 1
             if self.field[snake.head[0]][snake.head[1]]["type"] == "snake_head":
+                print(f'snake_head {snake.id} iniside other snake_head {self.field[snake.head[0]][snake.head[1]]["id"]}')
                 return True
             self.field[snake.head[0]][snake.head[1]] = {"type": "snake_head", "id": snake.id} 
 
@@ -67,6 +68,7 @@ class SnakeGame:
                 snake.pop()
             for segment in snake.tail:
                 if self.field[segment[0]][segment[1]]["type"] == "snake" or self.field[segment[0]][segment[1]]["type"] == "snake_head":
+                        print(f'snake_tail {snake.id} iniside other {self.field[snake.head[0]][snake.head[1]]["type"]} {self.field[snake.head[0]][snake.head[1]]["id"]}')
                         return True
                 self.field[segment[0]][segment[1]] = {"type": "snake", "id": snake.id} 
 
@@ -94,13 +96,7 @@ class SnakeGame:
         # Apply the move
         snake.direction = self.relative_turn(snake.direction, move)
         snake.step()
-        
-        # Check if snake head inside snake tail
-        if snake.head in snake.tail or len(snake) == 1:
-            return 0, True  # Game over
-
         snake.reward = 1
-
         
         return snake.reward
 
