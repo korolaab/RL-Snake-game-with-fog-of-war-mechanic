@@ -7,6 +7,12 @@ class GameRenderer:
     def __init__(self, screen):
         self.screen = screen
         self.score_font = pygame.font.SysFont("Arial", 24)
+        self.north_position = {
+                            (0, 1): (0, VISION_DISPLAY_COLS // 2 - 1),
+                            (1, 0): (VISION_DISPLAY_ROWS // 2 - 1, VISION_DISPLAY_COLS - 1),
+                            (0, -1): (VISION_DISPLAY_ROWS - 1, VISION_DISPLAY_COLS // 2 - 1),
+                            (-1, 0): (VISION_DISPLAY_ROWS // 2 - 1, 0),
+                        }
 
 
     def generate_color(self,num, head=False):
@@ -91,9 +97,10 @@ class GameRenderer:
             pygame.draw.line(self.screen, GRAY, (x, 0), (x, GAME_HEIGHT))
         for y in range(0, GAME_HEIGHT, CELL_SIZE):
             pygame.draw.line(self.screen, GRAY, (0, y), (GAME_WIDTH, y))
-    
-    def draw_vision_area(self, snakes_viz):
-        for i, viz in enumerate(snakes_viz):
+
+    def draw_vision_area(self, snakes_viz_dir):
+        for i, viz_dir in enumerate(snakes_viz_dir):
+            viz, direction = viz_dir
             vision_x_offset = GAME_WIDTH + 100 + 100 * i + 200 * i
             vision_y_offset = (WINDOW_HEIGHT - (VISION_DISPLAY_ROWS * VISION_CELL_SIZE)) // 2
             
@@ -128,7 +135,13 @@ class GameRenderer:
                         
                         pygame.draw.rect(self.screen, color, cell_rect)
                         
+                        
                     pygame.draw.rect(self.screen, GRAY, cell_rect, 1)
+
+                    if (col,row) == self.north_position[direction]:
+                        text_surf = self.score_font.render('*', True, RED)
+                        text_rect = text_surf.get_rect(center=cell_rect.center) 
+                        self.screen.blit(text_surf, text_rect)
 
             snake_id = viz.get('snake_id', i)  
             label = self.score_font.render(f"Snake {snake_id}", True, WHITE)

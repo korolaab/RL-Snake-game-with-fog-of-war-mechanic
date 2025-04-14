@@ -86,7 +86,7 @@ def main():
             # Rendering only if rendering is enabled
             if not args.no_render:
                 renderer.draw_game_area(game.field)
-                renderer.draw_vision_area([snake.fpv for snake in game.snakes])
+                renderer.draw_vision_area([(snake.fpv, snake.direction) for snake in game.snakes])
                 pygame.draw.line(screen, GRAY, (GAME_WIDTH, 0), (GAME_WIDTH, WINDOW_HEIGHT), 2)
                 #score = max(score, len(game.snake) - 3)
                 renderer.draw_score(episode, avg_score, score)
