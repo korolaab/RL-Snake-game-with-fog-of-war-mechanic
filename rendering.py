@@ -94,7 +94,7 @@ class GameRenderer:
     
     def draw_vision_area(self, snakes_viz):
         for i, viz in enumerate(snakes_viz):
-            vision_x_offset = GAME_WIDTH + 100 + 100 * i + 200*i
+            vision_x_offset = GAME_WIDTH + 100 + 100 * i + 200 * i
             vision_y_offset = (WINDOW_HEIGHT - (VISION_DISPLAY_ROWS * VISION_CELL_SIZE)) // 2
             
             # Draw vision background
@@ -129,6 +129,15 @@ class GameRenderer:
                         pygame.draw.rect(self.screen, color, cell_rect)
                         
                     pygame.draw.rect(self.screen, GRAY, cell_rect, 1)
+
+            snake_id = viz.get('snake_id', i)  
+            label = self.score_font.render(f"Snake {snake_id}", True, WHITE)
+            label_rect = label.get_rect()
+            label_rect.center = (
+                vision_x_offset + (VISION_DISPLAY_COLS * VISION_CELL_SIZE) // 2,
+                vision_y_offset + VISION_DISPLAY_ROWS * VISION_CELL_SIZE + 20
+            )
+            self.screen.blit(label, label_rect)
     
     def draw_score(self, episode, avg_score, score):
         score_text = self.score_font.render(
