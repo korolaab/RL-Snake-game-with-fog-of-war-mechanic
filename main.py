@@ -23,7 +23,7 @@ def main():
     # Initialize screen only if rendering is enabled
     screen = None
     if not args.no_render:
-        screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+        screen = pygame.display.set_mode((GAME_WIDTH + (VISION_WIDTH + 200 ) * args.N_snakes , WINDOW_HEIGHT))
         pygame.display.set_caption("Snake + Vision (Policy Gradient with Batch Update)")
     
     clock = pygame.time.Clock()
@@ -86,7 +86,7 @@ def main():
             # Rendering only if rendering is enabled
             if not args.no_render:
                 renderer.draw_game_area(game.field)
-                renderer.draw_vision_area(game.snakes)
+                renderer.draw_vision_area([snake.fpv for snake in game.snakes])
                 pygame.draw.line(screen, GRAY, (GAME_WIDTH, 0), (GAME_WIDTH, WINDOW_HEIGHT), 2)
                 #score = max(score, len(game.snake) - 3)
                 renderer.draw_score(episode, avg_score, score)
@@ -160,15 +160,15 @@ def main():
                 steps_without_improvement = 0
                 max_snake_len = 0
             
-                # Handle events only if rendering is enabled
-                if not args.no_render:
-                    for event in pygame.event.get():
-                        if event.type == pygame.QUIT:
-                            pygame.quit()
-                            sys.exit()
-                        elif event.type == pygame.KEYDOWN:
-                            if event.key == pygame.K_UP:
-                                fps = 10 if fps > 10 else FPS
+            # Handle events only if rendering is enabled
+            if not args.no_render:
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        pygame.quit()
+                        sys.exit()
+                    elif event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_UP:
+                            fps = args.min_fps if fps > args.min_fps else args.max_fps
                                 
             
             # Use a very high FPS if no_render is true for faster execution
@@ -212,6 +212,8 @@ if __name__ == "__main__":
     parser.add_argument('--mlflow_server', type=str, default=None, help='Mlflow server host')
     parser.add_argument('--mlflow_experiment_name', required=True, type=str, help='Mlflow experiment')
     parser.add_argument('--N_snakes', type=int, default=1, help='Number of snakes playing the Game')
+    parser.add_argument('--max_fps', type=int, default=FPS, help='FPS in warp mode')
+    parser.add_argument('--min_fps', type=int, default=10, help='FPS in normal mode')
 
     args = parser.parse_args()
     if args.cProfile == True:

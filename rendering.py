@@ -92,33 +92,43 @@ class GameRenderer:
         for y in range(0, GAME_HEIGHT, CELL_SIZE):
             pygame.draw.line(self.screen, GRAY, (0, y), (GAME_WIDTH, y))
     
-    def draw_vision_area(self, visible_cells):
-        vision_x_offset = GAME_WIDTH + 100
-        vision_y_offset = (WINDOW_HEIGHT - (VISION_DISPLAY_ROWS * VISION_CELL_SIZE)) // 2
-        
-        # Draw vision background
-        vision_rect = pygame.Rect(
-            vision_x_offset, 
-            vision_y_offset, 
-            VISION_DISPLAY_COLS * VISION_CELL_SIZE, 
-            VISION_DISPLAY_ROWS * VISION_CELL_SIZE
-        )
-        pygame.draw.rect(self.screen, DARKGRAY, vision_rect)
-        
-        # Draw visible cells
-        for col in range(VISION_DISPLAY_COLS):
-            for row in range(VISION_DISPLAY_ROWS):
-                cell_rect = pygame.Rect(
-                    vision_x_offset + col * VISION_CELL_SIZE,
-                    vision_y_offset + row * VISION_CELL_SIZE,
-                    VISION_CELL_SIZE, 
-                    VISION_CELL_SIZE
-                )
-                
-                if (col, row) in visible_cells:
-                    pygame.draw.rect(self.screen, visible_cells[(col, row)], cell_rect)
+    def draw_vision_area(self, snakes_viz):
+        for i, viz in enumerate(snakes_viz):
+            vision_x_offset = GAME_WIDTH + 100 + 100 * i + 200*i
+            vision_y_offset = (WINDOW_HEIGHT - (VISION_DISPLAY_ROWS * VISION_CELL_SIZE)) // 2
+            
+            # Draw vision background
+            vision_rect = pygame.Rect(
+                vision_x_offset, 
+                vision_y_offset, 
+                VISION_DISPLAY_COLS * VISION_CELL_SIZE, 
+                VISION_DISPLAY_ROWS * VISION_CELL_SIZE
+            )
+            pygame.draw.rect(self.screen, DARKGRAY, vision_rect)
+            
+            # Draw visible cells
+            for col in range(VISION_DISPLAY_COLS):
+                for row in range(VISION_DISPLAY_ROWS):
+                    cell_rect = pygame.Rect(
+                        vision_x_offset + col * VISION_CELL_SIZE,
+                        vision_y_offset + row * VISION_CELL_SIZE,
+                        VISION_CELL_SIZE, 
+                        VISION_CELL_SIZE
+                    )
                     
-                pygame.draw.rect(self.screen, GRAY, cell_rect, 1)
+                    if (col, row) in viz:
+                        if(viz[(col,row)]['type'] == "snake"):
+                            color = self.generate_color(viz[(col,row)]['id'])
+                        elif(viz[(col,row)]['type'] == "snake_head"):
+                            color = self.generate_color(viz[(col,row)]['id'],head=True)
+                        elif(viz[(col,row)]['type'] == "food"):
+                            color = RED
+                        else:
+                            color = WHITE
+                        
+                        pygame.draw.rect(self.screen, color, cell_rect)
+                        
+                    pygame.draw.rect(self.screen, GRAY, cell_rect, 1)
     
     def draw_score(self, episode, avg_score, score):
         score_text = self.score_font.render(
