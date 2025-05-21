@@ -93,7 +93,7 @@ def main():
                 pygame.display.flip()
             else:
                 # Update score calculation even when not rendering
-                score = max(score, len(game.snake) - 3)
+                score = max(score, len(game.snakes[0]) - 3)
             
             # Agent selects action
             for agent in agents:
