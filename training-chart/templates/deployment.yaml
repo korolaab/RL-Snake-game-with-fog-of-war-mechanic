@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: training
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python"]
+          args:
+              - main.py
+              - "--learning_rate={{ .Values.training.learning_rate }}"
+              - "--gamma={{ .Values.training.gamma }}"
+              - "--beta={{ .Values.training.beta }}"
+              - "--update_interval={{ .Values.training.update_interval }}"
+              - "--dropout_rate={{ .Values.training.dropout_rate }}"
+              - "--hidden_units_1={{ .Values.training.hidden_units_1 }}"
+              - "--hidden_units_2={{ .Values.training.hidden_units_2 }}"
+              - "--activation_1={{ .Values.training.activation_1 }}"
+              - "--activation_2={{ .Values.training.activation_2 }}"
+              - "--episodes={{ .Values.training.episodes }}"
+              - "--seed={{ .Values.training.seed }}"
+              - "--run_id={{ .Values.training.run_id }}"
+              - "--save_dir={{ .Values.training.save_dir }}"
+              - "--steps_without_improvement={{ .Values.training.steps_without_improvement }}"
+              - "--episodes_without_score_improvement={{ .Values.training.episodes_without_score_improvement }}"
+              - "--mlflow_server={{ .Values.training.mlflow_server }}"
+              - "--mlflow_experiment_name={{ .Values.training.mlflow_server}}"
+              - "--N_snakes={{ .Values.training.N_snakes }}"
+              - "--max_fps={{ .Values.training.max_fps }}"
+              - "--min_fps={{ .Values.training.min_fps }}"
+            {{- if .Values.training.no_render }}
+              - "--no_render"
+            {{- end }}
+            {{- if .Values.training.cProfile }}
+              - "--cProfile"
+            {{- end }}
+            {{- if .Values.training.verbose }}
+              - "--verbose"
+            {{- end }}
+          env:
+            - name: MLFLOW_TRACKING_URI
+              value: "{{ .Values.training.ml }}"
+
+

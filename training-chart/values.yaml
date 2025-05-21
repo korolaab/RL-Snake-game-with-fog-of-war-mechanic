@@ -1,0 +1,30 @@
+image:
+  repository: korolaab/snake_rl
+  tag: latest
+  pullPolicy: IfNotPresent
+
+training:
+  learning_rate: 0.001
+  gamma: 0.99
+  beta: 0.1
+  update_interval: 4
+  dropout_rate: 0.2
+  hidden_units_1: 128
+  hidden_units_2: 64
+  activation_1: relu
+  activation_2: relu
+  episodes: 1000
+  seed: 42
+  run_id: "helm-run"
+  save_dir: "/app/results"
+  steps_without_improvement: 100
+  episodes_without_score_improvement: 50
+  mlflow_server: "http://mlflow.default.svc.cluster.local:5000"
+  mlflow_experiment_name: "snake-helm-test"
+  N_snakes: 1
+  max_fps: 0
+  min_fps: 15
+  no_render: true
+  cProfile: false
+  verbose: true
+
