@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Snake Vision Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    #controls { margin-bottom: 10px; }
+    #gridCanvas { border: 1px solid #ccc; }
+    #sidebar { display: inline-block; vertical-align: top; margin-left: 20px; }
+    #scores, #visions { margin-bottom: 20px; }
+    .vision-label { font-weight: bold; margin-top: 5px; }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <label>Host URL: <input type="text" id="hostInput" placeholder="http://localhost:5000" size="30"></label>
+    <button id="connectBtn">Connect</button>
+  </div>
+  <canvas id="gridCanvas" width="450" height="450"></canvas>
+  <div id="sidebar">
+    <div id="scores"><h3>Scores</h3><ul id="scoreList"></ul></div>
+    <div id="visions"><h3>Visions</h3><div id="visionList"></div></div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('gridCanvas');
+    const ctx = canvas.getContext('2d');
+    let host = '';
+    let cellSize;
+
+    document.getElementById('connectBtn').onclick = () => {
+      host = document.getElementById('hostInput').value.replace(/\/+$/, '');
+      if (!host) return alert('Введите URL хоста');
+      startPolling();
+    };
+
+    async function fetchState() {
+      try {
+        const res = await fetch(host + '/state');
+        return await res.json();
+      } catch (e) {
+        console.error('Fetch error:', e);
+        return null;
+      }
+    }
+
+    function drawGrid(gridObj) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let key in gridObj) {
+        const [x, y] = key.split(',').map(Number);
+        const items = gridObj[key];
+        let color = '#fff';
+        const types = items.map(i => i.type);
+        if (types.includes('HEAD')) color = '#00FF00';
+        else if (types.includes('OTHER_HEAD')) color = '#009BFF';
+        else if (types.includes('BODY')) color = '#007700';
+        else if (types.includes('OTHER_BODY')) color = '#0055AA';
+        else if (types.includes('FOOD')) color = '#FF0000';
+        ctx.fillStyle = color;
+        ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+        ctx.strokeStyle = '#ccc'; ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
+      }
+    }
+
+    function updateScores(gridObj) {
+      const scoreList = document.getElementById('scoreList');
+      scoreList.innerHTML = '';
+      const scores = {};
+      for (let key in gridObj) {
+        gridObj[key].forEach(item => {
+          if (item.type === 'HEAD') scores[item.snake_id] = 0;
+          if (item.type === 'BODY' || item.type === 'HEAD') scores[item.snake_id]++;
+        });
+      }
+      for (const sid in scores) {
+        const li = document.createElement('li');
+        li.textContent = `${sid}: ${scores[sid]}`;
+        scoreList.appendChild(li);
+      }
+    }
+
+    function updateVisions(visions) {
+      const container = document.getElementById('visionList');
+      container.innerHTML = '';
+      for (const sid in visions) {
+        const div = document.createElement('div');
+        div.classList.add('vision-label');
+        div.textContent = sid + ':';
+        const pre = document.createElement('pre');
+        pre.textContent = JSON.stringify(visions[sid], null, 2);
+        container.appendChild(div);
+        container.appendChild(pre);
+      }
+    }
+
+    async function startPolling() {
+      // Initial fetch to determine grid size
+      const init = await fetchState();
+      if (!init) return;
+      const keys = Object.keys(init.grid);
+      const xs = new Set(keys.map(k => Number(k.split(',')[0])));
+      cellSize = canvas.width / xs.size;
+      drawGrid(init.grid);
+      updateScores(init.grid);
+      updateVisions(init.visions);
+      setInterval(async () => {
+        const state = await fetchState();
+        if (!state) return;
+        drawGrid(state.grid);
+        updateScores(state.grid);
+        updateVisions(state.visions);
+      }, 1000);
+    }
+  </script>
+</body>
+</html>
+

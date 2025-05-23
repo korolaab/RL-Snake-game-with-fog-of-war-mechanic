@@ -55,7 +55,6 @@ class SnakeGame:
     def random_food_position(self):
         while True:
             pos = (random.randint(0, GRID_WIDTH - 1), random.randint(0, GRID_HEIGHT - 1))
-            # avoid all snakes bodies
             occupied = set(p for s in snakes.values() for p in s.snake)
             if pos not in occupied:
                 return pos
@@ -76,7 +75,6 @@ class SnakeGame:
         head_x, head_y = self.snake[0]
         dx, dy = self.direction
         new_head = ((head_x + dx) % GRID_WIDTH, (head_y + dy) % GRID_HEIGHT)
-        # collision with any snake
         occupied = set(p for s in snakes.values() for p in s.snake)
         if new_head in occupied:
             self.game_over = True
@@ -94,7 +92,6 @@ class SnakeGame:
     def get_visible_cells(self):
         head_x, head_y = self.snake[0]
         visible_cells = {}
-        # Determine rotation based on direction
         if self.direction == (0, -1):
             rotate = lambda dx, dy: (dx, dy)
         elif self.direction == (1, 0):
@@ -105,10 +102,8 @@ class SnakeGame:
             rotate = lambda dx, dy: (-dy, dx)
         else:
             rotate = lambda dx, dy: (dx, dy)
-        # Other snakes positions
         other_heads = [s.snake[0] for sid, s in snakes.items() if sid != self.snake_id]
         other_bodies = {pos for sid, s in snakes.items() if sid != self.snake_id for pos in s.snake[1:]}
-        # Populate visible cells with object types
         for dx in range(-VISION_RADIUS, VISION_RADIUS + 1):
             for dy in range(-VISION_RADIUS, VISION_RADIUS + 1):
                 if abs(dx) + abs(dy) > VISION_RADIUS:
@@ -121,7 +116,6 @@ class SnakeGame:
                 global_x = (head_x + dx) % GRID_WIDTH
                 global_y = (head_y + dy) % GRID_HEIGHT
                 pos = (global_x, global_y)
-                # Determine object type
                 if pos == self.snake[0]:
                     obj = 'HEAD'
                 elif pos in self.snake[1:]:
@@ -197,6 +191,31 @@ def list_snakes():
     """List all active snakes"""
     return jsonify({'snakes': [{'snake_id': sid, 'is_active': snake.is_active, 'game_over': snake.game_over, 'length': len(snake.snake)} for sid, snake in snakes.items()]})
 
+@app.route('/state', methods=['GET'])
+def game_state():
+    """Get full field grid and vision for all snakes"""
+    # Build full grid state
+    grid = {f"{x},{y}": [] for x in range(GRID_WIDTH) for y in range(GRID_HEIGHT)}
+    # Populate grid with snakes and foods
+    for sid, snake in snakes.items():
+        with snake_locks[sid]:
+            for idx, segment in enumerate(snake.snake):
+                cell = f"{segment[0]},{segment[1]}"
+                typ = 'HEAD' if idx == 0 else 'BODY'
+                grid[cell].append({'type': typ, 'snake_id': sid})
+            food_cell = f"{snake.food[0]},{snake.food[1]}"
+            grid[food_cell].append({'type': 'FOOD', 'snake_id': sid})
+    # Mark empty cells
+    for cell, items in grid.items():
+        if not items:
+            grid[cell] = [{'type': 'EMPTY'}]
+    # Build visions for all snakes
+    visions = {}
+    for sid, snake in snakes.items():
+        with snake_locks[sid]:
+            visions[sid] = snake.get_visible_cells()
+    return jsonify({'grid': grid, 'visions': visions})
+
 @app.route('/', methods=['GET'])
 def home():
     """API documentation"""
@@ -206,13 +225,19 @@ def home():
             'stream_vision': 'GET /snake/{snake_id}',
             'control_snake': 'POST /snake/{snake_id}/move with {"move": "left|right"}',
             'reset_snake': 'POST /snake/{snake_id}/reset',
-            'list_snakes': 'GET /snakes'
+            'list_snakes': 'GET /snakes',
+            'game_state': 'GET /state'
         },
         'example': {
             'stream': 'curl http://localhost:5000/snake/my_snake_01',
-            'move': "curl -X POST http://localhost:5000/snake/my_snake_01/move -H 'Content-Type: application/json' -d '{\"move\": \"left\"}'"
+            'move': "curl -X POST http://localhost:5000/snake/my_snake_01/move -H 'Content-Type: application/json' -d '{\"move\": \"left\"}'",
+            'state': 'curl http://localhost:5000/state'
         },
-        'output_format': {'snake_id': 'string', 'visible_cells': {'x,y': 'object_type'}}
+        'output_format': {
+            'snake_id': 'string',
+            'visible_cells': {'x,y': 'object_type'},
+            'grid': {'x,y': [{'type': 'EMPTY|HEAD|BODY|FOOD', 'snake_id': 'string'}]}
+        }
     })
 
 if __name__ == '__main__':
