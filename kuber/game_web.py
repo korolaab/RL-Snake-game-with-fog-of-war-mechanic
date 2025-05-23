@@ -23,7 +23,7 @@ def parse_args():
     parser.add_argument("--vision_radius", type=int, default=VISION_RADIUS, help="Radius of vision around the snake head")
     parser.add_argument("--vision_display_cols", type=int, default=VISION_DISPLAY_COLS, help="Number of columns in the vision display")
     parser.add_argument("--vision_display_rows", type=int, default=VISION_DISPLAY_ROWS, help="Number of rows in the vision display")
-    parser.add_argument("--fps", type=int, default=FPS, help="Frames (ticks) per second for the stream")
+    parser.add_argument("--fps", type=int, default=FPS, help="Frames (ticks) per second for the simulation and stream")
     parser.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility")
     return parser.parse_args()
 
@@ -132,6 +132,16 @@ snake_locks = {}
 app = Flask(__name__)
 CORS(app)
 
+# Background loop to advance game state independently of clients
+def game_loop():
+    while True:
+        time.sleep(1.0 / FPS)
+        for sid, snake in list(snakes.items()):
+            with snake_locks[sid]:
+                snake.update()
+
+threading.Thread(target=game_loop, daemon=True).start()
+
 @app.route('/snake/<snake_id>', methods=['GET'])
 def stream_snake_vision(snake_id):
     if snake_id not in snakes:
@@ -140,43 +150,30 @@ def stream_snake_vision(snake_id):
     def generate_vision_stream():
         snake = snakes[snake_id]
         while snake.is_active and not snake.game_over:
-            try:
-                with snake_locks[snake_id]:
-                    snake.update()
-                    visible_cells = snake.get_visible_cells()
-                data = {'snake_id': snake_id, 'visible_cells': visible_cells}
-                yield json.dumps(data) + '\n'
-                if snake.game_over:
-                    yield json.dumps({'snake_id': snake_id, 'game_over': True}) + '\n'
-                    break
-                time.sleep(1.0 / FPS)
-            except Exception as e:
-                yield json.dumps({'snake_id': snake_id, 'error': str(e)}) + '\n'
-                break
+            with snake_locks[snake_id]:
+                visible_cells = snake.get_visible_cells()
+            data = {'snake_id': snake_id, 'visible_cells': visible_cells}
+            yield json.dumps(data) + '\n'
+            time.sleep(1.0 / FPS)
+        yield json.dumps({'snake_id': snake_id, 'game_over': True}) + '\n'
     return Response(generate_vision_stream(), mimetype='application/x-ndjson', headers={'Cache-Control': 'no-cache','Connection': 'keep-alive'})
 
 @app.route('/snake/<snake_id>/move', methods=['POST'])
 def control_snake(snake_id):
     if snake_id not in snakes:
         return jsonify({'error': 'Snake not found'}), 404
-    data = request.get_json()
-    if not data or 'move' not in data:
-        return jsonify({'error': 'Move is required'}), 400
-    move = data['move']
+    data = request.get_json(); move = data.get('move')
     if move not in ['left', 'right']:
         return jsonify({'error': 'Invalid move. Use: left or right'}), 400
-    with snake_locks[snake_id]:
-        snakes[snake_id].update(move)
+    with snake_locks[snake_id]: snakes[snake_id].update(move)
     return jsonify({'snake_id': snake_id, 'move_applied': move, 'game_over': snakes[snake_id].game_over})
 
 @app.route('/snake/<snake_id>/reset', methods=['POST'])
 def reset_snake(snake_id):
     if snake_id not in snakes:
-        snakes[snake_id] = SnakeGame(snake_id)
-        snake_locks[snake_id] = threading.Lock()
+        snakes[snake_id] = SnakeGame(snake_id); snake_locks[snake_id] = threading.Lock()
     else:
-        with snake_locks[snake_id]:
-            snakes[snake_id].reset()
+        with snake_locks[snake_id]: snakes[snake_id].reset()
     return jsonify({'snake_id': snake_id, 'message': 'Snake reset successfully'})
 
 @app.route('/snakes', methods=['GET'])
@@ -189,14 +186,11 @@ def game_state():
     for sid, snake in snakes.items():
         with snake_locks[sid]:
             for idx, segment in enumerate(snake.snake):
-                cell = f"{segment[0]},{segment[1]}"
-                typ = 'HEAD' if idx == 0 else 'BODY'
+                cell = f"{segment[0]},{segment[1]}"; typ = 'HEAD' if idx == 0 else 'BODY'
                 grid[cell].append({'type': typ, 'snake_id': sid})
-            food_cell = f"{snake.food[0]},{snake.food[1]}"
-            grid[food_cell].append({'type': 'FOOD', 'snake_id': sid})
+            food_cell = f"{snake.food[0]},{snake.food[1]}"; grid[food_cell].append({'type': 'FOOD', 'snake_id': sid})
     for cell, items in grid.items():
-        if not items:
-            grid[cell] = [{'type': 'EMPTY'}]
+        if not items: grid[cell] = [{'type': 'EMPTY'}]
     visions = {sid: snakes[sid].get_visible_cells() for sid in snakes}
     return jsonify({'grid': grid, 'visions': visions})
 
@@ -213,7 +207,7 @@ def home():
         },
         'example': {
             'stream': 'curl http://localhost:5000/snake/my_snake_01',
-            'move': """curl -X POST http://localhost:5000/snake/my_snake_01/move -H 'Content-Type: application/json' -d '{\\"move\\": \\\"left\\\"}'""",
+            'move': 'curl -X POST http://localhost:5000/snake/my_snake_01/move -H "Content-Type: application/json" -d \'{"move":"left"}\'',
             'state': 'curl http://localhost:5000/state'
         },
         'output_format': {
@@ -225,14 +219,10 @@ def home():
 
 if __name__ == '__main__':
     args = parse_args()
-    GRID_WIDTH = args.grid_width
-    GRID_HEIGHT = args.grid_height
-    VISION_RADIUS = args.vision_radius
-    VISION_DISPLAY_COLS = args.vision_display_cols
-    VISION_DISPLAY_ROWS = args.vision_display_rows
-    FPS = args.fps
+    GRID_WIDTH = args.grid_width; GRID_HEIGHT = args.grid_height
+    VISION_RADIUS = args.vision_radius; VISION_DISPLAY_COLS = args.vision_display_cols
+    VISION_DISPLAY_ROWS = args.vision_display_rows; FPS = args.fps
     set_seed(args.seed)
-
     print("Starting Snake Vision Stream API with configuration:")
     print(f" Grid: {GRID_WIDTH}x{GRID_HEIGHT}, Vision Radius: {VISION_RADIUS}, Display: {VISION_DISPLAY_COLS}x{VISION_DISPLAY_ROWS}, FPS: {FPS}, Seed: {args.seed}")
     app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)
