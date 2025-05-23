@@ -1,5 +1,6 @@
 import argparse
 from flask import Flask, Response, request, jsonify
+from flask_cors import CORS
 import json
 import time
 import threading
@@ -40,7 +41,7 @@ class SnakeGame:
         self.ticks = 0
         self.last_action = 0
         self.reset()
-    
+
     def reset(self):
         self.snake = [
             (GRID_WIDTH // 2, GRID_HEIGHT // 2),
@@ -51,21 +52,21 @@ class SnakeGame:
         self.food = self.random_food_position()
         self.game_over = False
         self.ticks = 0
-    
+
     def random_food_position(self):
         while True:
             pos = (random.randint(0, GRID_WIDTH - 1), random.randint(0, GRID_HEIGHT - 1))
             occupied = set(p for s in snakes.values() for p in s.snake)
             if pos not in occupied:
                 return pos
-    
+
     def relative_turn(self, turn_command):
         if turn_command == "left":
             return (self.direction[1], -self.direction[0])
         elif turn_command == "right":
             return (-self.direction[1], self.direction[0])
         return self.direction
-    
+
     def update(self, move=None):
         if self.game_over:
             return
@@ -88,7 +89,7 @@ class SnakeGame:
             else:
                 self.snake.pop()
         self.ticks += 1
-    
+
     def get_visible_cells(self):
         head_x, head_y = self.snake[0]
         visible_cells = {}
@@ -116,18 +117,12 @@ class SnakeGame:
                 global_x = (head_x + dx) % GRID_WIDTH
                 global_y = (head_y + dy) % GRID_HEIGHT
                 pos = (global_x, global_y)
-                if pos == self.snake[0]:
-                    obj = 'HEAD'
-                elif pos in self.snake[1:]:
-                    obj = 'BODY'
-                elif pos in other_heads:
-                    obj = 'OTHER_HEAD'
-                elif pos in other_bodies:
-                    obj = 'OTHER_BODY'
-                elif pos == self.food:
-                    obj = 'FOOD'
-                else:
-                    obj = 'EMPTY'
+                if pos == self.snake[0]: obj = 'HEAD'
+                elif pos in self.snake[1:]: obj = 'BODY'
+                elif pos in other_heads: obj = 'OTHER_HEAD'
+                elif pos in other_bodies: obj = 'OTHER_BODY'
+                elif pos == self.food: obj = 'FOOD'
+                else: obj = 'EMPTY'
                 visible_cells[f"{disp_col},{disp_row}"] = obj
         return visible_cells
 
@@ -135,10 +130,10 @@ class SnakeGame:
 snakes = {}
 snake_locks = {}
 app = Flask(__name__)
+CORS(app)
 
 @app.route('/snake/<snake_id>', methods=['GET'])
 def stream_snake_vision(snake_id):
-    """Stream only visible_cells for specific snake"""
     if snake_id not in snakes:
         snakes[snake_id] = SnakeGame(snake_id)
         snake_locks[snake_id] = threading.Lock()
@@ -162,7 +157,6 @@ def stream_snake_vision(snake_id):
 
 @app.route('/snake/<snake_id>/move', methods=['POST'])
 def control_snake(snake_id):
-    """Control snake movement"""
     if snake_id not in snakes:
         return jsonify({'error': 'Snake not found'}), 404
     data = request.get_json()
@@ -177,7 +171,6 @@ def control_snake(snake_id):
 
 @app.route('/snake/<snake_id>/reset', methods=['POST'])
 def reset_snake(snake_id):
-    """Reset specific snake"""
     if snake_id not in snakes:
         snakes[snake_id] = SnakeGame(snake_id)
         snake_locks[snake_id] = threading.Lock()
@@ -188,15 +181,11 @@ def reset_snake(snake_id):
 
 @app.route('/snakes', methods=['GET'])
 def list_snakes():
-    """List all active snakes"""
     return jsonify({'snakes': [{'snake_id': sid, 'is_active': snake.is_active, 'game_over': snake.game_over, 'length': len(snake.snake)} for sid, snake in snakes.items()]})
 
 @app.route('/state', methods=['GET'])
 def game_state():
-    """Get full field grid and vision for all snakes"""
-    # Build full grid state
     grid = {f"{x},{y}": [] for x in range(GRID_WIDTH) for y in range(GRID_HEIGHT)}
-    # Populate grid with snakes and foods
     for sid, snake in snakes.items():
         with snake_locks[sid]:
             for idx, segment in enumerate(snake.snake):
@@ -205,20 +194,14 @@ def game_state():
                 grid[cell].append({'type': typ, 'snake_id': sid})
             food_cell = f"{snake.food[0]},{snake.food[1]}"
             grid[food_cell].append({'type': 'FOOD', 'snake_id': sid})
-    # Mark empty cells
     for cell, items in grid.items():
         if not items:
             grid[cell] = [{'type': 'EMPTY'}]
-    # Build visions for all snakes
-    visions = {}
-    for sid, snake in snakes.items():
-        with snake_locks[sid]:
-            visions[sid] = snake.get_visible_cells()
+    visions = {sid: snakes[sid].get_visible_cells() for sid in snakes}
     return jsonify({'grid': grid, 'visions': visions})
 
 @app.route('/', methods=['GET'])
 def home():
-    """API documentation"""
     return jsonify({
         'message': 'Snake Vision Stream API',
         'usage': {
@@ -230,7 +213,7 @@ def home():
         },
         'example': {
             'stream': 'curl http://localhost:5000/snake/my_snake_01',
-            'move': "curl -X POST http://localhost:5000/snake/my_snake_01/move -H 'Content-Type: application/json' -d '{\"move\": \"left\"}'",
+            'move': """curl -X POST http://localhost:5000/snake/my_snake_01/move -H 'Content-Type: application/json' -d '{\\"move\\": \\\"left\\\"}'""",
             'state': 'curl http://localhost:5000/state'
         },
         'output_format': {
@@ -241,7 +224,6 @@ def home():
     })
 
 if __name__ == '__main__':
-    # Parse arguments and set configuration
     args = parse_args()
     GRID_WIDTH = args.grid_width
     GRID_HEIGHT = args.grid_height
