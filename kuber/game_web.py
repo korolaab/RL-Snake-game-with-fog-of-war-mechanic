@@ -15,12 +15,9 @@ VISION_DISPLAY_COLS = 11
 VISION_DISPLAY_ROWS = 11
 FPS = 10
 
-# Global food positions
-FOODS = set()
-
-# Global snake storage and locks
-snakes = {}
-snake_locks = {}
+# Flask setup
+app = Flask(__name__)
+CORS(app)
 
 # Helper to spawn new food avoiding all snakes and existing food
 def spawn_food():
@@ -143,12 +140,6 @@ class SnakeGame:
                 vis[f"{cx},{cy}"] = obj
         return vis
 
-# Flask setup
-app = Flask(__name__)
-CORS(app)
-
-# Initialize first food
-spawn_food()
 
 # Background game loop thread
 def game_loop():
@@ -157,7 +148,6 @@ def game_loop():
         for sid, game in list(snakes.items()):
             with snake_locks[sid]:
                 game.update()
-threading.Thread(target=game_loop, daemon=True).start()
 
 @app.route('/snake/<sid>', methods=['GET'])
 def stream_vision(sid):
@@ -220,5 +210,18 @@ if __name__ == '__main__':
     FPS = args.fps
     set_seed(args.seed)
     print(f"Config: {GRID_WIDTH}x{GRID_HEIGHT}, R={VISION_RADIUS}, D={VISION_DISPLAY_COLS}x{VISION_DISPLAY_ROWS}, FPS={FPS}, seed={args.seed}")
+
+    # Global food positions
+    FOODS = set()
+
+    # Global snake storage and locks
+    snakes = {}
+    snake_locks = {}
+
+
+    # Initialize first food
+    spawn_food()
+
+    threading.Thread(target=game_loop, daemon=True).start()
     app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)
 
