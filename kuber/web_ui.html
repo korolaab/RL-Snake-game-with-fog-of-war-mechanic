@@ -337,19 +337,6 @@
         }
       }
 
-      // Контур ромба радиуса зрения
-      visionCtx.save();
-      visionCtx.strokeStyle = '#FF00FF';
-      visionCtx.lineWidth = 2;
-      visionCtx.beginPath();
-      visionCtx.moveTo(centerX * visionCellSize, (centerY - radius) * visionCellSize + visionCellSize / 2); // верх
-      visionCtx.lineTo((centerX + radius) * visionCellSize + visionCellSize / 2, centerY * visionCellSize); // право
-      visionCtx.lineTo(centerX * visionCellSize, (centerY + radius) * visionCellSize + visionCellSize / 2); // низ
-      visionCtx.lineTo((centerX - radius) * visionCellSize + visionCellSize / 2, centerY * visionCellSize); // лево
-      visionCtx.closePath();
-      visionCtx.stroke();
-      visionCtx.restore();
-
       // Add direction indicator
       visionCtx.fillStyle = '#000';
       visionCtx.font = '12px Arial';
