@@ -288,36 +288,68 @@
       }
     }
 
+    // --- PATCHED drawVision! ---
     function drawVision(canvasElement, visionData) {
       const visionCtx = canvasElement.getContext('2d');
       const visionCellSize = 20;
       const cols = 11; // VISION_DISPLAY_COLS
       const rows = 11; // VISION_DISPLAY_ROWS
+      const radius = 5; // Манхэттенский радиус поля зрения
+      const centerX = Math.floor(cols / 2);
+      const centerY = Math.floor(rows / 2);
       
       visionCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
       
-      // Draw grid
+      // Draw vision grid
       for (let y = 0; y < rows; y++) {
         for (let x = 0; x < cols; x++) {
+          const manhattan = Math.abs(x - centerX) + Math.abs(y - centerY);
           const key = `${x},${y}`;
-          const objType = visionData[key] || 'EMPTY';
+          let fillColor;
+          let outOfVision = false;
           
-          visionCtx.fillStyle = colors[objType] || colors.EMPTY;
+          if (manhattan > radius) {
+            // ВНЕ поля зрения — затемняем!
+            fillColor = '#e0e0e0'; // Серый или другой оттенок
+            outOfVision = true;
+          } else {
+            fillColor = colors[visionData[key]] || colors.EMPTY;
+          }
+
+          visionCtx.fillStyle = fillColor;
           visionCtx.fillRect(x * visionCellSize, y * visionCellSize, visionCellSize, visionCellSize);
           
-          // Special highlight for center (snake head)
-          if (x === 5 && y === 5) { // Center of 11x11 grid
-            visionCtx.strokeStyle = '#FF00FF';
+          // Полупрозрачная маска, чтобы явно затемнить вне ромба
+          if (outOfVision) {
+            visionCtx.fillStyle = 'rgba(80,80,80,0.45)';
+            visionCtx.fillRect(x * visionCellSize, y * visionCellSize, visionCellSize, visionCellSize);
+          }
+          
+          // Отрисовать сетку
+          if (x === centerX && y === centerY) {
+            visionCtx.strokeStyle = '#FF00FF'; // Голова — центр
             visionCtx.lineWidth = 3;
-            visionCtx.strokeRect(x * visionCellSize, y * visionCellSize, visionCellSize, visionCellSize);
           } else {
             visionCtx.strokeStyle = '#999';
             visionCtx.lineWidth = 1;
-            visionCtx.strokeRect(x * visionCellSize, y * visionCellSize, visionCellSize, visionCellSize);
           }
+          visionCtx.strokeRect(x * visionCellSize, y * visionCellSize, visionCellSize, visionCellSize);
         }
       }
-      
+
+      // Контур ромба радиуса зрения
+      visionCtx.save();
+      visionCtx.strokeStyle = '#FF00FF';
+      visionCtx.lineWidth = 2;
+      visionCtx.beginPath();
+      visionCtx.moveTo(centerX * visionCellSize, (centerY - radius) * visionCellSize + visionCellSize / 2); // верх
+      visionCtx.lineTo((centerX + radius) * visionCellSize + visionCellSize / 2, centerY * visionCellSize); // право
+      visionCtx.lineTo(centerX * visionCellSize, (centerY + radius) * visionCellSize + visionCellSize / 2); // низ
+      visionCtx.lineTo((centerX - radius) * visionCellSize + visionCellSize / 2, centerY * visionCellSize); // лево
+      visionCtx.closePath();
+      visionCtx.stroke();
+      visionCtx.restore();
+
       // Add direction indicator
       visionCtx.fillStyle = '#000';
       visionCtx.font = '12px Arial';
@@ -391,3 +423,4 @@
   </script>
 </body>
 </html>
+
