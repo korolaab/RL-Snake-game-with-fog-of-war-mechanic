@@ -4,23 +4,139 @@
   <meta charset="UTF-8">
   <title>Snake Vision Dashboard</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    #controls { margin-bottom: 10px; }
-    #gridCanvas { border: 1px solid #ccc; }
-    #sidebar { display: inline-block; vertical-align: top; margin-left: 20px; }
-    #scores, #visions { margin-bottom: 20px; }
-    .vision-label { font-weight: bold; margin-top: 5px; }
+    body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+    #controls { 
+      margin-bottom: 15px; 
+      padding: 10px; 
+      background: white; 
+      border-radius: 5px; 
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    #controls button {
+      padding: 8px 15px;
+      margin-left: 10px;
+      background: #007cba;
+      color: white;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    #controls button:hover { background: #005a87; }
+    #controls button:disabled { background: #ccc; cursor: not-allowed; }
+    
+    #mainContainer { display: flex; gap: 20px; }
+    #gameArea { flex: 1; }
+    #gridCanvas { 
+      border: 2px solid #333; 
+      background: white; 
+      border-radius: 5px;
+    }
+    
+    #sidebar { 
+      width: 400px; 
+      display: flex; 
+      flex-direction: column; 
+      gap: 15px;
+    }
+    
+    .panel {
+      background: white;
+      padding: 15px;
+      border-radius: 5px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    
+    .panel h3 { 
+      margin: 0 0 10px 0; 
+      color: #333;
+      border-bottom: 2px solid #007cba;
+      padding-bottom: 5px;
+    }
+    
+    #scoreList { list-style: none; padding: 0; margin: 0; }
+    #scoreList li { 
+      padding: 8px; 
+      margin: 5px 0; 
+      background: #f8f9fa; 
+      border-radius: 3px;
+      display: flex;
+      justify-content: space-between;
+    }
+    
+    .snake-vision {
+      margin: 10px 0;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      background: #fafafa;
+    }
+    
+    .vision-header {
+      font-weight: bold;
+      margin-bottom: 10px;
+      color: #333;
+    }
+    
+    .vision-canvas {
+      border: 1px solid #999;
+      background: white;
+      display: block;
+      margin: 0 auto;
+    }
+    
+    .status-indicator {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 8px;
+    }
+    
+    .status-connected { background: #28a745; }
+    .status-disconnected { background: #dc3545; }
+    .status-game-over { background: #ffc107; }
+    
+    #gameStatus {
+      text-align: center;
+      padding: 10px;
+      font-weight: bold;
+      border-radius: 5px;
+      margin-bottom: 10px;
+    }
+    
+    .game-running { background: #d4edda; color: #155724; }
+    .game-over { background: #f8d7da; color: #721c24; }
   </style>
 </head>
 <body>
   <div id="controls">
-    <label>Host URL: <input type="text" id="hostInput" placeholder="http://localhost:5000" size="30"></label>
+    <label>Host URL: <input type="text" id="hostInput" value="http://localhost:5000" size="30"></label>
     <button id="connectBtn">Connect</button>
+    <button id="resetBtn" disabled>Reset Game</button>
+    <span id="connectionStatus">
+      <span class="status-indicator status-disconnected"></span>
+      Disconnected
+    </span>
   </div>
-  <canvas id="gridCanvas" width="450" height="450"></canvas>
-  <div id="sidebar">
-    <div id="scores"><h3>Scores</h3><ul id="scoreList"></ul></div>
-    <div id="visions"><h3>Visions</h3><div id="visionList"></div></div>
+  
+  <div id="gameStatus" class="game-running">Game Running</div>
+  
+  <div id="mainContainer">
+    <div id="gameArea">
+      <canvas id="gridCanvas" width="450" height="450"></canvas>
+    </div>
+    
+    <div id="sidebar">
+      <div class="panel" id="scores">
+        <h3>Snake Stats</h3>
+        <ul id="scoreList"></ul>
+      </div>
+      
+      <div class="panel" id="visions">
+        <h3>Snake Vision (POV)</h3>
+        <div id="visionList"></div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -28,91 +144,250 @@
     const ctx = canvas.getContext('2d');
     let host = '';
     let cellSize;
+    let connected = false;
+    let gameConfig = { fps: 10 };
+    let pollInterval;
+
+    // Color scheme
+    const colors = {
+      HEAD: '#00FF00',
+      BODY: '#007700', 
+      OTHER_HEAD: '#0066FF',
+      OTHER_BODY: '#0044AA',
+      FOOD: '#FF0000',
+      EMPTY: '#FFFFFF'
+    };
 
     document.getElementById('connectBtn').onclick = () => {
       host = document.getElementById('hostInput').value.replace(/\/+$/, '');
       if (!host) return alert('Введите URL хоста');
-      startPolling();
+      connect();
     };
+
+    document.getElementById('resetBtn').onclick = async () => {
+      try {
+        await fetch(host + '/reset', { method: 'POST' });
+        updateGameStatus(false, 'Game Reset');
+      } catch (e) {
+        console.error('Reset error:', e);
+      }
+    };
+
+    async function connect() {
+      try {
+        const res = await fetch(host + '/');
+        if (res.ok) {
+          connected = true;
+          updateConnectionStatus(true);
+          document.getElementById('resetBtn').disabled = false;
+          startPolling();
+        } else {
+          throw new Error('Connection failed');
+        }
+      } catch (e) {
+        connected = false;
+        updateConnectionStatus(false);
+        alert('Не удалось подключиться к серверу');
+      }
+    }
+
+    function updateConnectionStatus(isConnected) {
+      const status = document.getElementById('connectionStatus');
+      const indicator = status.querySelector('.status-indicator');
+      
+      if (isConnected) {
+        indicator.className = 'status-indicator status-connected';
+        status.innerHTML = '<span class="status-indicator status-connected"></span>Connected';
+      } else {
+        indicator.className = 'status-indicator status-disconnected';
+        status.innerHTML = '<span class="status-indicator status-disconnected"></span>Disconnected';
+      }
+    }
+
+    function updateGameStatus(isGameOver, message = '') {
+      const statusDiv = document.getElementById('gameStatus');
+      if (isGameOver) {
+        statusDiv.className = 'game-over';
+        statusDiv.textContent = message || 'Game Over';
+      } else {
+        statusDiv.className = 'game-running';
+        statusDiv.textContent = message || 'Game Running';
+      }
+    }
 
     async function fetchState() {
       try {
         const res = await fetch(host + '/state');
+        if (!res.ok) throw new Error('Fetch failed');
         return await res.json();
       } catch (e) {
         console.error('Fetch error:', e);
+        if (connected) {
+          connected = false;
+          updateConnectionStatus(false);
+          document.getElementById('resetBtn').disabled = true;
+          if (pollInterval) clearInterval(pollInterval);
+        }
         return null;
       }
     }
 
     function drawGrid(gridObj) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
       for (let key in gridObj) {
         const [x, y] = key.split(',').map(Number);
         const items = gridObj[key];
-        let color = '#fff';
+        let color = colors.EMPTY;
+        
+        // Priority: HEAD > OTHER_HEAD > FOOD > BODY > OTHER_BODY > EMPTY
         const types = items.map(i => i.type);
-        if (types.includes('HEAD')) color = '#00FF00';
-        else if (types.includes('OTHER_HEAD')) color = '#009BFF';
-        else if (types.includes('BODY')) color = '#007700';
-        else if (types.includes('OTHER_BODY')) color = '#0055AA';
-        else if (types.includes('FOOD')) color = '#FF0000';
+        if (types.includes('HEAD')) color = colors.HEAD;
+        else if (types.includes('OTHER_HEAD')) color = colors.OTHER_HEAD;
+        else if (types.includes('FOOD')) color = colors.FOOD;
+        else if (types.includes('BODY')) color = colors.BODY;
+        else if (types.includes('OTHER_BODY')) color = colors.OTHER_BODY;
+        
         ctx.fillStyle = color;
         ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
-        ctx.strokeStyle = '#ccc'; ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
+        ctx.strokeStyle = '#ccc';
+        ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
       }
     }
 
     function updateScores(gridObj) {
       const scoreList = document.getElementById('scoreList');
       scoreList.innerHTML = '';
-      const scores = {};
+      const snakeStats = {};
+      
+      // Count segments for each snake
       for (let key in gridObj) {
         gridObj[key].forEach(item => {
-          if (item.type === 'HEAD') scores[item.snake_id] = 0;
-          if (item.type === 'BODY' || item.type === 'HEAD') scores[item.snake_id]++;
+          if (item.snake_id && (item.type === 'HEAD' || item.type === 'BODY')) {
+            if (!snakeStats[item.snake_id]) {
+              snakeStats[item.snake_id] = { length: 0, score: 0 };
+            }
+            snakeStats[item.snake_id].length++;
+          }
         });
       }
-      for (const sid in scores) {
+      
+      // Calculate scores (apples eaten = length - initial length of 3)
+      for (const sid in snakeStats) {
+        snakeStats[sid].score = Math.max(0, snakeStats[sid].length - 3);
+      }
+      
+      // Display stats
+      for (const sid in snakeStats) {
         const li = document.createElement('li');
-        li.textContent = `${sid}: ${scores[sid]}`;
+        li.innerHTML = `
+          <span>${sid}</span>
+          <span>Length: ${snakeStats[sid].length} | Score: ${snakeStats[sid].score}</span>
+        `;
         scoreList.appendChild(li);
       }
+    }
+
+    function drawVision(canvasElement, visionData) {
+      const visionCtx = canvasElement.getContext('2d');
+      const visionCellSize = 20;
+      const cols = 11; // VISION_DISPLAY_COLS
+      const rows = 11; // VISION_DISPLAY_ROWS
+      
+      visionCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      
+      // Draw grid
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const key = `${x},${y}`;
+          const objType = visionData[key] || 'EMPTY';
+          
+          visionCtx.fillStyle = colors[objType] || colors.EMPTY;
+          visionCtx.fillRect(x * visionCellSize, y * visionCellSize, visionCellSize, visionCellSize);
+          
+          // Special highlight for center (snake head)
+          if (x === 5 && y === 5) { // Center of 11x11 grid
+            visionCtx.strokeStyle = '#FF00FF';
+            visionCtx.lineWidth = 3;
+            visionCtx.strokeRect(x * visionCellSize, y * visionCellSize, visionCellSize, visionCellSize);
+          } else {
+            visionCtx.strokeStyle = '#999';
+            visionCtx.lineWidth = 1;
+            visionCtx.strokeRect(x * visionCellSize, y * visionCellSize, visionCellSize, visionCellSize);
+          }
+        }
+      }
+      
+      // Add direction indicator
+      visionCtx.fillStyle = '#000';
+      visionCtx.font = '12px Arial';
+      visionCtx.textAlign = 'center';
+      visionCtx.fillText('↑ Forward', cols * visionCellSize / 2, -5);
     }
 
     function updateVisions(visions) {
       const container = document.getElementById('visionList');
       container.innerHTML = '';
+      
       for (const sid in visions) {
-        const div = document.createElement('div');
-        div.classList.add('vision-label');
-        div.textContent = sid + ':';
-        const pre = document.createElement('pre');
-        pre.textContent = JSON.stringify(visions[sid], null, 2);
-        container.appendChild(div);
-        container.appendChild(pre);
+        const visionDiv = document.createElement('div');
+        visionDiv.className = 'snake-vision';
+        
+        const header = document.createElement('div');
+        header.className = 'vision-header';
+        header.textContent = `${sid} Vision`;
+        
+        const canvas = document.createElement('canvas');
+        canvas.className = 'vision-canvas';
+        canvas.width = 220; // 11 * 20
+        canvas.height = 220; // 11 * 20
+        
+        visionDiv.appendChild(header);
+        visionDiv.appendChild(canvas);
+        container.appendChild(visionDiv);
+        
+        drawVision(canvas, visions[sid]);
       }
     }
 
     async function startPolling() {
+      // Clear existing interval
+      if (pollInterval) clearInterval(pollInterval);
+      
       // Initial fetch to determine grid size
       const init = await fetchState();
       if (!init) return;
+      
       const keys = Object.keys(init.grid);
       const xs = new Set(keys.map(k => Number(k.split(',')[0])));
       cellSize = canvas.width / xs.size;
+      
+      // Update display
       drawGrid(init.grid);
       updateScores(init.grid);
       updateVisions(init.visions);
-      setInterval(async () => {
+      updateGameStatus(init.global_game_over);
+      
+      // Start polling at game FPS rate
+      const updateInterval = 1000 / (gameConfig.fps || 10);
+      pollInterval = setInterval(async () => {
         const state = await fetchState();
         if (!state) return;
+        
         drawGrid(state.grid);
         updateScores(state.grid);
         updateVisions(state.visions);
-      }, 1000);
+        updateGameStatus(state.global_game_over);
+      }, updateInterval);
     }
+
+    // Auto-connect on page load if URL is set
+    window.onload = () => {
+      const hostInput = document.getElementById('hostInput');
+      if (hostInput.value) {
+        connect();
+      }
+    };
   </script>
 </body>
 </html>
-
