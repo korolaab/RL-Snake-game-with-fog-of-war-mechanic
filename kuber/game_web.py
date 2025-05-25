@@ -19,6 +19,10 @@ FPS = 10
 app = Flask(__name__)
 CORS(app)
 
+# Global game state
+GAME_OVER = False
+game_over_lock = threading.Lock()
+
 # Helper to spawn new food avoiding all snakes and existing food
 def spawn_food():
     occupied = {pos for game in snakes.values() for pos in game.snake}
@@ -30,9 +34,20 @@ def spawn_food():
 
 # End the game for all snakes
 def end_game_all():
-    for sid, game in snakes.items():
+    global GAME_OVER
+    with game_over_lock:
+        GAME_OVER = True
+
+# Reset the game
+def reset_game():
+    global GAME_OVER, FOODS
+    with game_over_lock:
+        GAME_OVER = False
+    FOODS.clear()
+    for sid in list(snakes.keys()):
         with snake_locks[sid]:
-            game.game_over = True
+            snakes[sid].reset()
+    spawn_food()
 
 # Parse command-line arguments
 def parse_args():
@@ -56,7 +71,6 @@ class SnakeGame:
     def __init__(self, snake_id):
         self.snake_id = snake_id
         self.direction = (1, 0)
-        self.game_over = False
         self.snake = []
         self.ticks = 0
         self.reset()
@@ -68,7 +82,6 @@ class SnakeGame:
             (GRID_WIDTH // 2 - 2, GRID_HEIGHT // 2)
         ]
         self.direction = (1, 0)
-        self.game_over = False
         self.ticks = 0
 
     def relative_turn(self, cmd):
@@ -82,8 +95,11 @@ class SnakeGame:
         self.direction = self.relative_turn(cmd)
 
     def update(self):
-        if self.game_over:
-            return
+        global GAME_OVER
+        with game_over_lock:
+            if GAME_OVER:
+                return
+        
         head = self.snake[0]
         new_head = ((head[0] + self.direction[0]) % GRID_WIDTH,
                     (head[1] + self.direction[1]) % GRID_HEIGHT)
@@ -154,28 +170,44 @@ def stream_vision(sid):
     if sid not in snakes:
         snakes[sid] = SnakeGame(sid)
         snake_locks[sid] = threading.Lock()
+    
     def gen():
         while True:
+            with game_over_lock:
+                is_game_over = GAME_OVER
+            
             with snake_locks[sid]:
                 vis = snakes[sid].get_visible_cells()
-                over = snakes[sid].game_over
-            yield json.dumps({'snake_id': sid, 'visible_cells': vis, 'game_over': over}) + '\n'
-            if over:
+            
+            yield json.dumps({'snake_id': sid, 'visible_cells': vis, 'game_over': is_game_over}) + '\n'
+            
+            if is_game_over:
                 break
+                
             time.sleep(1.0 / FPS)
+    
     return Response(gen(), mimetype='application/x-ndjson', headers={'Cache-Control': 'no-cache', 'Connection': 'keep-alive'})
 
 @app.route('/snake/<sid>/move', methods=['POST'])
 def move_snake(sid):
     if sid not in snakes:
         return jsonify({'error': 'not found'}), 404
+    
+    with game_over_lock:
+        is_game_over = GAME_OVER
+    
+    if is_game_over:
+        return jsonify({'snake_id': sid, 'game_over': True})
+    
     data = request.get_json(force=True)
     cmd = data.get('move')
     if cmd not in ('left', 'right'):
         return jsonify({'error': 'Invalid move'}), 400
+    
     with snake_locks[sid]:
         snakes[sid].turn(cmd)
-    return jsonify({'snake_id': sid, 'game_over': snakes[sid].game_over})
+    
+    return jsonify({'snake_id': sid, 'game_over': False})
 
 @app.route('/state', methods=['GET'])
 def state():
@@ -192,13 +224,26 @@ def state():
     for cell, v in grid.items():
         if not v:
             grid[cell] = [{'type': 'EMPTY'}]
+    
     visions = {sid: game.get_visible_cells() for sid, game in snakes.items()}
-    statuses = {sid: game.game_over for sid, game in snakes.items()}
-    return jsonify({'grid': grid, 'visions': visions, 'status': statuses})
+    
+    with game_over_lock:
+        global_game_over = GAME_OVER
+    
+    statuses = {sid: global_game_over for sid in snakes.keys()}
+    
+    return jsonify({'grid': grid, 'visions': visions, 'status': statuses, 'global_game_over': global_game_over})
+
+@app.route('/reset', methods=['POST'])
+def reset():
+    reset_game()
+    return jsonify({'message': 'Game reset successfully'})
 
 @app.route('/', methods=['GET'])
 def home():
-    return jsonify({'message': 'Snake Vision Stream API'})
+    with game_over_lock:
+        is_game_over = GAME_OVER
+    return jsonify({'message': 'Snake Vision Stream API', 'game_over': is_game_over})
 
 if __name__ == '__main__':
     args = parse_args()
@@ -218,10 +263,8 @@ if __name__ == '__main__':
     snakes = {}
     snake_locks = {}
 
-
     # Initialize first food
     spawn_food()
 
     threading.Thread(target=game_loop, daemon=True).start()
     app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)
-
