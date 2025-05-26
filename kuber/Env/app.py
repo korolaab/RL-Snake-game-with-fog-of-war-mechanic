@@ -1,0 +1,48 @@
+from flask import Flask
+from flask_cors import CORS
+import logging
+
+from config import parse_args, set_seed
+from game.manager import GameManager
+from routes.snake import snake_bp
+from routes.state import state_bp
+from routes.errors import errors_bp
+
+# Логирование (если есть отдельная функция, импортируй её из utils.logger)
+logging.basicConfig(level=logging.INFO)
+
+# Аргументы командной строки
+args = parse_args()
+set_seed(args.seed)
+
+# Создание объекта game_manager (ПАРАМЕТРЫ ИЗ args!)
+game_manager = GameManager(
+    grid_width=args.grid_width,
+    grid_height=args.grid_height,
+    vision_radius=args.vision_radius,
+    vision_display_cols=args.vision_display_cols,
+    vision_display_rows=args.vision_display_rows,
+    fps=args.fps,
+    max_snakes=args.max_snakes if hasattr(args, 'max_snakes') else 10
+)
+
+# Создание приложения
+app = Flask(__name__)
+CORS(app)
+
+# Передаём game_manager в app.config
+app.config["game_manager"] = game_manager
+
+# Регистрируем blueprints
+app.register_blueprint(snake_bp)
+app.register_blueprint(state_bp)
+app.register_blueprint(errors_bp)
+
+if __name__ == "__main__":
+    app.run(
+        host="0.0.0.0",
+        port=5000,
+        debug=True,
+        threaded=True
+    )
+
