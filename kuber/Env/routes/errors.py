@@ -1,18 +1,16 @@
-"""
-Глобальные обработчики ошибок для Snake Vision Stream API.
-"""
+import traceback
+import logging
 from flask import Blueprint, jsonify
 
-# Импортируйте документацию как строку из utils, либо определите прямо здесь
 try:
     from utils.documentation import API_DOC
 except ImportError:
-    API_DOC = """# Snake Vision Stream API\n\n… (сюда можно добавить краткое описание) …"""
+    API_DOC = """# Snake Vision Stream API
+
+… (short description here) …"""
 
 errors_bp = Blueprint('errors', __name__)
 
-
-# Список эндпоинтов для справки
 ENDPOINTS = [
     {"method": "GET", "path": "/snake/{snake_id}", "usage": "curl -N http://localhost:5000/snake/123"},
     {"method": "POST", "path": "/snake/{snake_id}/move", "usage": "curl -X POST http://localhost:5000/snake/123/move -H 'Content-Type: application/json' -d '{\"move\":\"left\"}'"},
@@ -21,14 +19,12 @@ ENDPOINTS = [
     {"method": "GET", "path": "/", "usage": "curl http://localhost:5000/"}
 ]
 
-
 def make_error_response(error_message, status_code=400):
     return jsonify({
         "error": error_message,
         "endpoints": ENDPOINTS,
         "documentation_markdown": API_DOC
     }), status_code
-
 
 @errors_bp.app_errorhandler(400)
 def bad_request(error):
@@ -42,9 +38,8 @@ def not_found(error):
 def service_unavailable(error):
     return make_error_response(getattr(error, 'description', 'Service Unavailable'), 503)
 
-# Если хотите универсально — для всех неожиданных ошибок
 @errors_bp.app_errorhandler(Exception)
 def handle_exception(error):
-    # Можно не раскрывать детали ошибки клиенту
+    error_trace = traceback.format_exc()
+    logging.error(f"An error occurred: {error_trace}")
     return make_error_response('Internal server error', 500)
-
