@@ -108,5 +108,7 @@ class GameManager:
             time.sleep(1.0 / self.FPS)
             for sid, game in list(self.snakes.items()):
                 with self.snake_locks[sid]:
-                    game.update(self.GAME_OVER)
+                    status = game.update(self.GAME_OVER)
+                    if status == 'collision':
+                        self.GAME_OVER = True
 
