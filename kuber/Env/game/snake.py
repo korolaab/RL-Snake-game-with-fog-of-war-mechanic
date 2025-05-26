@@ -2,16 +2,16 @@ import random
 import logging
 
 class SnakeGame:
-    def __init__(self, snake_id, grid_width, grid_height, foods, snakes, direction=None, vision_radius=5, vision_display_cols=11, vision_display_rows=11):
+    def __init__(self, snake_id, game):
         self.snake_id = snake_id
-        self.grid_width = grid_width
-        self.grid_height = grid_height
-        self.foods = foods  # set
-        self.snakes = snakes  # dict of all snakes
-        self.vision_radius = vision_radius
-        self.vision_display_cols = vision_display_cols
-        self.vision_display_rows = vision_display_rows
-        self.direction = direction or (1, 0)
+        self.grid_width = game.GRID_WIDTH
+        self.grid_height = game.GRID_HEIGHT
+        self.foods = game.FOODS  # set
+        self.snakes = game.snakes  # dict of all snakes
+        self.vision_radius = game.VISION_RADIUS
+        self.vision_display_cols = game.VISION_DISPLAY_COLS
+        self.vision_display_rows = game.VISION_DISPLAY_ROWS
+        self.direction = (1, 0)
         self.snake = []
         self.ticks = 0
         self.reset()

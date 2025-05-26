@@ -20,6 +20,28 @@ class GameManager:
         self.snake_locks = {}
         self.GAME_OVER = False
         self.game_over_lock = threading.Lock()
+        
+        threading.Thread(target=self.game_loop, daemon=True).start()
+
+    def state(self):
+        grid = {f"{x},{y}": [] for x in range(self.GRID_WIDTH) for y in range(self.GRID_HEIGHT)}
+        for sid, game in self.snakes.items():
+            with self.snake_locks[sid]:
+                for i, p in enumerate(game.snake):
+                    cell = f"{p[0]},{p[1]}"
+                    typ = 'HEAD' if i == 0 else 'BODY'
+                    grid[cell].append({'type': typ, 'snake_id': sid})
+        for food in self.FOODS:
+            cell = f"{food[0]},{food[1]}"
+            grid[cell].append({'type': 'FOOD', 'snake_id': None})
+        for cell, v in grid.items():
+            if not v:
+                grid[cell] = [{'type': 'EMPTY'}]
+        visions = {sid: game.get_visible_cells() for sid, game in self.snakes.items()}
+        with self.game_over_lock:
+            global_game_over = self.GAME_OVER
+        statuses = {sid: global_game_over for sid in self.snakes.keys()}
+        return grid, visions, statuses, self.GAME_OVER
 
     def spawn_food(self):
         occupied = {pos for game in self.snakes.values() for pos in game.snake} | self.FOODS
@@ -81,9 +103,10 @@ class GameManager:
 
     def game_loop(self):
         import time
+        self.reset_game()
         while True:
             time.sleep(1.0 / self.FPS)
             for sid, game in list(self.snakes.items()):
                 with self.snake_locks[sid]:
-                    game.update()
+                    game.update(self.GAME_OVER)
 
