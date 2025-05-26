@@ -3,11 +3,12 @@
 import threading
 import random
 import logging
+from utils.seed import set_seed  
 
 from .snake import SnakeGame
 
 class GameManager:
-    def __init__(self, grid_width, grid_height, vision_radius, vision_display_cols, vision_display_rows, fps, max_snakes=10):
+    def __init__(self, grid_width, grid_height, vision_radius, vision_display_cols, vision_display_rows, fps, seed,max_snakes=10):
         self.GRID_WIDTH = grid_width
         self.GRID_HEIGHT = grid_height
         self.VISION_RADIUS = vision_radius
@@ -20,7 +21,8 @@ class GameManager:
         self.snake_locks = {}
         self.GAME_OVER = False
         self.game_over_lock = threading.Lock()
-        
+        self.seed = seed 
+        set_seed(self.seed)
         threading.Thread(target=self.game_loop, daemon=True).start()
 
     def state(self):

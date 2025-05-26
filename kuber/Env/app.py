@@ -2,7 +2,7 @@ from flask import Flask
 from flask_cors import CORS
 import logging
 
-from config import parse_args, set_seed
+from config import parse_args
 from game.manager import GameManager
 from routes.snake import snake_bp
 from routes.state import state_bp
@@ -13,7 +13,6 @@ logging.basicConfig(level=logging.INFO)
 
 # Аргументы командной строки
 args = parse_args()
-set_seed(args.seed)
 
 # Создание объекта game_manager (ПАРАМЕТРЫ ИЗ args!)
 game_manager = GameManager(
@@ -22,7 +21,8 @@ game_manager = GameManager(
     vision_radius=args.vision_radius,
     vision_display_cols=args.vision_display_cols,
     vision_display_rows=args.vision_display_rows,
-    fps=args.fps,
+    fps=args.fps, 
+    seed = args.seed,
     max_snakes=args.max_snakes if hasattr(args, 'max_snakes') else 10
 )
 

@@ -26,10 +26,3 @@ def parse_args():
     parser.add_argument("--max_snakes", type=int, default=MAX_SNAKES)
     parser.add_argument("--seed", type=int, default=None)
     return parser.parse_args()
-
-# Установка random seed для воспроизводимости
-def set_seed(seed):
-    if seed is not None:
-        random.seed(seed)
-        np.random.seed(seed)
-
