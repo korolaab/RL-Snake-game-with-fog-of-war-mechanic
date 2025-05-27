@@ -2,14 +2,23 @@ import requests
 import random
 import time
 import json
+import argparse
+import logging
+import sys
 
-SNAKE_ID = "1"
-BASE_URL = f"http://localhost:5000/snake/{SNAKE_ID}"
-MOVE_URL = f"{BASE_URL}/move"
+def setup_logger(log_file: str):
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s %(levelname)s: %(message)s',
+        handlers=[
+            logging.FileHandler(log_file),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
 
-def get_state_stream():
-    """Подключение к стриму состояния змейки (чистый JSON на каждой строке)."""
-    response = requests.get(BASE_URL, stream=True)
+def get_state_stream(base_url):
+    """Чтение состояния змейки как json по строкам."""
+    response = requests.get(base_url, stream=True)
     for line in response.iter_lines():
         if line:
             decoded = line.decode()
@@ -17,29 +26,39 @@ def get_state_stream():
                 data = json.loads(decoded)
                 yield data
             except json.JSONDecodeError:
-                print("⚠ Не удалось распарсить JSON:", decoded)
+                logging.warning(f"Failed to parse JSON: {decoded}")
 
-def send_move(move: str):
-    """Отправка действия змейки."""
+def send_move(move_url, move: str):
+    """Отправка управляющего действия."""
     payload = {"move": move}
     headers = {"Content-Type": "application/json"}
     try:
-        response = requests.post(MOVE_URL, json=payload, headers=headers)
+        response = requests.post(move_url, json=payload, headers=headers)
         response.raise_for_status()
+        logging.info(f"Sent move: {move}")
     except requests.RequestException as e:
-        print(f"❌ Ошибка при отправке движения: {e}")
+        logging.error(f"Error sending move: {e}")
 
-def random_agent():
-    print("🤖 Агент запущен. Подключение к стриму состояния...")
-    for data in get_state_stream():
-        if data["game_over"] == True:
-            print("💀 Игра окончена.")
+def random_agent(snake_id: str, log_file: str):
+    setup_logger(log_file)
+    base_url = f"http://localhost:5000/snake/{snake_id}"
+    move_url = f"{base_url}/move"
+    logging.info(f"Starting agent for snake_id={snake_id}")
+
+    for data in get_state_stream(base_url):
+        logging.info(f"Current state: {data}")
+        if data.get("game_over"):
+            logging.info("Game over.")
             break
         move = random.choice(["left", "right"])
-        print(f"➡️ Делаем случайный ход: {move}")
-        send_move(move)
-        time.sleep(0.2)  # замедление, чтобы не спамить
+        send_move(move_url, move)
+        time.sleep(0.2)
 
 if __name__ == "__main__":
-    random_agent()
+    parser = argparse.ArgumentParser(description="Random Snake Agent")
+    parser.add_argument("--snake_id", required=True, help="ID of the snake")
+    parser.add_argument("--log_file", default="snake_agent.log", help="Path to the log file")
+    args = parser.parse_args()
+
+    random_agent(args.snake_id, args.log_file)
 
