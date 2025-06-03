@@ -50,8 +50,9 @@ def random_agent(snake_id: str, log_file: str):
         if data.get("game_over"):
             logging.info("Game over.")
             break
-        move = random.choice(["left", "right"])
-        send_move(move_url, move)
+        move = random.choice(["left", "right", "forward"])
+        if move != "forward":
+            send_move(move_url, move)
         time.sleep(0.2)
 
 if __name__ == "__main__":
