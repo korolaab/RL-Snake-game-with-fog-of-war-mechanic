@@ -20,7 +20,7 @@ def stream_vision(sid):
                 is_game_over = game_manager.GAME_OVER
             with game_manager.snake_locks[sid]:
                 vis = game_manager.snakes[sid].get_visible_cells()
-                rewar = game_manager.snakes[sid].get_visibles_cells()
+                reward = game_manager.snakes[sid].reward
             yield json.dumps({'snake_id': sid, 
                               'visible_cells': vis,
                               'reward': reward, 

@@ -25,4 +25,5 @@ def parse_args():
     parser.add_argument("--fps", type=int, default=FPS)
     parser.add_argument("--max_snakes", type=int, default=MAX_SNAKES)
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument('--reward-config', type=str, default='{"alive": 1}', help='Reward configuration as JSON string')
     return parser.parse_args()

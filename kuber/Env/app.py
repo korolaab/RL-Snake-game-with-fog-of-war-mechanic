@@ -1,18 +1,25 @@
 from flask import Flask
 from flask_cors import CORS
 import logging
-
+import json
 from config import parse_args
 from game.manager import GameManager
 from routes.snake import snake_bp
 from routes.state import state_bp
 from routes.errors import errors_bp
+from collections import defaultdict
 
 # Логирование (если есть отдельная функция, импортируй её из utils.logger)
 logging.basicConfig(level=logging.INFO)
 
 # Аргументы командной строки
 args = parse_args()
+
+if args.reward_config:
+    regular_dict = json.loads(args.reward_config)
+    reward_config = defaultdict(int, regular_dict)  # int() returns 0
+else:
+    reward_config = defaultdict(int)
 
 # Создание объекта game_manager (ПАРАМЕТРЫ ИЗ args!)
 game_manager = GameManager(
