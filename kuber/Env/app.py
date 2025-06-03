@@ -23,6 +23,7 @@ game_manager = GameManager(
     vision_display_rows=args.vision_display_rows,
     fps=args.fps, 
     seed = args.seed,
+    reward_config = reward_config,
     max_snakes=args.max_snakes if hasattr(args, 'max_snakes') else 10
 )
 
