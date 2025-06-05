@@ -39,9 +39,9 @@ def send_move(move_url, move: str):
     except requests.RequestException as e:
         logging.error(f"Error sending move: {e}")
 
-def random_agent(snake_id: str, log_file: str):
+def random_agent(snake_id: str, log_file: str, env_host:str):
     setup_logger(log_file)
-    base_url = f"http://localhost:5000/snake/{snake_id}"
+    base_url = f"http://{env_host}/snake/{snake_id}"
     move_url = f"{base_url}/move"
     logging.info(f"Starting agent for snake_id={snake_id}")
 
@@ -58,8 +58,9 @@ def random_agent(snake_id: str, log_file: str):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Random Snake Agent")
     parser.add_argument("--snake_id", required=True, help="ID of the snake")
-    parser.add_argument("--log_file", default="snake_agent.log", help="Path to the log file")
+    parser.add_argument("--env_host", type=str, required=True, help="Host of the snake game")
+    parser.add_argument("--log_file", default="agent.log", help="Path to the log file")
     args = parser.parse_args()
 
-    random_agent(args.snake_id, args.log_file)
+    random_agent(args.snake_id, args.log_file, args.env_host)
 
