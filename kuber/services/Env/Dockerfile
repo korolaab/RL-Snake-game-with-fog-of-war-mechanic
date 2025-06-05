@@ -4,7 +4,7 @@ WORKDIR /app
 
 
 COPY ./src /app
-
+RUN apt update && apt install -y curl
 RUN pip install --no-cache-dir -r requirements.txt
 
-ENTRYPOINT ["python", "app.py", "--fps", "1", "--seed","1"]
+ENTRYPOINT []
