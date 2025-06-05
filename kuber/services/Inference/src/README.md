@@ -82,7 +82,7 @@ Each cell type is encoded as a 3-element vector:
 
 - `FOOD`: [0, 0, 1]
 - `BODY`: [0, 1, 0]
-- `OTHER_BODY`: [1, 0, 1]
+- `OTHER_BODY`: [1, 0, 0]
 - `EMPTY`: [0, 0, 0]
 
 The visible cells are sorted by coordinates (x, y) and concatenated into a flat tensor for neural network input.

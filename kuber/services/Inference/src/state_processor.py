@@ -9,7 +9,7 @@ class StateProcessor:
         self.cell_encoding = {
             'FOOD': [0, 0, 1],
             'BODY': [0, 1, 0],
-            'OTHER_BODY': [1, 0, 1],
+            'OTHER_BODY': [1, 0, 0],
             'EMPTY': [0, 0, 0]  # пустые ячейки кодируем нулями
         }
     
