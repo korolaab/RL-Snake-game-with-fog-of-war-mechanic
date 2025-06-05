@@ -31,10 +31,13 @@ services:
     depends_on:
       env:
         condition: service_healthy
-    command: ["python", "random_infer.py", 
-      "--snake_id" ,"snake_1",
+    command: [
+      "python", "main.py",
+      "--snake_id", "snake_1",
       "--env_host", "env:5000",
-      "--log_file", "/output/logs/inference.log"]
+      "--model_save_dir", "/output/models",
+      "--log_file", "/output/agent1.log"
+    ] 
     environment:
       - PYTHONUNBUFFERED=1
       - ENV_HOST=env:5000
