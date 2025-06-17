@@ -4,6 +4,7 @@ import torch.optim as optim
 import os
 import glob
 import logging
+import onnx
 from datetime import datetime
 
 
@@ -35,100 +36,150 @@ class ModelManager:
     
     def create_new_model(self, input_size: int, learning_rate: float = 0.001):
         """Создание новой модели с нуля."""
-        model = SnakeNet(input_size)
+        self.input_size = input_size
+        model = SnakeNet(self.input_size)
         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
         logging.info(f"Created new model with input size: {input_size}")
         return model, optimizer
     
     def find_latest_model(self, snake_id: str = None):
-        """Поиск самой новой модели для данной змейки или любой змейки."""
-        # Сначала ищем модели для конкретной змейки
-        if snake_id:
-            pattern = os.path.join(self.model_save_dir, f"snake_model_{snake_id}_*.pth")
-        else:
-            pattern = os.path.join(self.model_save_dir, "snake_model_*.pth")
-        
-        model_files = glob.glob(pattern)
-        
-        if not model_files:
-            # Если нет моделей для конкретной змейки, ищем любые модели
-            if snake_id:
-                logging.info(f"No models found for snake_id={snake_id}, searching for any models...")
-                return self.find_latest_model(snake_id=None)
-            else:
-                logging.info("No saved models found.")
-                return None
-        
-        # Сортируем по времени создания файла (самый новый последний)
-        model_files.sort(key=lambda x: os.path.getctime(x))
-        latest_model = model_files[-1]
-        
-        logging.info(f"Found latest model: {latest_model}")
+        """Search for the latest ONNX model for a specific snake or any snake."""      
+        # First, search for models for a specific snake                             
+        if snake_id:                                                            
+            pattern = os.path.join(self.model_save_dir, f"snake_model_{snake_id}_*.onnx")
+        else:                                                                   
+            pattern = os.path.join(self.model_save_dir, "snake_model_*.onnx")    
+                                                                                
+        model_files = glob.glob(pattern)                                        
+                                                                                
+        if not model_files:                                                     
+            # If no models found for specific snake, search for any models         
+            if snake_id:                                                        
+                logging.info(f"No ONNX models found for snake_id={snake_id}, searching for any models...")
+                return self.find_latest_model(snake_id=None)                    
+            else:                                                               
+                logging.info("No saved ONNX models found.")                          
+                return None                                                     
+                                                                                
+        # Sort by file creation time (newest last)           
+        model_files.sort(key=lambda x: os.path.getctime(x))                     
+        latest_model = model_files[-1]                                          
+                                                                                
+        logging.info(f"Found latest ONNX model: {latest_model}")                     
         return latest_model
-    
-    def load_model(self, model_path: str, learning_rate: float = 0.001):
-        """Загрузка модели из файла."""
+
+    def load_latest_model(self, snake_id: str, learning_rate: float = 0.001): 
+        """Load the latest ONNX model for the snake and convert to PyTorch."""                           
+        latest_model_path = self.find_latest_model(snake_id)                    
+                                                                                
+        if latest_model_path is None:                                           
+            logging.info("No existing ONNX models found.")                           
+            return None, None, None                                             
+                                                                                
+        return self.load_onnx_model(latest_model_path, learning_rate)
+
+    def load_onnx_model(self, model_path: str, learning_rate: float = 0.001):
+        """Load ONNX model and convert to PyTorch model."""
         try:
-            checkpoint = torch.load(model_path, map_location='cpu')
+            # Load ONNX model
+            onnx_model = onnx.load(model_path)
             
-            # Восстанавливаем модель
-            if 'model_architecture' in checkpoint:
-                model = checkpoint['model_architecture']
-                model.load_state_dict(checkpoint['model_state_dict'])
-            else:
-                raise ValueError("Model architecture not found in checkpoint")
+            # Convert ONNX to PyTorch
+            pytorch_model = onnx2torch.convert(onnx_model)
             
-            # Восстанавливаем оптимизатор
-            optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-            if 'optimizer_state_dict' in checkpoint:
-                optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            # Set model to training mode
+            pytorch_model.train()
             
-            original_snake_id = checkpoint.get('snake_id', 'unknown')
-            timestamp = checkpoint.get('timestamp', 'unknown')
+            # Create optimizer
+            optimizer = torch.optim.Adam(pytorch_model.parameters(), lr=learning_rate)
             
-            logging.info(f"Successfully loaded model from {model_path}")
-            logging.info(f"Original snake_id: {original_snake_id}, timestamp: {timestamp}")
+            # You might want to load additional training state if available
+            # Check for accompanying state file (e.g., .pth file with same name)
+            state_path = Path(model_path).with_suffix('.pth')
+            epoch = 0
             
-            return model, optimizer, {
-                'snake_id': original_snake_id,
+            if state_path.exists():
+                try:
+                    checkpoint = torch.load(state_path, map_location='cpu')
+                    if 'optimizer_state_dict' in checkpoint:
+                        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                    if 'epoch' in checkpoint:
+                        epoch = checkpoint['epoch']
+                    logging.info(f"Loaded training state from {state_path}")
+                except Exception as e:
+                    logging.warning(f"Could not load training state: {e}")
+            
+            logging.info(f"Successfully loaded ONNX model from {model_path}")
+            
+            return pytorch_model, optimizer, epoch
+            
+        except Exception as e:
+            logging.error(f"Failed to load ONNX model from {model_path}: {e}")
+            return None, None, None 
+
+    def save_model(self, model, optimizer, snake_id: str, additional_data: dict = None):
+        """Save PyTorch model as ONNX format with additional training state."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # ONNX model path
+        onnx_model_path = os.path.join(self.model_save_dir, f"snake_model_{snake_id}_{timestamp}.onnx")
+        
+        # Training state path (for optimizer and additional data)
+        state_path = os.path.join(self.model_save_dir, f"snake_model_state_{snake_id}_{timestamp}.pth")
+        
+        try:
+            # Set model to evaluation mode for export
+            model.eval()
+            
+            # Create dummy input for tracing (adjust dimensions based on your model)
+            # You'll need to modify this based on your actual input shape
+            dummy_input = torch.randn(1, self.input_size)  # Example: batch_size=1, input_features=4
+            
+            # Export model to ONNX
+            torch.onnx.export(
+                model,
+                dummy_input,
+                onnx_model_path,
+                export_params=True,
+                opset_version=11,
+                do_constant_folding=True,
+                input_names=['input'],
+                output_names=['output'],
+                dynamic_axes={
+                    'input': {0: 'batch_size'},
+                    'output': {0: 'batch_size'}
+                }
+            )
+            
+            # Save training state separately
+            checkpoint = {
+                'optimizer_state_dict': optimizer.state_dict(),
+                'snake_id': snake_id,
                 'timestamp': timestamp,
-                'model_path': model_path
+                'model_input_shape': list(dummy_input.shape),  # Store input shape info
             }
+            
+            # Add additional data if provided
+            if additional_data:
+                checkpoint.update(additional_data)
+            
+            torch.save(checkpoint, state_path)
+            
+            # Verify ONNX model
+            onnx_model = onnx.load(onnx_model_path)
+            onnx.checker.check_model(onnx_model)
+            
+            logging.info(f"ONNX model saved to: {onnx_model_path}")
+            logging.info(f"Training state saved to: {state_path}")
+            
+            # Set model back to training mode
+            model.train()
+            
+            return onnx_model_path, state_path
         
         except Exception as e:
-            logging.error(f"Error loading model from {model_path}: {e}")
-            raise
-    
-    def load_latest_model(self, snake_id: str, learning_rate: float = 0.001):
-        """Загрузка самой новой модели для змейки."""
-        latest_model_path = self.find_latest_model(snake_id)
-        
-        if latest_model_path is None:
-            logging.info("No existing models found.")
-            return None, None, None
-        
-        return self.load_model(latest_model_path, learning_rate)
-    
-    def save_model(self, model, optimizer, snake_id: str, additional_data: dict = None):
-        """Сохранение модели в файл."""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        model_path = os.path.join(self.model_save_dir, f"snake_model_{snake_id}_{timestamp}.pth")
-        
-        checkpoint = {
-            'model_state_dict': model.state_dict(),
-            'model_architecture': model,
-            'optimizer_state_dict': optimizer.state_dict(),
-            'snake_id': snake_id,
-            'timestamp': timestamp
-        }
-        
-        # Добавляем дополнительные данные если есть
-        if additional_data:
-            checkpoint.update(additional_data)
-        
-        torch.save(checkpoint, model_path)
-        logging.info(f"Model saved to: {model_path}")
-        return model_path
+            logging.error(f"Failed to save model as ONNX: {e}")
+            return None, None
     
     def get_model_input_size(self, model):
         """Получение размера входного слоя модели."""
