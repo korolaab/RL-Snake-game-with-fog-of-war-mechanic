@@ -14,11 +14,12 @@ class DataManager:
         self.history = []  # история (state, reward)
         os.makedirs(save_dir, exist_ok=True)
     
-    def add_experience(self, state, reward):
+    def add_experience(self, state, reward, action):
         """Добавление нового опыта в историю."""
         experience = {
             'state': state,
             'reward': reward,
+            'action': action,
             'timestamp': datetime.now().isoformat()
         }
         self.history.append(experience)

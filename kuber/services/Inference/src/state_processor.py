@@ -6,6 +6,7 @@ class StateProcessor:
     """Класс для обработки состояния игры в тензор для нейронной сети."""
     
     def __init__(self):
+        #TODO saving cell encoding to model file
         self.cell_encoding = {
             'FOOD': [0, 0, 1],
             'BODY': [0, 1, 0],

@@ -20,7 +20,8 @@ class SnakeNet(nn.Module):
             nn.Linear(64, 16),
             nn.Tanh(),
             nn.Dropout(0.5),
-            nn.Linear(16, 3)
+            nn.Linear(16, 3),
+            nn.Softmax()
         )
     
     def forward(self, x):

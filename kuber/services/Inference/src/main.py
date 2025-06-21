@@ -59,14 +59,14 @@ def neural_agent(snake_id: str, log_file: str, env_host: str,
     logging.info(f"Agent initialized: {model_info}")
     
     logging.info(f"Starting neural agent for snake_id={snake_id}")
-    
+    previous_action = "forward" 
     try:
         for data in get_state_stream(base_url):
             logging.info(f"Current state: {data}")
             
             # Сохраняем опыт
             reward = data.get("reward", 0)
-            agent.save_experience(data, reward)
+            agent.save_experience(data, reward, previous_action)
             
             if data.get("game_over"):
                 logging.info("Game over. Saving model and history...")
@@ -75,10 +75,11 @@ def neural_agent(snake_id: str, log_file: str, env_host: str,
                 break
             
             # Предсказываем действие
-            move = agent.predict_action(data)
-            
-            if move != "forward":
-                send_move(move_url, move)
+            action = agent.predict_action(data)
+              
+            if action != "forward":
+                send_move(move_url, action)
+            previous_action = action
             
             time.sleep(0.2)
     

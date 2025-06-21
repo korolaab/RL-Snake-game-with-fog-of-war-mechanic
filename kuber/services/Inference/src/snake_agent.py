@@ -25,6 +25,7 @@ class NeuralSnakeAgent:
         self.model_info = None
         
         # Возможные действия
+        #TODO saving actions encoding to model file
         self.actions = ["left", "right", "forward"]
         
         # Пытаемся загрузить существующую модель
@@ -102,12 +103,11 @@ class NeuralSnakeAgent:
             import random
             return random.choice(self.actions)
     
-    def save_experience(self, state, reward):
-        """Сохранение опыта (состояние, награда)."""
-        self.data_manager.add_experience(state, reward)
+    def save_experience(self, state, reward, action):
+        self.data_manager.add_experience(state, reward, action)
     
     def save_all_data(self):
-        """Сохранение модели и всех данных после окончания игры."""
+
         try:
             saved_files = {}
             
