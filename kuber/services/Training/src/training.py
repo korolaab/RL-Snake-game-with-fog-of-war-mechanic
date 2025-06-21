@@ -77,6 +77,7 @@ def load_onnx_model(model_path: str, state_model_path: str, learning_rate: float
 def save_model(model, input_size: int, optimizer, snake_id: str, epoch:int, model_save_dir: str, additional_data: dict = None):
     """Save PyTorch model as ONNX format with additional training state."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    #TODO epoch in filenames
     
     # ONNX model path
     onnx_model_path = os.path.join(model_save_dir, f"snake_model_{snake_id}_{timestamp}.onnx")
@@ -342,7 +343,6 @@ def save_updated_model(model: nn.Module, folder_path: str, original_info: Dict,
                       metrics: Dict[str, float]) -> str:
     """Save the updated model after training."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    #TODO add snake_id from args to output files
     model_filename = f"trained_model_{original_info.get('snake_id', 'unknown')}_{timestamp}.pth"
     model_path = os.path.join(folder_path, model_filename)
     
@@ -466,7 +466,14 @@ def main():
         logging.info(f"Metrics: {metrics}")
         
         # Save updated model
-        updated_model_path, state_path = save_model(model, states.shape[1], optimizer, epoch, args.snake_id, args.folder)
+        updated_model_path, state_path = save_model(
+                                            model = model, 
+                                            input_size = states.shape[1],
+                                            optimizer = optimizer, 
+                                            epoch = epoch,
+                                            snake_id = args.snake_id,
+                                            model_save_dir = args.folder
+                                            )
         
         # Save training log
         log_path = save_training_log(args.folder, metrics)
