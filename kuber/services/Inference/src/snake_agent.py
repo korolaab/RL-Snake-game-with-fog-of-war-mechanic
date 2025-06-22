@@ -88,10 +88,11 @@ class NeuralSnakeAgent:
             
             # Предсказание
             with torch.no_grad():
-                outputs = self.model(flat_tensor)
-                action_probs = torch.softmax(outputs, dim=1)
-                action_idx = torch.argmax(action_probs, dim=1).item()
-            
+                action_probs = self.model(flat_tensor)
+               # action_idx = torch.argmax(action_probs, dim=1).item()
+                m = torch.distributions.Categorical(probs)
+                action_idx = m.sample()
+
             predicted_action = self.actions[action_idx]
             logging.debug(f"Predicted action: {predicted_action} (probs: {action_probs.numpy()})")
             

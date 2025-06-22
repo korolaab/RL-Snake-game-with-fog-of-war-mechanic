@@ -51,7 +51,7 @@ class SnakeGame:
         self.reward = 0
         if game_over:
             self.reward += self.reward_config['game_over']
-            return
+            return ''
         head = self.snake[0]
         new_head = ((head[0] + self.direction[0]) % self.grid_width,
                     (head[1] + self.direction[1]) % self.grid_height)
@@ -62,11 +62,12 @@ class SnakeGame:
         if new_head in self.foods:
             self.foods.remove(new_head)
             self.reward += self.reward_config['eat_food']
+             
         else:
             self.snake.pop()
         self.ticks += 1
         self.reward += self.reward_config['alive']
-        return None
+        return ''
 
     def get_visible_cells(self):
         head = self.snake[0]

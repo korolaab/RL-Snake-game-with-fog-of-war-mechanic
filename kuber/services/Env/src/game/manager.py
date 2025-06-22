@@ -123,4 +123,6 @@ class GameManager:
                     status = game.update(self.GAME_OVER)
                     if status == 'collision':
                         self.GAME_OVER = True
+                if len(self.FOODS) == 0:
+                    self.spawn_food()
 
