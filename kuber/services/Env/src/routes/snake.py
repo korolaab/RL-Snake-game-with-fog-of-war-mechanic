@@ -2,9 +2,11 @@ from flask import Blueprint, Response, request, jsonify, current_app
 from game.snake import SnakeGame
 import json
 import time
+import datetime
 import threading
 
 snake_bp = Blueprint('snake', __name__)
+
 
 @snake_bp.route('/snake/<sid>', methods=['GET'])
 def stream_vision(sid):
@@ -24,7 +26,8 @@ def stream_vision(sid):
             yield json.dumps({'snake_id': sid, 
                               'visible_cells': vis,
                               'reward': reward, 
-                              'game_over': is_game_over}) + '\n'
+                              'game_over': is_game_over,
+                              'datetime': datetime.datetime.now().isoformat() }) + '\n'
             if is_game_over:
                 break
             time.sleep(1.0 / game_manager.FPS)

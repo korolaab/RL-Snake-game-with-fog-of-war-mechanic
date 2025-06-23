@@ -90,7 +90,7 @@ class NeuralSnakeAgent:
             with torch.no_grad():
                 action_probs = self.model(flat_tensor)
                # action_idx = torch.argmax(action_probs, dim=1).item()
-                m = torch.distributions.Categorical(probs)
+                m = torch.distributions.Categorical(action_probs)
                 action_idx = m.sample()
 
             predicted_action = self.actions[action_idx]

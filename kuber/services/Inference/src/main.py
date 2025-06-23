@@ -5,6 +5,8 @@ import argparse
 import logging
 import sys
 from snake_agent import NeuralSnakeAgent
+from datetime import datetime
+import threading
 
 
 def setup_logger(log_file: str):
@@ -18,19 +20,76 @@ def setup_logger(log_file: str):
         ]
     )
 
+class StreamReader:
+    def __init__(self, base_url):
+        self.base_url = base_url
+        self.latest_state = None
+        self.latest_timestamp = None
+        self.running = False
+        self.thread = None
+        self.lock = threading.Lock()
+        self.new_state_event = threading.Event()
+        
+    def start(self):
+        """Start reading stream in background"""
+        self.running = True
+        self.thread = threading.Thread(target=self._read_stream, daemon=True)
+        self.thread.start()
+        
+    def stop(self):
+        """Stop reading stream"""
+        self.running = False
+        if self.thread:
+            self.thread.join()
+            
+            
+    def get_latest_state(self, timeout=None):
+        """Block until new state is available"""
+        # Wait for new state signal
+        if self.new_state_event.wait(timeout):
+            with self.lock:
+                if self.latest_state is not None:
+                    state = self.latest_state
+                    timestamp = self.latest_timestamp
+                    self.latest_state = None  # Clear after returning
+                    self.new_state_event.clear()  # Clear the event
+                    return state, timestamp
+        
+        return None, None  # Timeout or no state
 
-def get_state_stream(base_url):
-    """Чтение состояния змейки как json по строкам."""
-    response = requests.get(base_url, stream=True)
-    for line in response.iter_lines():
-        if line:
-            decoded = line.decode()
-            try:
-                data = json.loads(decoded)
-                yield data
-            except json.JSONDecodeError:
-                logging.warning(f"Failed to parse JSON: {decoded}")
+    def _read_stream(self):
+        """Background thread that continuously reads stream"""
+        try:
+            response = requests.get(self.base_url, stream=True)
+            
+            for line in response.iter_lines():
+                if not self.running:
+                    break
+                    
+                if line:
+                    try:
+                        decoded = line.decode()
+                        data = json.loads(decoded)
+                        
+                        # Update latest state atomically
+                        with self.lock:
+                            self.latest_state = data
+                            self.latest_timestamp = time.time()
+                        
+                        self.new_state_event.set()
 
+                        # Stop if game over
+                        if data.get('game_over'):
+                            logging.info("Game over detected in stream")
+                            break
+                            
+                    except json.JSONDecodeError:
+                        logging.warning(f"Failed to parse JSON: {decoded}")
+                        
+        except Exception as e:
+            logging.error(f"Stream reading error: {e}")
+        finally:
+            self.running = False
 
 def send_move(move_url, move: str):
     """Отправка управляющего действия."""
@@ -39,7 +98,7 @@ def send_move(move_url, move: str):
     try:
         response = requests.post(move_url, json=payload, headers=headers)
         response.raise_for_status()
-        logging.info(f"Sent move: {move}")
+        logging.info(f"Sent move: {move}, {response.text}")
     except requests.RequestException as e:
         logging.error(f"Error sending move: {e}")
 
@@ -60,10 +119,19 @@ def neural_agent(snake_id: str, log_file: str, env_host: str,
     
     logging.info(f"Starting neural agent for snake_id={snake_id}")
     previous_action = "forward" 
+    stream_reader = StreamReader(base_url)
+    stream_reader.start()
+    data = None
+    tech_timestamp = None
     try:
-        for data in get_state_stream(base_url):
-            logging.info(f"Current state: {data}")
+        while True:
+            data, tech_timestamp = stream_reader.get_latest_state()
             
+            send_datetime_str = data.get("datetime") 
+            send_timestamp = datetime.fromisoformat(send_datetime_str).timestamp() 
+            delay = tech_timestamp - send_timestamp
+            logging.info(f"Current state: {data}")
+            logging.info(f"Delay: {delay}")
             # Сохраняем опыт
             reward = data.get("reward", 0)
             agent.save_experience(data, reward, previous_action)
@@ -81,8 +149,6 @@ def neural_agent(snake_id: str, log_file: str, env_host: str,
                 send_move(move_url, action)
             previous_action = action
             
-            time.sleep(0.2)
-    
     except KeyboardInterrupt:
         logging.info("Agent interrupted by user.")
         # Сохраняем данные при прерывании
@@ -101,6 +167,8 @@ def neural_agent(snake_id: str, log_file: str, env_host: str,
         except Exception as save_error:
             logging.error(f"Error saving data after error: {save_error}")
         raise
+    finally:
+        stream_reader.stop()
 
 
 def load_saved_model(model_path: str):
