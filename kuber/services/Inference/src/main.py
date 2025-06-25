@@ -105,50 +105,84 @@ def send_move(move_url, move: str):
 
 def neural_agent(snake_id: str, log_file: str, env_host: str, 
                 model_save_dir: str = "models", learning_rate: float = 0.001):
-    """Основная функция нейронного агента."""
+    """
+    Основная функция нейронного агента с асинхронным обучением.
+    """
     setup_logger(log_file)
     base_url = f"http://{env_host}/snake/{snake_id}"
     move_url = f"{base_url}/move"
+    reset_url = f"http://{env_host}/reset"  # URL для сброса среды
     
-    # Создаем агента
-    agent = NeuralSnakeAgent(snake_id, model_save_dir, learning_rate)
     
-    # Выводим информацию о модели
-    model_info = agent.get_model_info()
-    logging.info(f"Agent initialized: {model_info}")
     
     logging.info(f"Starting neural agent for snake_id={snake_id}")
-    previous_action = "forward" 
-    stream_reader = StreamReader(base_url)
-    stream_reader.start()
-    data = None
-    tech_timestamp = None
+    
     try:
-        while True:
-            data, tech_timestamp = stream_reader.get_latest_state()
+        while True:  # Внешний цикл для множественных игр
+            # Загружаем последнюю модель перед началом новой игры
+            # Создаем агента
+            agent = NeuralSnakeAgent(snake_id, model_save_dir, learning_rate)
+            # Выводим информацию о модели
+            model_info = agent.get_model_info()
+            logging.info(f"Agent initialized: {model_info}")
+            logging.info("Loaded latest model for new episode")
             
-            send_datetime_str = data.get("datetime") 
-            send_timestamp = datetime.fromisoformat(send_datetime_str).timestamp() 
-            delay = tech_timestamp - send_timestamp
-            logging.info(f"Current state: {data}")
-            logging.info(f"Delay: {delay}")
-            # Сохраняем опыт
-            reward = data.get("reward", 0)
-            agent.save_experience(data, reward, previous_action)
+            previous_action = "forward"
+            stream_reader = StreamReader(base_url)
+            stream_reader.start()
+            data = None
+            tech_timestamp = None
             
-            if data.get("game_over"):
-                logging.info("Game over. Saving model and history...")
-                saved_files = agent.save_all_data()
-                logging.info(f"Saved files: {saved_files}")
-                break
-            
-            # Предсказываем действие
-            action = agent.predict_action(data)
-              
-            if action != "forward":
-                send_move(move_url, action)
-            previous_action = action
-            
+            try:
+                # Внутренний цикл для одной игры
+                while True:
+                    data, tech_timestamp = stream_reader.get_latest_state()
+                    
+                    send_datetime_str = data.get("datetime") 
+                    send_timestamp = datetime.fromisoformat(send_datetime_str).timestamp() 
+                    delay = tech_timestamp - send_timestamp
+                    logging.info(f"Current state: {data}")
+                    logging.info(f"Delay: {delay}")
+                    
+                    # Сохраняем опыт
+                    reward = data.get("reward", 0)
+                    agent.save_experience(data, reward, previous_action)
+                    
+                    if data.get("game_over"):
+                        logging.info("Game over. Saving experience data...")
+                        saved_files = agent.save_all_data()
+                        logging.info(f"Saved files: {saved_files}")
+                        
+                        # Сбрасываем среду немедленно (не ждем обучения)
+                        try:
+                            reset_response = requests.post(reset_url, timeout=5)
+                            if reset_response.status_code == 200:
+                                logging.info("Environment reset successful")
+                            else:
+                                logging.warning(f"Reset failed with status: {reset_response.status_code}")
+                        except Exception as reset_error:
+                            logging.error(f"Error resetting environment: {reset_error}")
+                        
+                        break  # Выходим из внутреннего цикла (одна игра закончена)
+                    
+                    # Предсказываем действие
+                    action = agent.predict_action(data)
+                      
+                    if action != "forward":
+                        send_move(move_url, action)
+                    previous_action = action
+                    
+            except Exception as game_error:
+                logging.error(f"Error during game: {game_error}")
+                # Сохраняем данные даже при ошибке в игре
+                try:
+                    saved_files = agent.save_all_data()
+                    logging.info(f"Data saved after game error: {saved_files}")
+                except Exception as save_error:
+                    logging.error(f"Error saving data after game error: {save_error}")
+            finally:
+                stream_reader.stop()
+                
     except KeyboardInterrupt:
         logging.info("Agent interrupted by user.")
         # Сохраняем данные при прерывании
@@ -167,9 +201,6 @@ def neural_agent(snake_id: str, log_file: str, env_host: str,
         except Exception as save_error:
             logging.error(f"Error saving data after error: {save_error}")
         raise
-    finally:
-        stream_reader.stop()
-
 
 def load_saved_model(model_path: str):
     """Функция для загрузки сохраненной модели в другом коде."""

@@ -116,7 +116,7 @@ class GameManager:
     def game_loop(self):
         import time
         self.reset_game()
-        while self.GAME_OVER != True:
+        while True:
             time.sleep(1.0 / self.FPS)
             for sid, game in list(self.snakes.items()):
                 with self.snake_locks[sid]:
