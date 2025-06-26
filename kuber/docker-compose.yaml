@@ -1,5 +1,4 @@
 version: '3.8'
-
 services:
   # Environment Service - Snake Game
   env:
@@ -9,7 +8,7 @@ services:
     container_name: rl-env
     ports:
       - "5000:5000"
-    command: ["python","app.py","--fps","1","--seed","1"]
+    command: ["python","app.py","--fps","100","--seed","1"]
     environment:
       - PYTHONUNBUFFERED=1
     healthcheck:
@@ -22,7 +21,34 @@ services:
       - rl-network
     restart: unless-stopped
 
-  # Inference Service - Random Agent
+  # Training Service - gRPC Server
+  training:
+    build:
+      context: ./services/Training
+      dockerfile: Dockerfile
+    container_name: rl-training
+    depends_on:
+      env:
+        condition: service_healthy
+    ports:
+      - "50051:50051"  # gRPC port
+    command: [
+      "python", "training.py",
+      "--snake_id", "adam",
+      "--learning_rate", "0.001",
+      "--log_file", "/output/training.log",
+      "--port", "50051"
+    ]
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - shared-output:/output
+      - ./shared/configs:/configs:ro
+    networks:
+      - rl-network
+    restart: unless-stopped
+
+  # Inference Service - gRPC Client
   inference:
     build:
       context: ./services/Inference
@@ -31,12 +57,17 @@ services:
     depends_on:
       env:
         condition: service_healthy
+      training:
+        condition: service_started
     command: [
       "python", "main.py",
       "--snake_id", "adam",
       "--env_host", "env:5000",
       "--model_save_dir", "/output/models",
-      "--log_file", "/output/agent1.log"
+      "--log_file", "/output/agent1.log",
+      "--grpc_host", "training",
+      "--grpc_port", "50051",
+      "--batch_size", "50"
     ] 
     environment:
       - PYTHONUNBUFFERED=1
@@ -46,29 +77,7 @@ services:
       - ./shared/configs:/configs:ro
     networks:
       - rl-network
-    restart: "no"  # Run once and exit
-
-  # Training Service - Processes data after inference
-  training:
-    build:
-      context: ./services/Training
-      dockerfile: Dockerfile
-    container_name: rl-training
-    depends_on:
-      inference:
-        condition: service_completed_successfully
-    command: >
-      python training.py 
-      --folder /output/models
-      --snake_id adam
-    environment:
-      - PYTHONUNBUFFERED=1
-    volumes:
-      - shared-output:/output
-      - ./shared/configs:/configs:ro
-    networks:
-      - rl-network
-    restart: "no"  # Run once and exit
+    restart: unless-stopped
 
 volumes:
   shared-output:

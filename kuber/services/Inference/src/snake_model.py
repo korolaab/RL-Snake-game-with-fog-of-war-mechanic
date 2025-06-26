@@ -5,6 +5,8 @@ import os
 import glob
 import logging
 import onnx
+from pathlib import Path
+import onnx2torch
 from datetime import datetime
 
 
@@ -21,7 +23,7 @@ class SnakeNet(nn.Module):
             nn.Tanh(),
             nn.Dropout(0.5),
             nn.Linear(16, 3),
-            nn.Softmax()
+            nn.Softmax(dim=1)  # Fixed: added dim=1
         )
     
     def forward(self, x):
@@ -33,6 +35,7 @@ class ModelManager:
     
     def __init__(self, model_save_dir: str = "models"):
         self.model_save_dir = model_save_dir
+        self.input_size = None  # Initialize input_size
         os.makedirs(model_save_dir, exist_ok=True)
     
     def create_new_model(self, input_size: int, learning_rate: float = 0.001):
@@ -94,28 +97,52 @@ class ModelManager:
             # Create optimizer
             optimizer = torch.optim.Adam(pytorch_model.parameters(), lr=learning_rate)
             
-            # You might want to load additional training state if available
-            # Check for accompanying state file (e.g., .pth file with same name)
+            # Extract input size from model if possible
+            try:
+                # Try to get input size from model structure
+                first_layer = None
+                for module in pytorch_model.modules():
+                    if isinstance(module, nn.Linear):
+                        first_layer = module
+                        break
+                
+                if first_layer:
+                    self.input_size = first_layer.in_features
+                    logging.info(f"Detected model input size: {self.input_size}")
+            except:
+                logging.warning("Could not detect input size from loaded model")
+            
+            # Check for accompanying state file
             state_path = Path(model_path).with_suffix('.pth')
-            epoch = 0
+            
+            # Create model info dictionary
+            model_info = {
+                'snake_id': 'unknown',
+                'timestamp': datetime.now().isoformat(),
+                'model_path': model_path,
+                'input_size': self.input_size
+            }
             
             if state_path.exists():
                 try:
                     checkpoint = torch.load(state_path, map_location='cpu')
                     if 'optimizer_state_dict' in checkpoint:
                         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-                    if 'epoch' in checkpoint:
-                        epoch = checkpoint['epoch']
+                    if 'snake_id' in checkpoint:
+                        model_info['snake_id'] = checkpoint['snake_id']
+                    if 'timestamp' in checkpoint:
+                        model_info['timestamp'] = checkpoint['timestamp']
                     logging.info(f"Loaded training state from {state_path}")
                 except Exception as e:
                     logging.warning(f"Could not load training state: {e}")
             
             logging.info(f"Successfully loaded ONNX model from {model_path}")
             
-            return pytorch_model, optimizer, epoch
+            return pytorch_model, optimizer, model_info
             
         except Exception as e:
             logging.error(f"Failed to load ONNX model from {model_path}: {e}")
+            logging.error(f"Error details: {str(e)}")
             return None, None, None 
 
     def save_model(self, model, optimizer, snake_id: str, additional_data: dict = None):
@@ -132,9 +159,17 @@ class ModelManager:
             # Set model to evaluation mode for export
             model.eval()
             
-            # Create dummy input for tracing (adjust dimensions based on your model)
-            # You'll need to modify this based on your actual input shape
-            dummy_input = torch.randn(1, self.input_size)  # Example: batch_size=1, input_features=4
+            # Determine input size
+            input_size = self.input_size
+            if input_size is None:
+                # Try to get from model
+                input_size = self.get_model_input_size(model)
+                if input_size is None:
+                    input_size = 64  # Default fallback
+                    logging.warning(f"Using fallback input size: {input_size}")
+            
+            # Create dummy input for tracing
+            dummy_input = torch.randn(1, input_size)
             
             # Export model to ONNX
             torch.onnx.export(
@@ -157,7 +192,8 @@ class ModelManager:
                 'optimizer_state_dict': optimizer.state_dict(),
                 'snake_id': snake_id,
                 'timestamp': timestamp,
-                'model_input_shape': list(dummy_input.shape),  # Store input shape info
+                'model_input_shape': list(dummy_input.shape),
+                'input_size': input_size
             }
             
             # Add additional data if provided
@@ -176,17 +212,27 @@ class ModelManager:
             # Set model back to training mode
             model.train()
             
-            return onnx_model_path, state_path
+            return onnx_model_path
         
         except Exception as e:
             logging.error(f"Failed to save model as ONNX: {e}")
-            return None, None
+            return None
     
     def get_model_input_size(self, model):
         """Получение размера входного слоя модели."""
-        if hasattr(model, 'network') and hasattr(model.network[0], 'in_features'):
-            return model.network[0].in_features
-        return None
+        try:
+            # For SnakeNet models
+            if hasattr(model, 'network') and hasattr(model.network[0], 'in_features'):
+                return model.network[0].in_features
+            
+            # For converted ONNX models - find first Linear layer
+            for module in model.modules():
+                if isinstance(module, nn.Linear):
+                    return module.in_features
+            
+            return None
+        except:
+            return None
     
     def validate_input_size(self, model, expected_size: int):
         """Проверка совместимости размера входных данных с моделью."""
