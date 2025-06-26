@@ -77,11 +77,10 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
         else:
             logging.info("🔄 Received existing model from inference")
     
-    def process_experiences_for_training(self, experiences: List[training_pb2.Experience]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Process experience data for training."""
-        states = []
-        rewards = []
-        actions = []
+    def organize_experiences_by_episodes(self, experiences: List[training_pb2.Experience]) -> List[List[Dict]]:
+        """Organize experiences into separate episodes based on 'done' flag."""
+        episodes = []
+        current_episode = []
         
         for exp in experiences:
             # Parse state from JSON
@@ -90,69 +89,142 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
             except json.JSONDecodeError as e:
                 logging.warning(f"Failed to parse state JSON: {e}")
                 continue
-                
-            reward = exp.reward
-            action = exp.action
             
-            # Extract visible cells and process
-            visible_cells = state.get('visible_cells', {})
-            filtered_cells = {k: v for k, v in visible_cells.items() if v != 'HEAD'}
-            
-            if not filtered_cells:
-                continue
-                
-            # Sort cells by coordinates
-            sorted_cells = []
-            for coord_str, cell_type in filtered_cells.items():
-                try:
-                    x, y = map(int, coord_str.split(','))
-                    sorted_cells.append((x, y, cell_type))
-                except ValueError:
-                    continue
-            
-            if not sorted_cells:
-                continue
-                
-            sorted_cells.sort(key=lambda item: (item[0], item[1]))
-            
-            # Encode cells
-            cell_encoding = {
-                'FOOD': [0, 0, 1],
-                'BODY': [0, 1, 0],
-                'OTHER_BODY': [1, 0, 0],
-                'EMPTY': [0, 0, 0]
+            experience_dict = {
+                'state': state,
+                'action': exp.action,
+                'reward': exp.reward,
+                'step': exp.step,
+                'done': exp.done
             }
             
-            tensor_cell_data = []
-            for x, y, cell_type in sorted_cells:
-                encoding = cell_encoding.get(cell_type, [0, 0, 0])
-                tensor_cell_data.append(encoding)
-
-            # Encode actions
-            action_encoding = {
-                'forward': [0, 0, 1],
-                'right': [0, 1, 0],
-                'left': [1, 0, 0]
-            }
+            current_episode.append(experience_dict)
             
-            action_vector = action_encoding.get(action, [0, 0, 1])
-
-            rewards.append(reward)
-
-            state_tensor = torch.tensor(tensor_cell_data, dtype=torch.float32).flatten()
-            states.append(state_tensor)
-
-            action_tensor = torch.tensor(action_vector, dtype=torch.float32)
-            actions.append(action_tensor)
+            # If episode is done, start a new episode
+            if exp.done:
+                if current_episode:  # Only add non-empty episodes
+                    episodes.append(current_episode)
+                    current_episode = []
         
-        if not states:
-            raise ValueError("No valid states found in experiences")
+        # Add any remaining experiences as the last episode (shouldn't happen but defensive)
+        if current_episode:
+            logging.warning(f"Found incomplete episode with {len(current_episode)} experiences")
+            episodes.append(current_episode)
+        
+        logging.info(f"📊 Organized {len(experiences)} experiences into {len(episodes)} episodes")
+        for i, episode in enumerate(episodes):
+            total_reward = sum(exp['reward'] for exp in episode)
+            logging.info(f"  Episode {i+1}: {len(episode)} steps, total_reward={total_reward}")
+        
+        return episodes
+    
+    def process_episodes_for_training(self, episodes: List[List[Dict]]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Process episode data for REINFORCE training with proper returns calculation."""
+        all_states = []
+        all_actions = []
+        all_log_probs = []
+        all_returns = []
+        
+        for episode_idx, episode in enumerate(episodes):
+            if not episode:
+                continue
+                
+            episode_states = []
+            episode_actions = []
+            episode_rewards = []
+            
+            # Process each step in the episode
+            for exp in episode:
+                state = exp['state']
+                action = exp['action']
+                reward = exp['reward']
+                
+                # Extract and encode visible cells
+                visible_cells = state.get('visible_cells', {})
+                filtered_cells = {k: v for k, v in visible_cells.items() if v != 'HEAD'}
+                
+                if not filtered_cells:
+                    continue
+                    
+                # Sort cells by coordinates
+                sorted_cells = []
+                for coord_str, cell_type in filtered_cells.items():
+                    try:
+                        x, y = map(int, coord_str.split(','))
+                        sorted_cells.append((x, y, cell_type))
+                    except ValueError:
+                        continue
+                
+                if not sorted_cells:
+                    continue
+                    
+                sorted_cells.sort(key=lambda item: (item[0], item[1]))
+                
+                # Encode cells
+                cell_encoding = {
+                    'FOOD': [0, 0, 1],
+                    'BODY': [0, 1, 0],
+                    'OTHER_BODY': [1, 0, 0],
+                    'EMPTY': [0, 0, 0]
+                }
+                
+                tensor_cell_data = []
+                for x, y, cell_type in sorted_cells:
+                    encoding = cell_encoding.get(cell_type, [0, 0, 0])
+                    tensor_cell_data.append(encoding)
+
+                # Encode actions
+                action_encoding = {
+                    'forward': 0,
+                    'right': 1,
+                    'left': 2
+                }
+                
+                action_idx = action_encoding.get(action, 0)
+
+                # Store processed data
+                state_tensor = torch.tensor(tensor_cell_data, dtype=torch.float32).flatten()
+                episode_states.append(state_tensor)
+                episode_actions.append(action_idx)
+                episode_rewards.append(reward)
+            
+            if not episode_states:
+                logging.warning(f"No valid states in episode {episode_idx}")
+                continue
+            
+            # Calculate discounted returns for this episode (REINFORCE style)
+            gamma = 0.99
+            episode_returns = []
+            discounted_return = 0
+            
+            # Calculate returns from end to beginning (proper REINFORCE)
+            for reward in reversed(episode_rewards):
+                discounted_return = reward + gamma * discounted_return
+                episode_returns.insert(0, discounted_return)
+            
+            # Convert to tensors
+            episode_returns = torch.tensor(episode_returns, dtype=torch.float32)
+            
+            # Normalize returns within episode (reduce variance)
+            if len(episode_returns) > 1:
+                episode_returns = (episode_returns - episode_returns.mean()) / (episode_returns.std() + 1e-8)
+            
+            # Add to global lists
+            all_states.extend(episode_states)
+            all_actions.extend(episode_actions)
+            all_returns.extend(episode_returns.tolist())
+            
+            logging.info(f"  Episode {episode_idx+1} processed: {len(episode_states)} valid steps, "
+                        f"return_range=[{episode_returns.min():.3f}, {episode_returns.max():.3f}]")
+        
+        if not all_states:
+            raise ValueError("No valid states found across all episodes")
         
         # Pad states to same length
-        max_length = max(len(state) for state in states)
+        max_length = max(len(state) for state in all_states)
         padded_states = []
         
-        for state in states:
+        for state in all_states:
             if len(state) < max_length:
                 padded_state = torch.zeros(max_length)
                 padded_state[:len(state)] = state
@@ -160,76 +232,87 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
             else:
                 padded_states.append(state)
         
+        # Convert to tensors
         states_tensor = torch.stack(padded_states)
-        actions_tensor = torch.stack(actions)
-        rewards_tensor = torch.tensor(rewards, dtype=torch.float32)
+        actions_tensor = torch.tensor(all_actions, dtype=torch.long)
+        returns_tensor = torch.tensor(all_returns, dtype=torch.float32)
         
-        logging.info(f"Processed {len(states)} states, tensor shape: {states_tensor.shape}")
-        return states_tensor, rewards_tensor, actions_tensor
+        logging.info(f"📊 Final batch: {len(all_states)} transitions from {len(episodes)} episodes")
+        logging.info(f"   States shape: {states_tensor.shape}")
+        logging.info(f"   Actions shape: {actions_tensor.shape}")
+        logging.info(f"   Returns shape: {returns_tensor.shape}")
+        logging.info(f"   Return stats: mean={returns_tensor.mean():.3f}, std={returns_tensor.std():.3f}")
+        
+        return states_tensor, actions_tensor, returns_tensor, max_length
     
-    def perform_training_step(self, states: torch.Tensor, actions_probs: torch.Tensor, rewards: torch.Tensor) -> Dict[str, float]:
-        """Perform one training step."""
+    def perform_training_step(self, states: torch.Tensor, actions: torch.Tensor, returns: torch.Tensor, input_size: int) -> Dict[str, float]:
+        """Perform one REINFORCE training step on episode batch."""
         logging.info(f"🏋️ Training step {self.training_step + 1} starting...")
         
         if self.model is None:
             # Create fallback model
-            self.model = SimpleModel(states.shape[1])
+            self.model = SimpleModel(input_size)
             self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
-            logging.info(f"Created fallback model with input_size: {states.shape[1]}")
+            logging.info(f"Created fallback model with input_size: {input_size}")
         
         try:
-            actions = torch.argmax(actions_probs, dim=1)
+            # Forward pass through policy network
+            action_probs = self.model(states)  # Shape: (batch_size, num_actions)
             
-            # Forward pass
-            probs = self.model(states)
-            m = torch.distributions.Categorical(probs)
-            log_probs = m.log_prob(actions)
-            entropy = m.entropy()
+            # Calculate log probabilities for taken actions
+            m = torch.distributions.Categorical(action_probs)
+            log_probs = m.log_prob(actions)  # Shape: (batch_size,)
+            entropy = m.entropy().mean()  # Average entropy for regularization
             
-            # Calculate discounted returns
-            gamma = 0.9
-            ep_returns = torch.zeros_like(rewards)
-            ep_returns[-1] = rewards[-1]
-            for t in reversed(range(len(rewards) - 1)):
-                ep_returns[t] = rewards[t] + gamma * ep_returns[t + 1]
-
-            # Normalize returns
-            if len(ep_returns) > 1:
-                ep_returns = (ep_returns - ep_returns.mean()) / (ep_returns.std() + 1e-5)
+            # REINFORCE loss: -log(π(a|s)) * R
+            # Negative because we want to maximize, but optimizers minimize
+            policy_loss = -(log_probs * returns).mean()
             
-            # Calculate loss
-            beta = 0.2
-            loss = -(log_probs * ep_returns).sum() - beta * entropy.sum()
+            # Add entropy bonus to encourage exploration
+            entropy_coeff = 0.01
+            total_loss = policy_loss - entropy_coeff * entropy
             
-            if torch.isnan(loss):
+            if torch.isnan(total_loss):
                 raise ValueError("Loss is NaN!")
 
             # Perform backpropagation
             self.optimizer.zero_grad()
-            loss.backward()
+            total_loss.backward()
             
             # Clip gradients to prevent explosion
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.5)
             
             self.optimizer.step()
             
             # Calculate metrics
             with torch.no_grad():
-                avg_reward = rewards.mean()
-                max_action_prob = actions_probs.max(dim=-1)[0].mean()
+                avg_return = returns.mean()
+                max_action_prob = action_probs.max(dim=-1)[0].mean()
+                
+                # Calculate action distribution
+                action_counts = torch.bincount(actions, minlength=3)
+                action_distribution = action_counts.float() / len(actions)
                 
                 metrics = {
-                    'loss': loss.item(),
-                    'entropy_mean': entropy.mean().item(),
-                    'avg_reward': avg_reward.item(),
+                    'loss': total_loss.item(),
+                    'policy_loss': policy_loss.item(),
+                    'entropy_mean': entropy.item(),
+                    'avg_return': avg_return.item(),
                     'max_action_prob': max_action_prob.item(),
                     'num_samples': len(states),
-                    'positive_rewards': (rewards > 0).sum().item(),
-                    'negative_rewards': (rewards <= 0).sum().item()
+                    'positive_returns': (returns > 0).sum().item(),
+                    'negative_returns': (returns <= 0).sum().item(),
+                    'action_dist_left': action_distribution[2].item(),
+                    'action_dist_right': action_distribution[1].item(),
+                    'action_dist_forward': action_distribution[0].item()
                 }
             
             self.training_step += 1
-            logging.info(f"✅ Training step {self.training_step} completed! Loss: {loss.item():.4f}")
+            logging.info(f"✅ Training step {self.training_step} completed!")
+            logging.info(f"   Policy Loss: {policy_loss.item():.4f}, Entropy: {entropy.item():.4f}")
+            logging.info(f"   Avg Return: {avg_return.item():.3f}, Max Action Prob: {max_action_prob.item():.3f}")
+            logging.info(f"   Action Distribution - Left: {action_distribution[2]:.2f}, Right: {action_distribution[1]:.2f}, Forward: {action_distribution[0]:.2f}")
+            
             return metrics
             
         except Exception as e:
@@ -237,7 +320,7 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
             raise
     
     async def SendTrainingBatch(self, request: training_pb2.TrainingBatchRequest, context) -> training_pb2.TrainingBatchResponse:
-        """Handle training batch request."""
+        """Handle training batch request with proper episode processing."""
         try:
             logging.info(f"📦 Received training batch: {len(request.experiences)} experiences")
             
@@ -257,20 +340,33 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
             # Setup model and optimizer
             self.setup_model_and_optimizer(model, request.is_cold_start)
             
-            # Process experiences for training
+            # Organize experiences into episodes
             try:
-                states, rewards, actions = self.process_experiences_for_training(request.experiences)
+                episodes = self.organize_experiences_by_episodes(request.experiences)
+                if not episodes:
+                    raise ValueError("No valid episodes found")
             except Exception as e:
-                logging.error(f"Failed to process experiences: {e}")
+                logging.error(f"Failed to organize episodes: {e}")
                 return training_pb2.TrainingBatchResponse(
                     success=False,
-                    message=f"Experience processing failed: {str(e)}",
+                    message=f"Episode organization failed: {str(e)}",
+                    training_step=self.training_step
+                )
+            
+            # Process episodes for training
+            try:
+                states, actions, returns, input_size = self.process_episodes_for_training(episodes)
+            except Exception as e:
+                logging.error(f"Failed to process episodes: {e}")
+                return training_pb2.TrainingBatchResponse(
+                    success=False,
+                    message=f"Episode processing failed: {str(e)}",
                     training_step=self.training_step
                 )
             
             # Train the model
             try:
-                metrics = self.perform_training_step(states, actions, rewards)
+                metrics = self.perform_training_step(states, actions, returns, input_size)
             except Exception as e:
                 logging.error(f"Training step failed: {e}")
                 return training_pb2.TrainingBatchResponse(
@@ -292,11 +388,11 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
                     metrics=training_pb2.TrainingMetrics(
                         loss=metrics['loss'],
                         entropy_mean=metrics['entropy_mean'],
-                        avg_reward=metrics['avg_reward'],
+                        avg_reward=metrics['avg_return'],
                         max_action_prob=metrics['max_action_prob'],
                         num_samples=metrics['num_samples'],
-                        positive_rewards=metrics['positive_rewards'],
-                        negative_rewards=metrics['negative_rewards']
+                        positive_rewards=metrics['positive_returns'],
+                        negative_rewards=metrics['negative_returns']
                     )
                 )
                 
@@ -311,11 +407,11 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
                         except Exception as e:
                             logging.warning(f"Error queuing model update: {e}")
                 
-                logging.info(f"📊 Training metrics: {metrics}")
+                logging.info(f"📊 Training completed successfully on {len(episodes)} episodes")
                 
                 return training_pb2.TrainingBatchResponse(
                     success=True,
-                    message="Training completed successfully",
+                    message=f"Training completed on {len(episodes)} episodes",
                     training_step=self.training_step
                 )
                 

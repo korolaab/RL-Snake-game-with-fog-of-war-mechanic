@@ -67,7 +67,7 @@ services:
       "--log_file", "/output/agent1.log",
       "--grpc_host", "training",
       "--grpc_port", "50051",
-      "--batch_size", "50"
+      "--batch_size", "10"
     ] 
     environment:
       - PYTHONUNBUFFERED=1

@@ -22,13 +22,13 @@ class GRPCSnakeAgent:
     """Snake Agent with gRPC communication to training service."""
     
     def __init__(self, snake_id: str, model_save_dir: str = "models", learning_rate: float = 0.001,
-                 grpc_host: str = "localhost", grpc_port: int = 50051, batch_size: int = 50):
+                 grpc_host: str = "localhost", grpc_port: int = 50051, batch_size: int = 5):
         self.snake_id = snake_id
         self.model_save_dir = model_save_dir
         self.learning_rate = learning_rate
         self.grpc_host = grpc_host
         self.grpc_port = grpc_port
-        self.batch_size = batch_size
+        self.batch_size = batch_size  # Number of EPISODES before sending batch
         
         # Initialize components
         self.model_manager = ModelManager(model_save_dir)
@@ -42,11 +42,13 @@ class GRPCSnakeAgent:
         self.model_info = None
         self.is_cold_start = False
         
-        # Experience buffer for batch transfer
-        self.experience_buffer = []
+        # Episode and experience tracking
+        self.completed_episodes = []  # List of completed episodes
+        self.current_episode_experiences = []  # Current episode's experiences
         self.current_episode = 0
         self.batch_number = 0
         self.total_steps = 0
+        self.current_episode_steps = 0
         
         # Actions
         self.actions = ["left", "right", "forward"]
@@ -209,28 +211,66 @@ class GRPCSnakeAgent:
             return random.choice(self.actions)
     
     def add_experience(self, state, action, reward, next_state=None, done=False):
-        """Add experience to buffer."""
+        """Add experience to current episode."""
         experience = {
             'state': state,
             'action': action,
             'reward': reward,
             'next_state': next_state,
             'done': done,
-            'step': self.total_steps
+            'step': self.current_episode_steps
         }
         
-        self.experience_buffer.append(experience)
+        self.current_episode_experiences.append(experience)
         self.total_steps += 1
+        self.current_episode_steps += 1
         
-        logging.debug(f"Added experience: action={action}, reward={reward}, buffer_size={len(self.experience_buffer)}")
+        logging.debug(f"Added experience: action={action}, reward={reward}, episode_steps={self.current_episode_steps}")
         
-        # Check if we should send batch
-        return len(self.experience_buffer) >= self.batch_size
+        # If episode is done, complete the episode
+        if done:
+            return self._complete_episode()
+        
+        return False  # Don't send batch until episode is complete
+    
+    def _complete_episode(self):
+        """Complete the current episode and check if we should send a batch."""
+        if not self.current_episode_experiences:
+            logging.warning("No experiences in current episode")
+            return False
+        
+        # Create episode summary
+        episode_data = {
+            'episode_number': self.current_episode,
+            'experiences': self.current_episode_experiences.copy(),
+            'total_steps': len(self.current_episode_experiences),
+            'total_reward': sum(exp['reward'] for exp in self.current_episode_experiences),
+            'final_reward': self.current_episode_experiences[-1]['reward'] if self.current_episode_experiences else 0
+        }
+        
+        # Add completed episode to batch
+        self.completed_episodes.append(episode_data)
+        
+        logging.info(f"🎮 Episode {self.current_episode} completed: {len(self.current_episode_experiences)} steps, "
+                    f"total_reward={episode_data['total_reward']}, final_reward={episode_data['final_reward']}")
+        
+        # Reset for next episode
+        self.current_episode_experiences = []
+        self.current_episode += 1
+        self.current_episode_steps = 0
+        
+        # Check if we should send batch (have enough completed episodes)
+        should_send_batch = len(self.completed_episodes) >= self.batch_size
+        
+        if should_send_batch:
+            logging.info(f"📦 Ready to send batch: {len(self.completed_episodes)} episodes completed")
+        
+        return should_send_batch
     
     async def send_training_batch_and_wait(self):
         """Send training batch via gRPC and wait for model update."""
-        if len(self.experience_buffer) == 0:
-            logging.warning("No experiences to send")
+        if len(self.completed_episodes) == 0:
+            logging.warning("No completed episodes to send")
             return False
         
         if not self.model_initialized:
@@ -238,19 +278,24 @@ class GRPCSnakeAgent:
             return False
         
         try:
-            logging.info(f"📦 Sending training batch via gRPC: {len(self.experience_buffer)} experiences")
+            # Calculate total experiences across all episodes
+            total_experiences = sum(len(ep['experiences']) for ep in self.completed_episodes)
+            total_episodes = len(self.completed_episodes)
             
-            # Convert experiences to protobuf format
+            logging.info(f"📦 Sending training batch via gRPC: {total_episodes} episodes, {total_experiences} experiences")
+            
+            # Convert all experiences to protobuf format
             proto_experiences = []
-            for exp in self.experience_buffer:
-                proto_exp = training_pb2.Experience(
-                    state_json=json.dumps(exp['state']),
-                    action=exp['action'],
-                    reward=exp['reward'],
-                    step=exp['step'],
-                    done=exp['done']
-                )
-                proto_experiences.append(proto_exp)
+            for episode in self.completed_episodes:
+                for exp in episode['experiences']:
+                    proto_exp = training_pb2.Experience(
+                        state_json=json.dumps(exp['state']),
+                        action=exp['action'],
+                        reward=exp['reward'],
+                        step=exp['step'],
+                        done=exp['done']
+                    )
+                    proto_experiences.append(proto_exp)
             
             # Serialize model with error handling
             try:
@@ -264,7 +309,7 @@ class GRPCSnakeAgent:
             request = training_pb2.TrainingBatchRequest(
                 snake_id=self.snake_id,
                 timestamp=datetime.now().isoformat(),
-                episode=self.current_episode,
+                episode=self.current_episode,  # Next episode number
                 batch_number=self.batch_number,
                 total_steps=self.total_steps,
                 is_cold_start=self.is_cold_start,
@@ -276,7 +321,7 @@ class GRPCSnakeAgent:
             try:
                 response = await asyncio.wait_for(
                     self.training_stub.SendTrainingBatch(request),
-                    timeout=30.0
+                    timeout=60.0  # Longer timeout for larger batches
                 )
             except asyncio.TimeoutError:
                 logging.error("❌ Timeout sending training batch")
@@ -295,7 +340,7 @@ class GRPCSnakeAgent:
                     # Wait for model update with timeout
                     model_update = await asyncio.wait_for(
                         self.pending_model_updates.get(),
-                        timeout=1.0
+                        timeout=60.0  # Longer timeout for training
                     )
                     
                     logging.info(f"🔄 Processing model update: step {model_update.training_step}")
@@ -319,7 +364,7 @@ class GRPCSnakeAgent:
                         metrics = model_update.metrics
                         logging.info(f"📊 Training metrics - Loss: {metrics.loss:.4f}, "
                                    f"Avg Reward: {metrics.avg_reward:.4f}, "
-                                   f"Samples: {metrics.num_samples}")
+                                   f"Episodes: {total_episodes}, Total Experiences: {metrics.num_samples}")
                         
                     except Exception as e:
                         logging.error(f"Failed to deserialize updated model: {e}")
@@ -332,8 +377,8 @@ class GRPCSnakeAgent:
                     logging.error(f"❌ Error getting model update: {e}")
                     return False
                 
-                # Clear buffer and update counters
-                self.experience_buffer = []
+                # Clear completed episodes and update counters
+                self.completed_episodes = []
                 self.batch_number += 1
                 
                 # After first batch, no longer cold start
@@ -351,13 +396,21 @@ class GRPCSnakeAgent:
             return False
     
     def save_experience(self, state, reward, action):
-        """Backward compatibility - add experience to buffer."""
+        """Backward compatibility - add experience to current episode."""
         return self.add_experience(state, action, reward)
     
     def save_all_data(self):
-        """Save all episode data."""
+        """Save all episode data and send final batch if needed."""
         try:
             saved_files = {}
+            
+            # If we have a partial current episode, complete it
+            if self.current_episode_experiences:
+                logging.info(f"🎮 Completing partial episode {self.current_episode} with {len(self.current_episode_experiences)} experiences")
+                # Mark last experience as done to complete episode
+                if self.current_episode_experiences:
+                    self.current_episode_experiences[-1]['done'] = True
+                self._complete_episode()
             
             # Save model (backup)
             if self.model is not None:
@@ -370,12 +423,11 @@ class GRPCSnakeAgent:
             data_files = self.data_manager.save_all_data(self.model, self.snake_id)
             saved_files.update(data_files)
             
-            # Complete episode
-            self.current_episode += 1
-            
             # Output statistics
             stats = self.data_manager.get_statistics()
-            logging.info(f"📊 Episode {self.current_episode} completed. Statistics: {stats}")
+            logging.info(f"📊 Game session completed. Statistics: {stats}")
+            logging.info(f"📈 Total episodes completed: {self.current_episode}")
+            logging.info(f"📈 Total steps across all episodes: {self.total_steps}")
             
             return saved_files
             
@@ -392,8 +444,9 @@ class GRPCSnakeAgent:
             'learning_rate': self.learning_rate,
             'is_cold_start': self.is_cold_start,
             'batch_size': self.batch_size,
-            'experience_buffer_size': len(self.experience_buffer),
+            'completed_episodes': len(self.completed_episodes),
             'current_episode': self.current_episode,
+            'current_episode_steps': len(self.current_episode_experiences),
             'batch_number': self.batch_number,
             'total_steps': self.total_steps,
             'grpc_host': self.grpc_host,
@@ -410,4 +463,11 @@ class GRPCSnakeAgent:
     
     def get_statistics(self):
         """Get accumulated data statistics."""
-        return self.data_manager.get_statistics()
+        stats = self.data_manager.get_statistics()
+        stats.update({
+            'episodes_completed': self.current_episode,
+            'episodes_in_current_batch': len(self.completed_episodes),
+            'current_episode_steps': len(self.current_episode_experiences),
+            'total_steps': self.total_steps
+        })
+        return stats

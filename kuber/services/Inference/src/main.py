@@ -96,7 +96,7 @@ def send_move(move_url, move: str):
     try:
         response = requests.post(move_url, json=payload, headers=headers)
         response.raise_for_status()
-        logging.info(f"Sent move: {move}, {response.text}")
+        logging.debug(f"Sent move: {move}")
     except requests.RequestException as e:
         logging.error(f"Error sending move: {e}")
 
@@ -104,9 +104,10 @@ def send_move(move_url, move: str):
 async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str, 
                            model_save_dir: str = "models", learning_rate: float = 0.001,
                            grpc_host: str = "localhost", grpc_port: int = 50051,
-                           batch_size: int = 50):
+                           batch_size: int = 5):
     """
     Neural agent with gRPC communication to training service.
+    batch_size = number of episodes before sending to training
     """
     setup_logger(log_file)
     base_url = f"http://{env_host}/snake/{snake_id}"
@@ -114,9 +115,9 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
     reset_url = f"http://{env_host}/reset"
     
     logging.info(f"🐍 Starting gRPC neural agent for snake_id={snake_id}")
-    logging.info(f"📦 Batch size: {batch_size}")
+    logging.info(f"📦 Batch size: {batch_size} episodes (not steps)")
     logging.info(f"📡 gRPC Training Service: {grpc_host}:{grpc_port}")
-    logging.info("⏳ Mode: Wait for model updates before continuing")
+    logging.info("⏳ Mode: Collect episodes, then send batch for training")
     
     # Create agent
     agent = GRPCSnakeAgent(
@@ -136,15 +137,18 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
     logging.info(f"🤖 Agent initialized: {model_info}")
     
     try:
+        episode_count = 0
+        
         while True:  # Outer loop for multiple games
-            logging.info(f"🎮 Starting new game (Episode {agent.current_episode + 1})...")
+            episode_count += 1
+            logging.info(f"🎮 Starting episode {episode_count}...")
             
             previous_action = "forward"
             stream_reader = StreamReader(base_url)
             stream_reader.start()
             
             try:
-                # Inner loop for one game
+                # Inner loop for one episode (game)
                 while True:
                     data, tech_timestamp = stream_reader.get_latest_state()
                     
@@ -156,9 +160,9 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
                     send_timestamp = datetime.fromisoformat(send_datetime_str).timestamp() 
                     delay = tech_timestamp - send_timestamp
                     
-                    logging.info(f"📍 State: reward={data.get('reward', 0)}, delay={delay:.3f}s")
+                    logging.debug(f"📍 State: reward={data.get('reward', 0)}, delay={delay:.3f}s")
                     
-                    # Add experience to buffer
+                    # Add experience to current episode
                     should_send_batch = agent.add_experience(
                         state=data,
                         action=previous_action,
@@ -166,32 +170,25 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
                         done=data.get("game_over", False)
                     )
                     
-                    # Send batch and wait for improved model
-                    if should_send_batch:
-                        logging.info("⏳ Sending batch via gRPC and waiting for improved model...")
-                        success = await agent.send_training_batch_and_wait()
-                        if success:
-                            logging.info("✅ Received improved model, continuing with better weights!")
-                        else:
-                            logging.warning("⚠️ Failed to get model update, continuing with current model")
-                    
+                    # If episode ended, check if we should send batch
                     if data.get("game_over"):
-                        logging.info("💀 Game over!")
+                        logging.info(f"💀 Episode {episode_count} ended!")
                         
-                        # Send remaining experiences if any
-                        if len(agent.experience_buffer) > 0:
-                            logging.info(f"📦 Sending final batch: {len(agent.experience_buffer)} experiences")
+                        # Check if we have enough episodes for a batch
+                        if should_send_batch:
+                            logging.info(f"📦 Sending batch: {agent.batch_size} episodes completed")
                             success = await agent.send_training_batch_and_wait()
                             if success:
-                                logging.info("✅ Received final improved model!")
+                                logging.info("✅ Received improved model after batch training!")
                             else:
-                                logging.warning("⚠️ Failed to get final model update")
+                                logging.warning("⚠️ Failed to get model update, continuing with current model")
+                        else:
+                            completed_episodes = len(agent.completed_episodes)
+                            remaining = agent.batch_size - completed_episodes
+                            logging.info(f"📊 Episode added to batch ({completed_episodes}/{agent.batch_size}). "
+                                       f"Need {remaining} more episodes before training.")
                         
-                        # Save data locally (backup)
-                        saved_files = agent.save_all_data()
-                        logging.info(f"💾 Saved backup files: {saved_files}")
-                        
-                        # Reset environment
+                        # Reset environment for next episode
                         try:
                             reset_response = requests.post(reset_url, timeout=5)
                             if reset_response.status_code == 200:
@@ -201,9 +198,9 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
                         except Exception as reset_error:
                             logging.error(f"Error resetting environment: {reset_error}")
                         
-                        break  # Exit inner loop
+                        break  # Exit inner loop (end of episode)
                     
-                    # Predict action
+                    # Predict action for next step
                     action = agent.predict_action(data)
                       
                     if action != "forward":
@@ -211,20 +208,33 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
                     previous_action = action
                     
             except Exception as game_error:
-                logging.error(f"Error during game: {game_error}")
+                logging.error(f"Error during episode {episode_count}: {game_error}")
                 # Save data even on error
                 try:
-                    if len(agent.experience_buffer) > 0:
+                    # Send any remaining episodes if we have some
+                    if len(agent.completed_episodes) > 0:
+                        logging.info(f"📦 Sending partial batch due to error: {len(agent.completed_episodes)} episodes")
                         await agent.send_training_batch_and_wait()
                     saved_files = agent.save_all_data()
-                    logging.info(f"Data saved after game error: {saved_files}")
+                    logging.info(f"Data saved after episode error: {saved_files}")
                 except Exception as save_error:
-                    logging.error(f"Error saving data after game error: {save_error}")
+                    logging.error(f"Error saving data after episode error: {save_error}")
             finally:
                 stream_reader.stop()
                 
     except KeyboardInterrupt:
         logging.info("Agent interrupted by user.")
+        
+        # Send any remaining episodes before shutdown
+        try:
+            if len(agent.completed_episodes) > 0:
+                logging.info(f"📦 Sending final batch: {len(agent.completed_episodes)} episodes")
+                await agent.send_training_batch_and_wait()
+            saved_files = agent.save_all_data()
+            logging.info(f"💾 Data saved on shutdown: {saved_files}")
+        except Exception as e:
+            logging.error(f"Error during shutdown save: {e}")
+            
     except Exception as e:
         logging.error(f"Error during execution: {e}")
         raise
@@ -236,9 +246,10 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
 def neural_agent(snake_id: str, log_file: str, env_host: str, 
                 model_save_dir: str = "models", learning_rate: float = 0.001,
                 grpc_host: str = "localhost", grpc_port: int = 50051,
-                batch_size: int = 50):
+                batch_size: int = 5):
     """
     Synchronous wrapper for running async gRPC agent.
+    batch_size = number of episodes before sending to training
     """
     try:
         asyncio.run(neural_agent_grpc(
@@ -269,7 +280,7 @@ def load_saved_model(model_path: str):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Neural Snake Agent with gRPC Training")
+    parser = argparse.ArgumentParser(description="Neural Snake Agent with gRPC Training (Episode-based Batching)")
     parser.add_argument("--snake_id", required=True, help="ID of the snake")
     parser.add_argument("--env_host", type=str, required=True, help="Host of the snake game")
     parser.add_argument("--log_file", default="neural_agent.log", help="Path to the log file")
@@ -277,7 +288,7 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=0.001, help="Learning rate for optimizer")
     parser.add_argument("--grpc_host", default="localhost", help="gRPC training service host")
     parser.add_argument("--grpc_port", type=int, default=50051, help="gRPC training service port")
-    parser.add_argument("--batch_size", type=int, default=50, help="Number of experiences before sending to training")
+    parser.add_argument("--batch_size", type=int, default=5, help="Number of episodes before sending to training")
     
     args = parser.parse_args()
     neural_agent(
