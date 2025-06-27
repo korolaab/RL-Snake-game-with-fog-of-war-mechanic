@@ -19,5 +19,5 @@ def setup_logger(name=__name__, level=logging.INFO):
 
 # Пример использования:
 # logger = setup_logger(__name__, logging.DEBUG)
-# logger.info("Logger initialized")
+# logger.info({"message": "Logger initialized"})
 

@@ -76,7 +76,7 @@ class GRPCSnakeAgent:
                     self.channel.channel_ready(), 
                     timeout=10.0
                 )
-                logging.info(f"✅ Connected to training service at {self.grpc_host}:{self.grpc_port}")
+                logging.info({"message": f"✅ Connected to training service at {self.grpc_host}:{self.grpc_port}"})
             except asyncio.TimeoutError:
                 raise ConnectionError("Timeout connecting to training service")
             
@@ -84,13 +84,13 @@ class GRPCSnakeAgent:
             await self._start_model_update_stream()
             
         except Exception as e:
-            logging.error(f"❌ Failed to connect to training service: {e}")
+            logging.error({"message": f"❌ Failed to connect to training service: {e}"})
             raise
     
     async def _start_model_update_stream(self):
         """Start the model update stream in the background."""
         try:
-            logging.info("📡 Starting model update stream...")
+            logging.info({"message": "📡 Starting model update stream..."})
             update_request = training_pb2.ModelUpdateRequest(snake_id=self.snake_id)
             
             # Start streaming in background task
@@ -99,7 +99,7 @@ class GRPCSnakeAgent:
             )
             
         except Exception as e:
-            logging.error(f"Failed to start model update stream: {e}")
+            logging.error({"message": f"Failed to start model update stream: {e}"})
             raise
     
     async def _handle_model_update_stream(self, request):
@@ -107,14 +107,14 @@ class GRPCSnakeAgent:
         try:
             async for model_update in self.training_stub.GetModelUpdates(request):
                 if model_update.snake_id == self.snake_id:
-                    logging.info(f"🔄 Received model update: step {model_update.training_step}")
+                    logging.info({"message": f"🔄 Received model update: step {model_update.training_step}"})
                     # Put the update in the queue for processing
                     await self.pending_model_updates.put(model_update)
                     
         except grpc.RpcError as e:
-            logging.error(f"Model update stream error: {e.code()}: {e.details()}")
+            logging.error({"message": f"Model update stream error: {e.code()}: {e.details()}"})
         except Exception as e:
-            logging.error(f"Model update stream error: {e}")
+            logging.error({"message": f"Model update stream error: {e}"})
     
     async def disconnect_from_training_service(self):
         """Disconnect from the gRPC training service."""
@@ -127,7 +127,7 @@ class GRPCSnakeAgent:
         
         if self.channel:
             await self.channel.close()
-            logging.info("📡 Disconnected from training service")
+            logging.info({"message": "📡 Disconnected from training service"})
     
     def load_existing_model(self):
         """Load existing model at initialization."""
@@ -143,17 +143,17 @@ class GRPCSnakeAgent:
                 self.model_initialized = True
                 self.is_cold_start = False
                 
-                logging.info(f"✅ Loaded existing model: {model_info}")
+                logging.info({"message": f"✅ Loaded existing model: {model_info}"})
                 
                 if model_info['snake_id'] != self.snake_id and model_info['snake_id'] != 'unknown':
-                    logging.warning(f"Loaded model was trained for different snake_id: {model_info['snake_id']}")
+                    logging.warning({"message": f"Loaded model was trained for different snake_id: {model_info['snake_id']}"})
             else:
-                logging.info("🆕 No existing models found. Will create new model on first state (Cold Start).")
+                logging.info({"message": "🆕 No existing models found. Will create new model on first state (Cold Start)."})
                 self.is_cold_start = True
                 
         except Exception as e:
-            logging.error(f"Error loading existing model: {e}")
-            logging.info("Will create new model on first state (Cold Start).")
+            logging.error({"message": f"Error loading existing model: {e}"})
+            logging.info({"message": "Will create new model on first state (Cold Start)."})
             self.is_cold_start = True
     
     def ensure_model_initialized(self, input_size: int):
@@ -165,13 +165,13 @@ class GRPCSnakeAgent:
             )
             self.model_initialized = True
             self.is_cold_start = True
-            logging.info(f"🆕 Created fresh model for cold start, input_size: {input_size}")
+            logging.info({"message": f"🆕 Created fresh model for cold start, input_size: {input_size}"})
         else:
             # Check size compatibility
             if not self.model_manager.validate_input_size(self.model, input_size):
                 actual_size = self.model_manager.get_model_input_size(self.model)
-                logging.warning(f"Input size mismatch. Expected: {actual_size}, Got: {input_size}")
-                logging.info("Recreating model with correct input size...")
+                logging.warning({"message": f"Input size mismatch. Expected: {actual_size}, Got: {input_size}"})
+                logging.info({"message": "Recreating model with correct input size..."})
                 
                 self.model, self.optimizer = self.model_manager.create_new_model(
                     input_size, self.learning_rate
@@ -200,12 +200,12 @@ class GRPCSnakeAgent:
                 self.model.train()  # Set back to training mode
 
             predicted_action = self.actions[action_idx]
-            logging.debug(f"Predicted action: {predicted_action} (probs: {action_probs.numpy()})")
+            logging.debug({"message": f"Predicted action: {predicted_action} (probs: {action_probs.numpy()})"})
             
             return predicted_action
             
         except Exception as e:
-            logging.error(f"Error predicting action: {e}")
+            logging.error({"message": f"Error predicting action: {e}"})
             # Return random action on error
             import random
             return random.choice(self.actions)
@@ -225,7 +225,7 @@ class GRPCSnakeAgent:
         self.total_steps += 1
         self.current_episode_steps += 1
         
-        logging.debug(f"Added experience: action={action}, reward={reward}, episode_steps={self.current_episode_steps}")
+        logging.debug({"message": f"Added experience: action={action}, reward={reward}, episode_steps={self.current_episode_steps}"})
         
         # If episode is done, complete the episode
         if done:
@@ -236,7 +236,7 @@ class GRPCSnakeAgent:
     def _complete_episode(self):
         """Complete the current episode and check if we should send a batch."""
         if not self.current_episode_experiences:
-            logging.warning("No experiences in current episode")
+            logging.warning({"message": "No experiences in current episode"})
             return False
         
         # Create episode summary
@@ -263,18 +263,18 @@ class GRPCSnakeAgent:
         should_send_batch = len(self.completed_episodes) >= self.batch_size
         
         if should_send_batch:
-            logging.info(f"📦 Ready to send batch: {len(self.completed_episodes)} episodes completed")
+            logging.info({"message": f"📦 Ready to send batch: {len(self.completed_episodes)} episodes completed"})
         
         return should_send_batch
     
     async def send_training_batch_and_wait(self):
         """Send training batch via gRPC and wait for model update."""
         if len(self.completed_episodes) == 0:
-            logging.warning("No completed episodes to send")
+            logging.warning({"message": "No completed episodes to send"})
             return False
         
         if not self.model_initialized:
-            logging.warning("Model not initialized, cannot send batch")
+            logging.warning({"message": "Model not initialized, cannot send batch"})
             return False
         
         try:
@@ -282,7 +282,7 @@ class GRPCSnakeAgent:
             total_experiences = sum(len(ep['experiences']) for ep in self.completed_episodes)
             total_episodes = len(self.completed_episodes)
             
-            logging.info(f"📦 Sending training batch via gRPC: {total_episodes} episodes, {total_experiences} experiences")
+            logging.info({"message": f"📦 Sending training batch via gRPC: {total_episodes} episodes, {total_experiences} experiences"})
             
             # Convert all experiences to protobuf format
             proto_experiences = []
@@ -300,9 +300,9 @@ class GRPCSnakeAgent:
             # Serialize model with error handling
             try:
                 model_data = pickle.dumps(self.model)
-                logging.debug(f"Serialized model, size: {len(model_data)} bytes")
+                logging.debug({"message": f"Serialized model, size: {len(model_data)} bytes"})
             except Exception as e:
-                logging.error(f"Failed to serialize model: {e}")
+                logging.error({"message": f"Failed to serialize model: {e}"})
                 return False
             
             # Create training batch request
@@ -324,17 +324,17 @@ class GRPCSnakeAgent:
                     timeout=60.0  # Longer timeout for larger batches
                 )
             except asyncio.TimeoutError:
-                logging.error("❌ Timeout sending training batch")
+                logging.error({"message": "❌ Timeout sending training batch"})
                 return False
             except grpc.RpcError as e:
-                logging.error(f"❌ gRPC error sending batch: {e.code()}: {e.details()}")
+                logging.error({"message": f"❌ gRPC error sending batch: {e.code()}: {e.details()}"})
                 return False
             
             if response.success:
-                logging.info(f"✅ Training batch sent successfully: {response.message}")
+                logging.info({"message": f"✅ Training batch sent successfully: {response.message}"})
                 
                 # Wait for model update from stream
-                logging.info("⏳ Waiting for model update...")
+                logging.info({"message": "⏳ Waiting for model update..."})
                 
                 try:
                     # Wait for model update with timeout
@@ -343,7 +343,7 @@ class GRPCSnakeAgent:
                         timeout=60.0  # Longer timeout for training
                     )
                     
-                    logging.info(f"🔄 Processing model update: step {model_update.training_step}")
+                    logging.info({"message": f"🔄 Processing model update: step {model_update.training_step}"})
                     
                     # Deserialize updated model
                     try:
@@ -358,7 +358,7 @@ class GRPCSnakeAgent:
                         # Update optimizer with new model parameters
                         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
                         
-                        logging.info("✅ Model updated successfully!")
+                        logging.info({"message": "✅ Model updated successfully!"})
                         
                         # Log training metrics
                         metrics = model_update.metrics
@@ -367,14 +367,14 @@ class GRPCSnakeAgent:
                                    f"Episodes: {total_episodes}, Total Experiences: {metrics.num_samples}")
                         
                     except Exception as e:
-                        logging.error(f"Failed to deserialize updated model: {e}")
+                        logging.error({"message": f"Failed to deserialize updated model: {e}"})
                         return False
                     
                 except asyncio.TimeoutError:
-                    logging.error("❌ Timeout waiting for model update")
+                    logging.error({"message": "❌ Timeout waiting for model update"})
                     return False
                 except Exception as e:
-                    logging.error(f"❌ Error getting model update: {e}")
+                    logging.error({"message": f"❌ Error getting model update: {e}"})
                     return False
                 
                 # Clear completed episodes and update counters
@@ -384,15 +384,15 @@ class GRPCSnakeAgent:
                 # After first batch, no longer cold start
                 if self.is_cold_start:
                     self.is_cold_start = False
-                    logging.info("🚀 Cold start completed")
+                    logging.info({"message": "🚀 Cold start completed"})
                 
                 return True
             else:
-                logging.error(f"❌ Training batch failed: {response.message}")
+                logging.error({"message": f"❌ Training batch failed: {response.message}"})
                 return False
                 
         except Exception as e:
-            logging.error(f"Error sending training batch via gRPC: {e}")
+            logging.error({"message": f"Error sending training batch via gRPC: {e}"})
             return False
     
     def save_experience(self, state, reward, action):
@@ -406,7 +406,7 @@ class GRPCSnakeAgent:
             
             # If we have a partial current episode, complete it
             if self.current_episode_experiences:
-                logging.info(f"🎮 Completing partial episode {self.current_episode} with {len(self.current_episode_experiences)} experiences")
+                logging.info({"message": f"🎮 Completing partial episode {self.current_episode} with {len(self.current_episode_experiences)} experiences"})
                 # Mark last experience as done to complete episode
                 if self.current_episode_experiences:
                     self.current_episode_experiences[-1]['done'] = True
@@ -425,14 +425,14 @@ class GRPCSnakeAgent:
             
             # Output statistics
             stats = self.data_manager.get_statistics()
-            logging.info(f"📊 Game session completed. Statistics: {stats}")
-            logging.info(f"📈 Total episodes completed: {self.current_episode}")
-            logging.info(f"📈 Total steps across all episodes: {self.total_steps}")
+            logging.info({"message": f"📊 Game session completed. Statistics: {stats}"})
+            logging.info({"message": f"📈 Total episodes completed: {self.current_episode}"})
+            logging.info({"message": f"📈 Total steps across all episodes: {self.total_steps}"})
             
             return saved_files
             
         except Exception as e:
-            logging.error(f"Error saving data: {e}")
+            logging.error({"message": f"Error saving data: {e}"})
             raise
     
     def get_model_info(self):

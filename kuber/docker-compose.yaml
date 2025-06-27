@@ -11,6 +11,7 @@ services:
     command: ["python","app.py","--fps","100","--seed","1"]
     environment:
       - PYTHONUNBUFFERED=1
+      - ENABLE_CONSOLE_LOGS="true"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:5000"]
       interval: 30s
@@ -41,6 +42,7 @@ services:
     ]
     environment:
       - PYTHONUNBUFFERED=1
+      - ENABLE_CONSOLE_LOGS="true"
     volumes:
       - shared-output:/output
       - ./shared/configs:/configs:ro
@@ -72,6 +74,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - ENV_HOST=env:5000
+      - ENABLE_CONSOLE_LOGS="true"
     volumes:
       - shared-output:/output
       - ./shared/configs:/configs:ro

@@ -30,7 +30,7 @@ class StateProcessor:
         filtered_cells = {k: v for k, v in visible_cells.items() if v != 'HEAD'}
         
         if not filtered_cells:
-            logging.warning("No visible cells found (excluding HEAD)")
+            logging.warning({"message": "No visible cells found (excluding HEAD)"})
             return torch.zeros(1, 3)  # если нет видимых ячеек
         
         # Сортируем ячейки по координатам (x, y)
@@ -40,11 +40,11 @@ class StateProcessor:
                 x, y = map(int, coord_str.split(','))
                 sorted_cells.append((x, y, cell_type))
             except ValueError:
-                logging.warning(f"Invalid coordinate format: {coord_str}")
+                logging.warning({"message": f"Invalid coordinate format: {coord_str}"})
                 continue
         
         if not sorted_cells:
-            logging.warning("No valid coordinates found")
+            logging.warning({"message": "No valid coordinates found"})
             return torch.zeros(1, 3)
         
         # Сортируем по x, затем по y
@@ -60,7 +60,7 @@ class StateProcessor:
             return torch.zeros(1, 3)
         
         result = torch.tensor(tensor_data, dtype=torch.float32)
-        logging.debug(f"Processed state: {len(sorted_cells)} cells -> tensor shape {result.shape}")
+        logging.debug({"message": f"Processed state: {len(sorted_cells)} cells -> tensor shape {result.shape}"})
         
         return result
     

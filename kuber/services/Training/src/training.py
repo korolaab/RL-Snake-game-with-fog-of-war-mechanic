@@ -13,6 +13,8 @@ from typing import List, Dict, Tuple
 import argparse
 import traceback
 from concurrent import futures
+import logging
+import logger
 
 # Import generated protobuf classes
 try:
@@ -73,9 +75,9 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
         
         if is_cold_start:
-            logging.info("🆕 Received fresh model from cold start inference")
+            logging.info({"message": "🆕 Received fresh model from cold start inference"})
         else:
-            logging.info("🔄 Received existing model from inference")
+            logging.info({"message": "🔄 Received existing model from inference"})
     
     def organize_experiences_by_episodes(self, experiences: List[training_pb2.Experience]) -> List[List[Dict]]:
         """Organize experiences into separate episodes based on 'done' flag."""
@@ -87,7 +89,7 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
             try:
                 state = json.loads(exp.state_json)
             except json.JSONDecodeError as e:
-                logging.warning(f"Failed to parse state JSON: {e}")
+                logging.warning({"message": f"Failed to parse state JSON: {e}"})
                 continue
             
             experience_dict = {
@@ -108,13 +110,13 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
         
         # Add any remaining experiences as the last episode (shouldn't happen but defensive)
         if current_episode:
-            logging.warning(f"Found incomplete episode with {len(current_episode)} experiences")
+            logging.warning({"message": f"Found incomplete episode with {len(current_episode)} experiences"})
             episodes.append(current_episode)
         
-        logging.info(f"📊 Organized {len(experiences)} experiences into {len(episodes)} episodes")
+        logging.info({"message": f"📊 Organized {len(experiences)} experiences into {len(episodes)} episodes"})
         for i, episode in enumerate(episodes):
             total_reward = sum(exp['reward'] for exp in episode)
-            logging.info(f"  Episode {i+1}: {len(episode)} steps, total_reward={total_reward}")
+            logging.info({"message": f"  Episode {i+1}: {len(episode)} steps, total_reward={total_reward}"})
         
         return episodes
     
@@ -189,7 +191,7 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
                 episode_rewards.append(reward)
             
             if not episode_states:
-                logging.warning(f"No valid states in episode {episode_idx}")
+                logging.warning({"message": f"No valid states in episode {episode_idx}"})
                 continue
             
             # Calculate discounted returns for this episode (REINFORCE style)
@@ -237,23 +239,23 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
         actions_tensor = torch.tensor(all_actions, dtype=torch.long)
         returns_tensor = torch.tensor(all_returns, dtype=torch.float32)
         
-        logging.info(f"📊 Final batch: {len(all_states)} transitions from {len(episodes)} episodes")
-        logging.info(f"   States shape: {states_tensor.shape}")
-        logging.info(f"   Actions shape: {actions_tensor.shape}")
-        logging.info(f"   Returns shape: {returns_tensor.shape}")
-        logging.info(f"   Return stats: mean={returns_tensor.mean():.3f}, std={returns_tensor.std():.3f}")
+        logging.info({"message": f"📊 Final batch: {len(all_states)} transitions from {len(episodes)} episodes"})
+        logging.info({"message": f"   States shape: {states_tensor.shape}"})
+        logging.info({"message": f"   Actions shape: {actions_tensor.shape}"})
+        logging.info({"message": f"   Returns shape: {returns_tensor.shape}"})
+        logging.info({"message": f"   Return stats: mean={returns_tensor.mean():.3f}, std={returns_tensor.std():.3f}"})
         
         return states_tensor, actions_tensor, returns_tensor, max_length
     
     def perform_training_step(self, states: torch.Tensor, actions: torch.Tensor, returns: torch.Tensor, input_size: int) -> Dict[str, float]:
         """Perform one REINFORCE training step on episode batch."""
-        logging.info(f"🏋️ Training step {self.training_step + 1} starting...")
+        logging.info({"message": f"🏋️ Training step {self.training_step + 1} starting..."})
         
         if self.model is None:
             # Create fallback model
             self.model = SimpleModel(input_size)
             self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
-            logging.info(f"Created fallback model with input_size: {input_size}")
+            logging.info({"message": f"Created fallback model with input_size: {input_size}"})
         
         try:
             # Forward pass through policy network
@@ -308,21 +310,21 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
                 }
             
             self.training_step += 1
-            logging.info(f"✅ Training step {self.training_step} completed!")
-            logging.info(f"   Policy Loss: {policy_loss.item():.4f}, Entropy: {entropy.item():.4f}")
-            logging.info(f"   Avg Return: {avg_return.item():.3f}, Max Action Prob: {max_action_prob.item():.3f}")
-            logging.info(f"   Action Distribution - Left: {action_distribution[2]:.2f}, Right: {action_distribution[1]:.2f}, Forward: {action_distribution[0]:.2f}")
+            logging.info({"message": f"✅ Training step {self.training_step} completed!"})
+            logging.info({"message": f"   Policy Loss: {policy_loss.item():.4f}, Entropy: {entropy.item():.4f}"})
+            logging.info({"message": f"   Avg Return: {avg_return.item():.3f}, Max Action Prob: {max_action_prob.item():.3f}"})
+            logging.info({"message": f"   Action Distribution - Left: {action_distribution[2]:.2f}, Right: {action_distribution[1]:.2f}, Forward: {action_distribution[0]:.2f}"})
             
             return metrics
             
         except Exception as e:
-            logging.error(f"Error during training step: {e}")
+            logging.error({"message": f"Error during training step: {e}"})
             raise
     
     async def SendTrainingBatch(self, request: training_pb2.TrainingBatchRequest, context) -> training_pb2.TrainingBatchResponse:
         """Handle training batch request with proper episode processing."""
         try:
-            logging.info(f"📦 Received training batch: {len(request.experiences)} experiences")
+            logging.info({"message": f"📦 Received training batch: {len(request.experiences)} experiences"})
             
             # Deserialize model with error handling
             try:
@@ -330,7 +332,7 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
                 if not isinstance(model, torch.nn.Module):
                     raise ValueError(f"Deserialized object is not a PyTorch model: {type(model)}")
             except Exception as e:
-                logging.error(f"Failed to deserialize model: {e}")
+                logging.error({"message": f"Failed to deserialize model: {e}"})
                 return training_pb2.TrainingBatchResponse(
                     success=False,
                     message=f"Model deserialization failed: {str(e)}",
@@ -346,7 +348,7 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
                 if not episodes:
                     raise ValueError("No valid episodes found")
             except Exception as e:
-                logging.error(f"Failed to organize episodes: {e}")
+                logging.error({"message": f"Failed to organize episodes: {e}"})
                 return training_pb2.TrainingBatchResponse(
                     success=False,
                     message=f"Episode organization failed: {str(e)}",
@@ -357,7 +359,7 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
             try:
                 states, actions, returns, input_size = self.process_episodes_for_training(episodes)
             except Exception as e:
-                logging.error(f"Failed to process episodes: {e}")
+                logging.error({"message": f"Failed to process episodes: {e}"})
                 return training_pb2.TrainingBatchResponse(
                     success=False,
                     message=f"Episode processing failed: {str(e)}",
@@ -368,7 +370,7 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
             try:
                 metrics = self.perform_training_step(states, actions, returns, input_size)
             except Exception as e:
-                logging.error(f"Training step failed: {e}")
+                logging.error({"message": f"Training step failed: {e}"})
                 return training_pb2.TrainingBatchResponse(
                     success=False,
                     message=f"Training failed: {str(e)}",
@@ -401,13 +403,13 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
                     for queue in self.model_update_queues[request.snake_id]:
                         try:
                             await asyncio.wait_for(queue.put(model_update), timeout=1.0)
-                            logging.info(f"📤 Queued model update for {request.snake_id}: step {self.training_step}")
+                            logging.info({"message": f"📤 Queued model update for {request.snake_id}: step {self.training_step}"})
                         except asyncio.TimeoutError:
-                            logging.warning(f"Timeout queuing model update for {request.snake_id}")
+                            logging.warning({"message": f"Timeout queuing model update for {request.snake_id}"})
                         except Exception as e:
-                            logging.warning(f"Error queuing model update: {e}")
+                            logging.warning({"message": f"Error queuing model update: {e}"})
                 
-                logging.info(f"📊 Training completed successfully on {len(episodes)} episodes")
+                logging.info({"message": f"📊 Training completed successfully on {len(episodes)} episodes"})
                 
                 return training_pb2.TrainingBatchResponse(
                     success=True,
@@ -416,7 +418,7 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
                 )
                 
             except Exception as e:
-                logging.error(f"Failed to create model update: {e}")
+                logging.error({"message": f"Failed to create model update: {e}"})
                 return training_pb2.TrainingBatchResponse(
                     success=False,
                     message=f"Model update creation failed: {str(e)}",
@@ -424,8 +426,8 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
                 )
             
         except Exception as e:
-            logging.error(f"Error processing training batch: {e}")
-            logging.error(f"Traceback: {traceback.format_exc()}")
+            logging.error({"message": f"Error processing training batch: {e}"})
+            logging.error({"message": f"Traceback: {traceback.format_exc()}"})
             return training_pb2.TrainingBatchResponse(
                 success=False,
                 message=f"Training failed: {str(e)}",
@@ -434,7 +436,7 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
     
     async def GetModelUpdates(self, request: training_pb2.ModelUpdateRequest, context):
         """Stream model updates to inference."""
-        logging.info(f"📡 Starting model update stream for {request.snake_id}")
+        logging.info({"message": f"📡 Starting model update stream for {request.snake_id}"})
         
         # Create a queue for this specific stream
         update_queue = asyncio.Queue()
@@ -449,16 +451,16 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
                 # Wait for model updates
                 try:
                     model_update = await update_queue.get()
-                    logging.info(f"📤 Streaming model update: step {model_update.training_step}")
+                    logging.info({"message": f"📤 Streaming model update: step {model_update.training_step}"})
                     yield model_update
                 except Exception as e:
-                    logging.error(f"Error getting model update from queue: {e}")
+                    logging.error({"message": f"Error getting model update from queue: {e}"})
                     break
                 
         except asyncio.CancelledError:
-            logging.info(f"Model update stream cancelled for {request.snake_id}")
+            logging.info({"message": f"Model update stream cancelled for {request.snake_id}"})
         except Exception as e:
-            logging.error(f"Error in model update stream: {e}")
+            logging.error({"message": f"Error in model update stream: {e}"})
         finally:
             # Clean up: remove this queue from the snake's queue list
             if request.snake_id in self.model_update_queues:
@@ -468,7 +470,7 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
                         del self.model_update_queues[request.snake_id]
                 except ValueError:
                     pass  # Queue already removed
-            logging.info(f"📡 Model update stream ended for {request.snake_id}")
+            logging.info({"message": f"📡 Model update stream ended for {request.snake_id}"})
 
 async def serve(port: int, snake_id: str, learning_rate: float):
     """Start the gRPC server."""
@@ -481,18 +483,18 @@ async def serve(port: int, snake_id: str, learning_rate: float):
     # Add the service
     training_pb2_grpc.add_TrainingServiceServicer_to_server(training_service, server)
     
-    logging.info(f"🚀 Starting gRPC training server on port {port}")
+    logging.info({"message": f"🚀 Starting gRPC training server on port {port}"})
     
     listen_addr = f'[::]:{port}'
     server.add_insecure_port(listen_addr)
     
     await server.start()
-    logging.info(f"✅ gRPC server started and listening on {listen_addr}")
+    logging.info({"message": f"✅ gRPC server started and listening on {listen_addr}"})
     
     try:
         await server.wait_for_termination()
     except KeyboardInterrupt:
-        logging.info("🛑 Shutting down gRPC server...")
+        logging.info({"message": "🛑 Shutting down gRPC server..."})
         await server.stop(5)
 
 async def main():
@@ -504,7 +506,7 @@ async def main():
     
     args = parser.parse_args()
     
-    setup_logger(args.log_file)
+    logger.setup_as_default()
     
     await serve(args.port, args.snake_id, args.learning_rate)
 

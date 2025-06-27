@@ -43,7 +43,7 @@ class ModelManager:
         self.input_size = input_size
         model = SnakeNet(self.input_size)
         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-        logging.info(f"Created new model with input size: {input_size}")
+        logging.info({"message": f"Created new model with input size: {input_size}"})
         return model, optimizer
     
     def find_latest_model(self, snake_id: str = None):
@@ -59,17 +59,17 @@ class ModelManager:
         if not model_files:                                                     
             # If no models found for specific snake, search for any models         
             if snake_id:                                                        
-                logging.info(f"No ONNX models found for snake_id={snake_id}, searching for any models...")
+                logging.info({"message": f"No ONNX models found for snake_id={snake_id}, searching for any models..."})
                 return self.find_latest_model(snake_id=None)                    
             else:                                                               
-                logging.info("No saved ONNX models found.")                          
+                logging.info({"message": "No saved ONNX models found."})                          
                 return None                                                     
                                                                                 
         # Sort by file creation time (newest last)           
         model_files.sort(key=lambda x: os.path.getctime(x))                     
         latest_model = model_files[-1]                                          
                                                                                 
-        logging.info(f"Found latest ONNX model: {latest_model}")                     
+        logging.info({"message": f"Found latest ONNX model: {latest_model}"})                     
         return latest_model
 
     def load_latest_model(self, snake_id: str, learning_rate: float = 0.001): 
@@ -77,7 +77,7 @@ class ModelManager:
         latest_model_path = self.find_latest_model(snake_id)                    
                                                                                 
         if latest_model_path is None:                                           
-            logging.info("No existing ONNX models found.")                           
+            logging.info({"message": "No existing ONNX models found."})                           
             return None, None, None                                             
                                                                                 
         return self.load_onnx_model(latest_model_path, learning_rate)
@@ -108,9 +108,9 @@ class ModelManager:
                 
                 if first_layer:
                     self.input_size = first_layer.in_features
-                    logging.info(f"Detected model input size: {self.input_size}")
+                    logging.info({"message": f"Detected model input size: {self.input_size}"})
             except:
-                logging.warning("Could not detect input size from loaded model")
+                logging.warning({"message": "Could not detect input size from loaded model"})
             
             # Check for accompanying state file
             state_path = Path(model_path).with_suffix('.pth')
@@ -132,17 +132,17 @@ class ModelManager:
                         model_info['snake_id'] = checkpoint['snake_id']
                     if 'timestamp' in checkpoint:
                         model_info['timestamp'] = checkpoint['timestamp']
-                    logging.info(f"Loaded training state from {state_path}")
+                    logging.info({"message": f"Loaded training state from {state_path}"})
                 except Exception as e:
-                    logging.warning(f"Could not load training state: {e}")
+                    logging.warning({"message": f"Could not load training state: {e}"})
             
-            logging.info(f"Successfully loaded ONNX model from {model_path}")
+            logging.info({"message": f"Successfully loaded ONNX model from {model_path}"})
             
             return pytorch_model, optimizer, model_info
             
         except Exception as e:
-            logging.error(f"Failed to load ONNX model from {model_path}: {e}")
-            logging.error(f"Error details: {str(e)}")
+            logging.error({"message": f"Failed to load ONNX model from {model_path}: {e}"})
+            logging.error({"message": f"Error details: {str(e)}"})
             return None, None, None 
 
     def save_model(self, model, optimizer, snake_id: str, additional_data: dict = None):
@@ -166,7 +166,7 @@ class ModelManager:
                 input_size = self.get_model_input_size(model)
                 if input_size is None:
                     input_size = 64  # Default fallback
-                    logging.warning(f"Using fallback input size: {input_size}")
+                    logging.warning({"message": f"Using fallback input size: {input_size}"})
             
             # Create dummy input for tracing
             dummy_input = torch.randn(1, input_size)
@@ -206,8 +206,8 @@ class ModelManager:
             onnx_model = onnx.load(onnx_model_path)
             onnx.checker.check_model(onnx_model)
             
-            logging.info(f"ONNX model saved to: {onnx_model_path}")
-            logging.info(f"Training state saved to: {state_path}")
+            logging.info({"message": f"ONNX model saved to: {onnx_model_path}"})
+            logging.info({"message": f"Training state saved to: {state_path}"})
             
             # Set model back to training mode
             model.train()
@@ -215,7 +215,7 @@ class ModelManager:
             return onnx_model_path
         
         except Exception as e:
-            logging.error(f"Failed to save model as ONNX: {e}")
+            logging.error({"message": f"Failed to save model as ONNX: {e}"})
             return None
     
     def get_model_input_size(self, model):

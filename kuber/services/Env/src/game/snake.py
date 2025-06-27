@@ -35,7 +35,7 @@ class SnakeGame:
         self.snake = spawn_positions
         self.direction = spawn_direction
         self.ticks = 0
-        logging.info(f"Snake {self.snake_id} spawned at {self.snake[0]} dir={self.direction}")
+        logging.info({"message": f"Snake {self.snake_id} spawned at {self.snake[0]} dir={self.direction}"})
 
     def relative_turn(self, cmd):
         if cmd == 'left':

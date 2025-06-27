@@ -8,9 +8,8 @@ from routes.snake import snake_bp
 from routes.state import state_bp
 from routes.errors import errors_bp
 from collections import defaultdict
+import logger
 
-# Логирование (если есть отдельная функция, импортируй её из utils.logger)
-logging.basicConfig(level=logging.INFO)
 
 # Аргументы командной строки
 args = parse_args()
@@ -36,6 +35,12 @@ game_manager = GameManager(
 
 # Создание приложения
 app = Flask(__name__)
+
+if not logger.is_setup():
+    logger.setup_as_default(
+        flask_app=app
+    )
+
 CORS(app)
 
 # Передаём game_manager в app.config

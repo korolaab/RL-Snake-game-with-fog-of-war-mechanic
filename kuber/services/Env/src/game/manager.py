@@ -91,7 +91,7 @@ class GameManager:
         self.snake_locks.clear()
         self.FOODS.clear()
         self.spawn_food()
-        logging.info("Game reset: all snakes removed, food respawned.")
+        logging.info({"message": "Game reset: all snakes removed, food respawned."})
 
     def add_snake(self, snake_id):
         if len(self.snakes) >= self.MAX_SNAKES:
