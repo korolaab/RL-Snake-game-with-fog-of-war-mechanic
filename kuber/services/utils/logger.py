@@ -28,8 +28,13 @@ class DictJSONFormatter(logging.Formatter):
         self.run_id = run_id
     
     def format(self, record):
-        # Get timestamp (fix deprecation warning)
-        timestamp = datetime.now(timezone.utc).isoformat()
+        # Get timestamp with nanosecond precision
+        now = datetime.now(timezone.utc)
+        # Get nanoseconds from time.time_ns()
+        nanoseconds = time.time_ns() % 1_000_000_000  # Get nanosecond part
+        # Format with microseconds and add nanoseconds
+        timestamp_base = now.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]  # Remove last 3 digits of microseconds
+        timestamp = f"{timestamp_base}{nanoseconds:03d}+00:00"  # Add nanoseconds and timezone
         
         # Get the dictionary from the log record
         if hasattr(record, 'dict_data') and isinstance(record.dict_data, dict):
@@ -217,8 +222,13 @@ class DictJSONHandler(logging.Handler):
     
     def _do_emit(self, record):
         """Internal emit method without locking"""
-        # Get timestamp (fix deprecation warning)
-        timestamp = datetime.now(timezone.utc).isoformat()
+        # Get timestamp with nanosecond precision
+        now = datetime.now(timezone.utc)
+        # Get nanoseconds from time.time_ns()
+        nanoseconds = time.time_ns() % 1_000_000_000  # Get nanosecond part
+        # Format with microseconds and add nanoseconds
+        timestamp_base = now.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]  # Remove last 3 digits of microseconds
+        timestamp = f"{timestamp_base}{nanoseconds:03d}+00:00"  # Add nanoseconds and timezone
         
         # Process the message - FIXED DICT HANDLING
         if isinstance(record.msg, dict):
@@ -365,7 +375,13 @@ def setup_as_default(experiment_name: str = None,
     
     # Create debug messages using our JSON format
     def debug_log(message, **data):
-        timestamp = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(timezone.utc)
+        # Get nanoseconds from time.time_ns()
+        nanoseconds = time.time_ns() % 1_000_000_000  # Get nanosecond part
+        # Format with microseconds and add nanoseconds
+        timestamp_base = now.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]  # Remove last 3 digits of microseconds
+        timestamp = f"{timestamp_base}{nanoseconds:03d}+00:00"  # Add nanoseconds and timezone
+        
         log_entry = {
             "experiment_name": _default_experiment_name,
             "run_id": _default_run_id,
