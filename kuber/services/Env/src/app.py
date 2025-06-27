@@ -36,10 +36,18 @@ game_manager = GameManager(
 # Создание приложения
 app = Flask(__name__)
 
-if not logger.is_setup():
-    logger.setup_as_default(
-        flask_app=app
-    )
+import sys
+logger.setup_as_default(flask_app=app)
+
+
+# Manual test right after setup
+sys.stdout.write("=== MANUAL TEST START ===\n")
+sys.stdout.flush()
+
+logging.info({"message": "Manual test after setup"})
+
+sys.stdout.write("=== MANUAL TEST END ===\n")
+sys.stdout.flush()
 
 CORS(app)
 
