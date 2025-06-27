@@ -295,9 +295,12 @@ def setup_as_default(experiment_name: str = None,
     final_log_file = log_file or os.getenv('LOG_FILE')
     final_log_level = os.getenv('LOG_LEVEL', log_level)
     
-    # Handle enable_stdout from env var
+    # Handle enable_stdout from env var - FIX: strip quotes
     if enable_stdout is None:
-        enable_stdout = os.getenv('ENABLE_CONSOLE_LOGS', 'true').lower() == 'true'
+        env_val = os.getenv('ENABLE_CONSOLE_LOGS', 'true')
+        # Strip quotes if present
+        env_val = env_val.strip().strip('"').strip("'").lower()
+        enable_stdout = env_val == 'true'
     
     # Auto-enable thread safety for Flask, otherwise disable by default
     if thread_safe is None:
@@ -360,19 +363,40 @@ def setup_as_default(experiment_name: str = None,
     sys.stdout.write(status_msg + '\n')
     sys.stdout.flush()
     
-    # DEBUG: Check logger configuration
-    sys.stdout.write(f"DEBUG: Root logger level: {root_logger.level} (INFO={logging.INFO})\n")
-    sys.stdout.write(f"DEBUG: Root logger effective level: {root_logger.getEffectiveLevel()}\n")
-    sys.stdout.write(f"DEBUG: Handler count: {len(root_logger.handlers)}\n")
-    sys.stdout.write(f"DEBUG: Final log level string: '{final_log_level}'\n")
-    sys.stdout.write(f"DEBUG: Parsed log level: {getattr(logging, final_log_level.upper())}\n")
+    # Create debug messages using our JSON format
+    def debug_log(message, **data):
+        timestamp = datetime.now(timezone.utc).isoformat()
+        log_entry = {
+            "experiment_name": _default_experiment_name,
+            "run_id": _default_run_id,
+            "level": "DEBUG",
+            "message": message,
+            **data
+        }
+        json_str = json.dumps(log_entry, separators=(',', ':'))
+        sys.stdout.write(f"{timestamp} {json_str}\n")
+        sys.stdout.flush()
+    
+    # DEBUG: Check logger configuration using JSON format
+    debug_log("Logger configuration check", 
+              root_logger_level=root_logger.level,
+              info_level=logging.INFO,
+              effective_level=root_logger.getEffectiveLevel(),
+              handler_count=len(root_logger.handlers),
+              final_log_level=final_log_level,
+              parsed_log_level=getattr(logging, final_log_level.upper()),
+              enable_console_logs_env=os.getenv('ENABLE_CONSOLE_LOGS'),
+              enable_stdout_processed=enable_stdout)
+    
     for i, h in enumerate(root_logger.handlers):
-        sys.stdout.write(f"DEBUG: Handler {i}: {type(h).__name__}, enable_console: {getattr(h, 'enable_console', 'N/A')}\n")
-    sys.stdout.flush()
+        debug_log(f"Handler {i} configuration",
+                  handler_type=type(h).__name__,
+                  enable_console=getattr(h, 'enable_console', None),
+                  enable_file=getattr(h, 'enable_file', None),
+                  log_filename=getattr(h, 'log_filename', None))
     
     # IMMEDIATE TEST - Force direct call to handler
-    sys.stdout.write("DEBUG: Testing handler directly...\n")
-    sys.stdout.flush()
+    debug_log("Testing handler directly")
     
     # Test with INFO level (should work)
     try:
@@ -382,22 +406,18 @@ def setup_as_default(experiment_name: str = None,
             args=(), exc_info=None
         )
         handler._do_emit(test_record)
-        sys.stdout.write("DEBUG: Direct handler call completed\n")
-        sys.stdout.flush()
+        debug_log("Direct handler call completed successfully")
     except Exception as e:
-        sys.stdout.write(f"DEBUG: Direct handler call failed: {e}\n")
-        sys.stdout.flush()
+        debug_log("Direct handler call failed", error=str(e))
     
     # Test normal logging
-    sys.stdout.write("DEBUG: Testing normal logging calls...\n")
-    sys.stdout.flush()
+    debug_log("Testing normal logging calls")
     
     root_logger.error({"message": "ERROR level test", "should": "appear"})
     root_logger.warning({"message": "WARNING level test", "should": "appear"})
     root_logger.info({"message": "INFO level test", "should": "appear"})
     
-    sys.stdout.write("DEBUG: Normal logging test completed\n")
-    sys.stdout.flush()
+    debug_log("Normal logging test completed")
 
 def get_logger(name: Optional[str] = None):
     """
