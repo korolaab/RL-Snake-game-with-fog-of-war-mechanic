@@ -5,7 +5,8 @@ services:
     build:
       context: ./services/Env
       dockerfile: Dockerfile
-    container_name: rl-env
+    container_name: env
+    hostname: env
     ports:
       - "5000:5000"
     command: ["python","app.py","--fps","100","--seed","1"]
@@ -29,7 +30,8 @@ services:
     build:
       context: ./services/Training
       dockerfile: Dockerfile
-    container_name: rl-training
+    container_name: training
+    hostname: training
     depends_on:
       env:
         condition: service_healthy
@@ -57,7 +59,8 @@ services:
     build:
       context: ./services/Inference
       dockerfile: Dockerfile
-    container_name: rl-inference
+    container_name: inference
+    hostname: inference
     depends_on:
       env:
         condition: service_healthy

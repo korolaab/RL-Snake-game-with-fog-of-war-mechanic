@@ -26,7 +26,7 @@ def get_state_stream(base_url):
                 data = json.loads(decoded)
                 yield data
             except json.JSONDecodeError:
-                logging.warning({"message": f"Failed to parse JSON: {decoded}"})
+                logging.warning({"event": "failed_to_parse_json", "data": decoded})
 
 def send_move(move_url, move: str):
     """Отправка управляющего действия."""
@@ -35,20 +35,20 @@ def send_move(move_url, move: str):
     try:
         response = requests.post(move_url, json=payload, headers=headers)
         response.raise_for_status()
-        logging.info({"message": f"Sent move: {move}"})
+        logging.info({"event": "sent_move", "move": move})
     except requests.RequestException as e:
-        logging.error({"message": f"Error sending move: {e}"})
+        logging.error({"event": "error_sending_move", "exception": e})
 
 def random_agent(snake_id: str, log_file: str, env_host:str):
     setup_logger(log_file)
     base_url = f"http://{env_host}/snake/{snake_id}"
     move_url = f"{base_url}/move"
-    logging.info({"message": f"Starting agent for snake_id={snake_id}"})
+    logging.info({"event": "starting_agent", "snake_id": snake_id})
 
     for data in get_state_stream(base_url):
-        logging.info({"message": f"Current state: {data}"})
+        logging.info({"event": "current_state", "data": data})
         if data.get("game_over"):
-            logging.info({"message": "Game over."})
+            logging.info({"event": "game_over"})
             break
         move = random.choice(["left", "right", "forward"])
         if move != "forward":

@@ -41,5 +41,5 @@ def service_unavailable(error):
 @errors_bp.app_errorhandler(Exception)
 def handle_exception(error):
     error_trace = traceback.format_exc()
-    logging.error({"message": f"An error occurred: {error_trace}"})
+    logging.error({"event": "error_occurred", "error_trace": error_trace})
     return make_error_response('Internal server error', 500)

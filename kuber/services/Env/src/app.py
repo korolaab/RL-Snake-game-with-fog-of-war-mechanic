@@ -44,7 +44,7 @@ logger.setup_as_default(flask_app=app)
 sys.stdout.write("=== MANUAL TEST START ===\n")
 sys.stdout.flush()
 
-logging.info({"message": "Manual test after setup"})
+logging.info({"event": "manual_test_after_setup"})
 
 sys.stdout.write("=== MANUAL TEST END ===\n")
 sys.stdout.flush()

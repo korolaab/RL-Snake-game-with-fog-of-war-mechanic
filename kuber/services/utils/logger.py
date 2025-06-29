@@ -22,10 +22,11 @@ from typing import Dict, Any, Optional
 class DictJSONFormatter(logging.Formatter):
     """Formatter that takes dict input and adds timestamp + metadata"""
     
-    def __init__(self, experiment_name: str, run_id: str):
+    def __init__(self, experiment_name: str, run_id: str, container: str):
         super().__init__()
         self.experiment_name = experiment_name
         self.run_id = run_id
+        self.container = container
     
     def format(self, record):
         # Get timestamp with nanosecond precision
@@ -45,6 +46,7 @@ class DictJSONFormatter(logging.Formatter):
             log_entry.update({
                 "experiment_name": self.experiment_name,
                 "run_id": self.run_id,
+                "container": self.container,
                 "level": record.levelname
             })
         else:
@@ -52,6 +54,7 @@ class DictJSONFormatter(logging.Formatter):
             log_entry = {
                 "experiment_name": self.experiment_name,
                 "run_id": self.run_id,
+                "container": self.container,
                 "level": record.levelname,
                 "message": record.getMessage()
             }
@@ -172,6 +175,7 @@ def create_logger(experiment_name: str,
 # Global configuration for default logging
 _default_experiment_name = None
 _default_run_id = None
+_default_container = None
 _is_default_setup = False
 
 class DefaultLogAdapter(logging.LoggerAdapter):
@@ -192,6 +196,7 @@ class DictJSONHandler(logging.Handler):
         super().__init__()
         self.experiment_name = _default_experiment_name or "default_exp"
         self.run_id = _default_run_id or f"run_{int(time.time())}"
+        self.container = _default_container or "unknown"
         
         # Thread lock only if requested (for Flask/multi-threaded apps)
         self._lock = threading.Lock() if thread_safe else None
@@ -242,6 +247,7 @@ class DictJSONHandler(logging.Handler):
         log_entry.update({
             "experiment_name": self.experiment_name,
             "run_id": self.run_id,
+            "container": self.container,
             "level": record.levelname
         })
         
@@ -268,6 +274,7 @@ class DictJSONHandler(logging.Handler):
 
 def setup_as_default(experiment_name: str = None, 
                      run_id: Optional[str] = None,
+                     container: str = None,
                      log_file: Optional[str] = None,
                      log_level: str = "INFO",
                      enable_stdout: bool = None,
@@ -279,6 +286,7 @@ def setup_as_default(experiment_name: str = None,
     Args:
         experiment_name: Name of the experiment (defaults to env var EXPERIMENT_NAME or 'default_exp')
         run_id: Optional run ID. If None, uses env var RUN_ID or auto-generated
+        container: Container/service name (defaults to env var CONTAINER_NAME or auto-detect)
         log_file: Optional file path for logging (can use env var LOG_FILE)
         log_level: Log level (defaults to env var LOG_LEVEL or 'INFO')
         enable_stdout: Whether to output to console (defaults to env var ENABLE_CONSOLE_LOGS or True)
@@ -287,19 +295,29 @@ def setup_as_default(experiment_name: str = None,
     
     Usage:
         # Single-threaded services (training, inference):
-        rl_logger.setup_as_default()  # No threading overhead
+        rl_logger.setup_as_default(container="training")
         
         # Flask/multi-threaded services:
-        rl_logger.setup_as_default(flask_app=app)  # Thread-safe enabled
+        rl_logger.setup_as_default(container="env", flask_app=app)
         
-        # Force thread safety:
-        rl_logger.setup_as_default(thread_safe=True)
+        # Auto-detect container from environment:
+        rl_logger.setup_as_default()  # Uses CONTAINER_NAME env var
     """
-    global _default_experiment_name, _default_run_id, _is_default_setup
+    global _default_experiment_name, _default_run_id, _default_container, _is_default_setup
     
     # Get values from env vars with fallbacks
     _default_experiment_name = experiment_name or os.getenv('EXPERIMENT_NAME', 'default_exp')
     _default_run_id = run_id or os.getenv('RUN_ID', f"run_{int(time.time())}_{uuid.uuid4().hex[:6]}")
+    
+    # Auto-detect container name from various sources
+    if container is None:
+        container = (
+            os.getenv('CONTAINER_NAME') or           # Explicit env var
+            os.getenv('HOSTNAME', '').split('.')[0] or  # Docker hostname
+            os.path.basename(sys.argv[0]).replace('.py', '') or  # Script name
+            'unknown'
+        )
+    _default_container = container
     
     # Get other settings from env vars if not provided
     final_log_file = log_file or os.getenv('LOG_FILE')
@@ -354,7 +372,7 @@ def setup_as_default(experiment_name: str = None,
         werkzeug_logger.addHandler(handler)  # Use same handler
         werkzeug_logger.propagate = False
     
-    status_msg = f"✅ Default logging setup - Experiment: {_default_experiment_name}, Run: {_default_run_id}"
+    status_msg = f"✅ Default logging setup - Experiment: {_default_experiment_name}, Run: {_default_run_id}, Container: {_default_container}"
     if final_log_file and enable_stdout:
         status_msg += f" (Console + File: {final_log_file})"
     elif final_log_file:
@@ -385,6 +403,7 @@ def setup_as_default(experiment_name: str = None,
         log_entry = {
             "experiment_name": _default_experiment_name,
             "run_id": _default_run_id,
+            "container": _default_container,
             "level": "DEBUG",
             "message": message,
             **data

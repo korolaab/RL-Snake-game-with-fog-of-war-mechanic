@@ -68,14 +68,14 @@ class StreamReader:
                         self.new_state_event.set()
 
                         if data.get('game_over'):
-                            logging.info({"message": "Game over detected in stream"})
+                            logging.info({"event": "game_over_detected", "source": "stream"})
                             break
                             
                     except json.JSONDecodeError:
-                        logging.warning({"message": f"Failed to parse JSON: {decoded}"})
+                        logging.warning({"event": "failed_to_parse_json", "data": decoded})
                         
         except Exception as e:
-            logging.error({"message": f"Stream reading error: {e}"})
+            logging.error({"event": "stream_reading_error", "exception": e})
         finally:
             self.running = False
 
@@ -86,9 +86,9 @@ def send_move(move_url, move: str):
     try:
         response = requests.post(move_url, json=payload, headers=headers)
         response.raise_for_status()
-        logging.debug({"message": f"Sent move: {move}"})
+        logging.debug({"event": "sent_move", "move": move})
     except requests.RequestException as e:
-        logging.error({"message": f"Error sending move: {e}"})
+        logging.error({"event": "error_sending_move", "exception": e})
 
 
 async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str, 
@@ -103,10 +103,10 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
     move_url = f"{base_url}/move"
     reset_url = f"http://{env_host}/reset"
     
-    logging.info({"message": f"🐍 Starting gRPC neural agent for snake_id={snake_id}"})
-    logging.info({"message": f"📦 Batch size: {batch_size} episodes (not steps)"})
-    logging.info({"message": f"📡 gRPC Training Service: {grpc_host}:{grpc_port}"})
-    logging.info({"message": "⏳ Mode: Collect episodes, then send batch for training"})
+    logging.info({"event": "starting_grpc_neural_agent", "snake_id": snake_id})
+    logging.info({"event": "batch_size_configured", "batch_size": batch_size, "unit": "episodes"})
+    logging.info({"event": "grpc_training_service_configured", "host": grpc_host, "port": grpc_port})
+    logging.info({"event": "mode_configured", "mode": "collect_episodes_then_batch_train"})
     
     # Create agent
     agent = GRPCSnakeAgent(
@@ -123,14 +123,14 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
     
     # Output model info
     model_info = agent.get_model_info()
-    logging.info({"message": f"🤖 Agent initialized: {model_info}"})
+    logging.info({"event": "agent_initialized", "model_info": model_info})
     
     try:
         episode_count = 0
         
         while True:  # Outer loop for multiple games
             episode_count += 1
-            logging.info({"message": f"🎮 Starting episode {episode_count}..."})
+            logging.info({"event": "starting_episode", "episode_count": episode_count})
             
             previous_action = "forward"
             stream_reader = StreamReader(base_url)
@@ -142,14 +142,14 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
                     data, tech_timestamp = stream_reader.get_latest_state()
                     
                     if data is None or tech_timestamp is None:
-                        logging.warning({"message": "No data received from stream"})
+                        logging.warning({"event": "no_data_received_from_stream"})
                         continue
                     
                     send_datetime_str = data.get("datetime") 
                     send_timestamp = datetime.fromisoformat(send_datetime_str).timestamp() 
                     delay = tech_timestamp - send_timestamp
                     
-                    logging.debug({"message": f"📍 State: reward={data.get('reward', 0)}, delay={delay:.3f}s"})
+                    logging.debug({"event": "state_received", "reward": data.get("reward", 0), "delay": f"{delay:.3f}s"})
                     
                     # Add experience to current episode
                     should_send_batch = agent.add_experience(
@@ -161,16 +161,16 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
                     
                     # If episode ended, check if we should send batch
                     if data.get("game_over"):
-                        logging.info({"message": f"💀 Episode {episode_count} ended!"})
+                        logging.info({"event": "episode_ended", "episode_count": episode_count})
                         
                         # Check if we have enough episodes for a batch
                         if should_send_batch:
-                            logging.info({"message": f"📦 Sending batch: {agent.batch_size} episodes completed"})
+                            logging.info({"event": "sending_batch", "episodes_completed": agent.batch_size})
                             success = await agent.send_training_batch_and_wait()
                             if success:
-                                logging.info({"message": "✅ Received improved model after batch training!"})
+                                logging.info({"event": "received_improved_model", "source": "batch_training"})
                             else:
-                                logging.warning({"message": "⚠️ Failed to get model update, continuing with current model"})
+                                logging.warning({"event": "failed_to_get_model_update", "action": "continuing_with_current_model"})
                         else:
                             completed_episodes = len(agent.completed_episodes)
                             remaining = agent.batch_size - completed_episodes
@@ -181,11 +181,11 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
                         try:
                             reset_response = requests.post(reset_url, timeout=5)
                             if reset_response.status_code == 200:
-                                logging.info({"message": "🔄 Environment reset successful"})
+                                logging.info({"event": "environment_reset_successful"})
                             else:
-                                logging.warning({"message": f"Reset failed with status: {reset_response.status_code}"})
+                                logging.warning({"event": "reset_failed", "status_code": reset_response.status_code})
                         except Exception as reset_error:
-                            logging.error({"message": f"Error resetting environment: {reset_error}"})
+                            logging.error({"event": "error_resetting_environment", "exception": reset_error})
                         
                         break  # Exit inner loop (end of episode)
                     
@@ -197,35 +197,35 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
                     previous_action = action
                     
             except Exception as game_error:
-                logging.error({"message": f"Error during episode {episode_count}: {game_error}"})
+                logging.error({"event": "error_during_episode", "episode_count": episode_count, "exception": game_error})
                 # Save data even on error
                 try:
                     # Send any remaining episodes if we have some
                     if len(agent.completed_episodes) > 0:
-                        logging.info({"message": f"📦 Sending partial batch due to error: {len(agent.completed_episodes)} episodes"})
+                        logging.info({"event": "sending_partial_batch_due_to_error", "episode_count": len(agent.completed_episodes)})
                         await agent.send_training_batch_and_wait()
                     saved_files = agent.save_all_data()
-                    logging.info({"message": f"Data saved after episode error: {saved_files}"})
+                    logging.info({"event": "data_saved_after_episode_error", "saved_files": saved_files})
                 except Exception as save_error:
-                    logging.error({"message": f"Error saving data after episode error: {save_error}"})
+                    logging.error({"event": "error_saving_data_after_episode_error", "exception": save_error})
             finally:
                 stream_reader.stop()
                 
     except KeyboardInterrupt:
-        logging.info({"message": "Agent interrupted by user."})
+        logging.info({"event": "agent_interrupted_by_user"})
         
         # Send any remaining episodes before shutdown
         try:
             if len(agent.completed_episodes) > 0:
-                logging.info({"message": f"📦 Sending final batch: {len(agent.completed_episodes)} episodes"})
+                logging.info({"event": "sending_final_batch", "episode_count": len(agent.completed_episodes)})
                 await agent.send_training_batch_and_wait()
             saved_files = agent.save_all_data()
-            logging.info({"message": f"💾 Data saved on shutdown: {saved_files}"})
+            logging.info({"event": "data_saved_on_shutdown", "saved_files": saved_files})
         except Exception as e:
-            logging.error({"message": f"Error during shutdown save: {e}"})
+            logging.error({"event": "error_during_shutdown_save", "exception": e})
             
     except Exception as e:
-        logging.error({"message": f"Error during execution: {e}"})
+        logging.error({"event": "error_during_execution", "exception": e})
         raise
     finally:
         # Disconnect from training service
@@ -252,9 +252,9 @@ def neural_agent(snake_id: str, log_file: str, env_host: str,
             batch_size=batch_size
         ))
     except KeyboardInterrupt:
-        logging.info({"message": "Agent interrupted by user."})
+        logging.info({"event": "agent_interrupted_by_user"})
     except Exception as e:
-        logging.error({"message": f"Error in neural agent: {e}"})
+        logging.error({"event": "error_in_neural_agent", "exception": e})
         raise
 
 

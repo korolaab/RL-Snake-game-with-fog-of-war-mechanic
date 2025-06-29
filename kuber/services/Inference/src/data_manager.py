@@ -23,7 +23,7 @@ class DataManager:
             'timestamp': datetime.now().isoformat()
         }
         self.history.append(experience)
-        logging.debug({"message": f"Added experience: reward={reward}, total_experiences={len(self.history)}"})
+        logging.debug({"event": "added_experience", "reward": reward, "total_experiences": len(self.history)})
     
     def get_history(self):
         """Получение всей истории."""
@@ -32,7 +32,7 @@ class DataManager:
     def clear_history(self):
         """Очистка истории."""
         self.history.clear()
-        logging.info({"message": "History cleared"})
+        logging.info({"event": "history_cleared"})
     
     def save_history(self, snake_id: str, filename_suffix: str = None):
         """Сохранение истории в файл."""
@@ -48,10 +48,10 @@ class DataManager:
         try:
             with open(history_path, 'wb') as f:
                 pickle.dump(self.history, f)
-            logging.info({"message": f"History saved to: {history_path} ({len(self.history)} experiences)"})
+            logging.info({"event": "history_saved", "path": history_path, "experience_count": len(self.history)})
             return history_path
         except Exception as e:
-            logging.error({"message": f"Error saving history: {e}"})
+            logging.error({"event": "error_saving_history", "exception": e})
             raise
     
     def load_history(self, history_path: str):
@@ -59,10 +59,10 @@ class DataManager:
         try:
             with open(history_path, 'rb') as f:
                 self.history = pickle.load(f)
-            logging.info({"message": f"History loaded from: {history_path} ({len(self.history)} experiences)"})
+            logging.info({"event": "history_loaded", "path": history_path, "experience_count": len(self.history)})
             return self.history
         except Exception as e:
-            logging.error({"message": f"Error loading history from {history_path}: {e}"})
+            logging.error({"event": "error_loading_history", "path": history_path, "exception": e})
             raise
     
     def save_model_weights(self, model, snake_id: str, filename_suffix: str = None):
@@ -84,10 +84,10 @@ class DataManager:
             with open(weights_path, 'wb') as f:
                 pickle.dump(weights, f)
             
-            logging.info({"message": f"Model weights saved to: {weights_path}"})
+            logging.info({"event": "model_weights_saved", "path": weights_path})
             return weights_path
         except Exception as e:
-            logging.error({"message": f"Error saving weights: {e}"})
+            logging.error({"event": "error_saving_weights", "exception": e})
             raise
     
     def load_model_weights(self, weights_path: str):
@@ -95,10 +95,10 @@ class DataManager:
         try:
             with open(weights_path, 'rb') as f:
                 weights = pickle.load(f)
-            logging.info({"message": f"Model weights loaded from: {weights_path}"})
+            logging.info({"event": "model_weights_loaded", "path": weights_path})
             return weights
         except Exception as e:
-            logging.error({"message": f"Error loading weights from {weights_path}: {e}"})
+            logging.error({"event": "error_loading_weights", "path": weights_path, "exception": e})
             raise
     
     def get_statistics(self):
@@ -138,10 +138,10 @@ class DataManager:
             
             # Выводим статистику
             stats = self.get_statistics()
-            logging.info({"message": f"Data statistics: {stats}"})
+            logging.info({"event": "data_statistics", "stats": stats})
             
             return saved_files
             
         except Exception as e:
-            logging.error({"message": f"Error saving all data: {e}"})
+            logging.error({"event": "error_saving_all_data", "exception": e})
             raise
