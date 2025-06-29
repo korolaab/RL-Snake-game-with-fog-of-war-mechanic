@@ -59,9 +59,9 @@ class DictJSONFormatter(logging.Formatter):
                 "message": record.getMessage()
             }
         
-        # Output: timestamp + space + json
+        # Output: timestamp + TAB + json (TSV format)
         json_str = json.dumps(log_entry, separators=(',', ':'))
-        return f"{timestamp} {json_str}"
+        return f"{timestamp}\t{json_str}"
 
 class DictJSONLogger:
     """Logger that accepts dictionaries and adds metadata automatically"""
@@ -251,9 +251,9 @@ class DictJSONHandler(logging.Handler):
             "level": record.levelname
         })
         
-        # Create final log line
+        # Create final log line (TSV format: timestamp + TAB + json)
         json_str = json.dumps(log_entry, separators=(',', ':'))
-        final_message = f"{timestamp} {json_str}"
+        final_message = f"{timestamp}\t{json_str}"
         
         # Output to console - FIXED FOR DOCKER
         if self.enable_console:
@@ -409,7 +409,7 @@ def setup_as_default(experiment_name: str = None,
             **data
         }
         json_str = json.dumps(log_entry, separators=(',', ':'))
-        sys.stdout.write(f"{timestamp} {json_str}\n")
+        sys.stdout.write(f"{timestamp}\t{json_str}\n")
         sys.stdout.flush()
     
     # DEBUG: Check logger configuration using JSON format

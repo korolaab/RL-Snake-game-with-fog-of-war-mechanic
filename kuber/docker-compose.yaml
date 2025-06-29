@@ -13,6 +13,10 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - ENABLE_CONSOLE_LOGS=true
+      - EXPERIMENT_NAME=${EXPERIMENT_NAME}
+      - ENABLE_CONSOLE_LOGS=${ENABLE_CONSOLE_LOGS}
+      - LOG_FILE=${LOG_FILE}
+      - RUN_ID=${RUN_ID}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:5000"]
       interval: 30s
@@ -24,6 +28,8 @@ services:
     restart: unless-stopped
     tty: true
     stdin_open: true
+    volumes:
+      - shared-output:/output
 
   # Training Service - gRPC Server
   training:
@@ -47,6 +53,10 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - ENABLE_CONSOLE_LOGS=true
+      - EXPERIMENT_NAME=${EXPERIMENT_NAME}
+      - ENABLE_CONSOLE_LOGS=${ENABLE_CONSOLE_LOGS}
+      - LOG_FILE=${LOG_FILE}
+      - RUN_ID=${RUN_ID}
     volumes:
       - shared-output:/output
       - ./shared/configs:/configs:ro
@@ -79,7 +89,10 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - ENV_HOST=env:5000
-      - ENABLE_CONSOLE_LOGS=true
+      - ENABLE_CONSOLE_LOGS=${ENABLE_CONSOLE_LOGS}
+      - EXPERIMENT_NAME=${EXPERIMENT_NAME}
+      - LOG_FILE=${LOG_FILE}
+      - RUN_ID=${RUN_ID}
     volumes:
       - shared-output:/output
       - ./shared/configs:/configs:ro
