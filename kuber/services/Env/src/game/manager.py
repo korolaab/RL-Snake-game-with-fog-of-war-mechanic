@@ -15,6 +15,7 @@ class GameManager:
                        vision_display_rows, 
                        fps, 
                        seed,
+                       maxStepsWithoutApple,
                        reward_config,
                        max_snakes=10):
         self.GRID_WIDTH = grid_width
@@ -31,7 +32,7 @@ class GameManager:
         self.game_over_lock = threading.Lock()
         self.seed = seed 
         self.reward_config = reward_config
-        
+        self.maxStepsWithoutApple = maxStepsWithoutApple
         set_seed(self.seed)
         threading.Thread(target=self.game_loop, daemon=True).start()
 
@@ -121,7 +122,7 @@ class GameManager:
             for sid, game in list(self.snakes.items()):
                 with self.snake_locks[sid]:
                     status = game.update(self.GAME_OVER)
-                    if status == 'collision':
+                    if status == 'collision' or status == 'starvation':
                         self.GAME_OVER = True
                 if len(self.FOODS) == 0:
                     self.spawn_food()

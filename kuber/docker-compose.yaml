@@ -9,7 +9,7 @@ services:
     hostname: env
     ports:
       - "5000:5000"
-    command: ["python","app.py","--fps","100","--seed","1"]
+    command: ["python","app.py","--fps","100","--seed","1", "--max-steps-without-food","100"]
     environment:
       - PYTHONUNBUFFERED=1
       - ENABLE_CONSOLE_LOGS=true

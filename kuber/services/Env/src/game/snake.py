@@ -17,6 +17,8 @@ class SnakeGame:
         self.reward_config = game.reward_config
         self.reward = 0
         self.reset()
+        self.maxStepsWithoutApple = game.maxStepsWithoutApple
+        self.stepsSinceLastApple = 0
 
     def find_safe_spawn_location(self):
         occupied = {pos for g in self.snakes.values() for pos in g.snake} | self.foods
@@ -52,6 +54,10 @@ class SnakeGame:
         if game_over:
             self.reward += self.reward_config['game_over']
             return ''
+        
+        if self.stepsSinceLastApple >= self.maxStepsWithoutApple:
+            return "starvation"
+
         head = self.snake[0]
         new_head = ((head[0] + self.direction[0]) % self.grid_width,
                     (head[1] + self.direction[1]) % self.grid_height)
@@ -62,9 +68,10 @@ class SnakeGame:
         if new_head in self.foods:
             self.foods.remove(new_head)
             self.reward += self.reward_config['eat_food']
-             
+            self.stepsSinceLastApple = 0 
         else:
             self.snake.pop()
+            self.stepsSinceLastApple += 1
         self.ticks += 1
         self.reward += self.reward_config['alive']
         return ''

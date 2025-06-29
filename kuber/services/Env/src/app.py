@@ -30,6 +30,7 @@ game_manager = GameManager(
     fps=args.fps, 
     seed = args.seed,
     reward_config = reward_config,
+    maxStepsWithoutApple = args.max_steps_without_food,
     max_snakes=args.max_snakes if hasattr(args, 'max_snakes') else 10
 )
 
