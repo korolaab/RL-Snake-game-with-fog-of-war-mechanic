@@ -124,6 +124,16 @@ class GameManager:
                     status = game.update(self.GAME_OVER)
                     if status == 'collision' or status == 'starvation':
                         self.GAME_OVER = True
+                        logging.info({"event": "game_over", "reason": status, "snake_id": sid})
+
+                if self.GAME_OVER != True:
+                    grid, visions, statuses, game_over = self.state()
+                    logging.info({"grid": grid, 
+                                 "visions": visions,
+                                 "statuses": statuses,
+                                 "game_over": game_over})
+                    
                 if len(self.FOODS) == 0:
                     self.spawn_food()
+
 
