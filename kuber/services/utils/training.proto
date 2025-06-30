@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package training;
+
+// Training service definition
+service TrainingService {
+  // Send training batch and get response
+  rpc SendTrainingBatch(TrainingBatchRequest) returns (TrainingBatchResponse);
+  
+  // Stream model updates
+  rpc GetModelUpdates(ModelUpdateRequest) returns (stream ModelUpdateResponse);
+}
+
+// Training metrics
+message TrainingMetrics {
+  float loss = 1;
+  float entropy_mean = 2;
+  float avg_reward = 3;
+  float max_action_prob = 4;
+  int32 num_samples = 5;
+  int32 positive_rewards = 6;
+  int32 negative_rewards = 7;
+}
+
+// Experience data
+message Experience {
+  string state_json = 1;
+  string action = 2;
+  float reward = 3;
+  int32 step = 4;
+  bool done = 5;
+}
+
+// Training batch request
+message TrainingBatchRequest {
+  string snake_id = 1;
+  string timestamp = 2;
+  int32 episode = 3;
+  int32 batch_number = 4;
+  int32 total_steps = 5;
+  bool is_cold_start = 6;
+  bytes model_data = 7;
+  repeated Experience experiences = 8;
+}
+
+// Training batch response
+message TrainingBatchResponse {
+  bool success = 1;
+  string message = 2;
+  int32 training_step = 3;
+}
+
+// Model update request
+message ModelUpdateRequest {
+  string snake_id = 1;
+}
+
+// Model update response
+message ModelUpdateResponse {
+  string snake_id = 1;
+  string timestamp = 2;
+  int32 training_step = 3;
+  bytes model_data = 4;
+  TrainingMetrics metrics = 5;
+}
