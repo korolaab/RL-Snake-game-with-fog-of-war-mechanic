@@ -1,0 +1,76 @@
+# Network policies for data-stack namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: data-stack-ingress
+  namespace: data-stack
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  ingress:
+  # Allow traffic from experiments namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: experiments
+  # Allow traffic within data-stack namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: data-stack
+  # Allow traffic from monitoring namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+  # Allow ingress controllers (if needed)
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: data-stack-egress
+  namespace: data-stack
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  # Allow all egress (can be restricted further)
+  - {}
+---
+# Allow experiments to access data-stack
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: experiments-to-data-stack
+  namespace: experiments
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  # Allow access to data-stack
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: data-stack
+  # Allow DNS resolution
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+  # Allow external traffic (internet, etc.)
+  - to: []
+    ports:
+    - protocol: TCP
+    - protocol: UDP

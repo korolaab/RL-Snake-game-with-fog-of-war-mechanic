@@ -1,0 +1,14 @@
+# Development environment overrides
+persistence:
+  size: 2Gi
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 1Gi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+clustering:
+  enabled: false

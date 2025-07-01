@@ -1,0 +1,57 @@
+# Example Kubernetes Job for RL Training
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: dqn-cartpole-training
+  namespace: experiments
+spec:
+  template:
+    spec:
+      containers:
+      - name: rl-trainer
+        image: your-registry/rl-trainer:latest
+        env:
+        - name: CLICKHOUSE_HOST
+          value: "clickhouse.data-stack.svc.cluster.local"
+        - name: CLICKHOUSE_PORT
+          value: "8123"
+        - name: RABBITMQ_HOST
+          value: "rabbitmq.data-stack.svc.cluster.local"
+        - name: RABBITMQ_PORT
+          value: "5672"
+        - name: ALGORITHM
+          value: "DQN"
+        - name: ENVIRONMENT
+          value: "CartPole-v1"
+        - name: EPISODES
+          value: "1000"
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+        volumeMounts:
+        - name: model-storage
+          mountPath: /models
+      volumes:
+      - name: model-storage
+        persistentVolumeClaim:
+          claimName: model-storage-pvc
+      restartPolicy: Never
+  backoffLimit: 3
+---
+# PVC for model storage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: model-storage-pvc
+  namespace: experiments
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: local-path

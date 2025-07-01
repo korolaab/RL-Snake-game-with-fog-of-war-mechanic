@@ -1,0 +1,29 @@
+# Production environment overrides
+persistence:
+  storageClass: "fast-ssd"
+  size: 50Gi
+
+resources:
+  limits:
+    cpu: 4000m
+    memory: 8Gi
+  requests:
+    cpu: 1000m
+    memory: 4Gi
+
+clustering:
+  enabled: true
+  replicaCount: 3
+
+service:
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+
+podAntiAffinity:
+  preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: rabbitmq
+        topologyKey: kubernetes.io/hostname
