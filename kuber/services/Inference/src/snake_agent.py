@@ -8,6 +8,7 @@ from datetime import datetime
 from snake_model import ModelManager
 from state_processor import StateProcessor
 from data_manager import DataManager
+import io
 
 # Import generated protobuf classes
 try:
@@ -299,7 +300,10 @@ class GRPCSnakeAgent:
             
             # Serialize model with error handling
             try:
-                model_data = pickle.dumps(self.model)
+                scripted_model = torch.jit.script(self.model)
+                buffer = io.BytesIO()
+                torch.jit.save(scripted_model, buffer)
+                model_data = buffer.getvalue()
                 logging.debug({"event": "serialized_model", "size_bytes": len(model_data)})
             except Exception as e:
                 logging.error({"event": "failed_to_serialize_model", "exception": e})
@@ -331,6 +335,7 @@ class GRPCSnakeAgent:
                 return False
             
             if response.success:
+                await asyncio.sleep(0.1) #TODO This is a workarround for race condition and time sync problem. Training can send result earlyer than inference ready to read it
                 logging.info({"event": "training_batch_sent_successfully", "response_message": response.message})
                 
                 # Wait for model update from stream
@@ -347,7 +352,8 @@ class GRPCSnakeAgent:
                     
                     # Deserialize updated model
                     try:
-                        updated_model = pickle.loads(model_update.model_data)
+                        buffer = io.BytesIO(model_update.model_data)
+                        updated_model = torch.jit.load(buffer, map_location='cpu')
                         if not isinstance(updated_model, torch.nn.Module):
                             raise ValueError(f"Received invalid model type: {type(updated_model)}")
                         

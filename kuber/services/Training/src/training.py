@@ -15,6 +15,7 @@ import traceback
 from concurrent import futures
 import logging
 import logger
+import io
 
 # Import generated protobuf classes
 try:
@@ -328,11 +329,12 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
             
             # Deserialize model with error handling
             try:
-                model = pickle.loads(request.model_data)
+                buffer = io.BytesIO(request.model_data)
+                model = torch.jit.load(buffer, map_location='cpu')
                 if not isinstance(model, torch.nn.Module):
                     raise ValueError(f"Deserialized object is not a PyTorch model: {type(model)}")
             except Exception as e:
-                logging.error({"event": "failed_to_deserialize_model", "exception": e})
+                logging.error({"event": "failed_to_deserialize_model", "exception": f"{e}"})
                 return training_pb2.TrainingBatchResponse(
                     success=False,
                     message=f"Model deserialization failed: {str(e)}",
@@ -380,8 +382,11 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
             # Create model update
             try:
                 # Serialize model with proper error handling
-                model_data = pickle.dumps(self.model)
-                
+                scripted_model = torch.jit.script(self.model)  # or torch.jit.trace()
+                buffer = io.BytesIO()
+                torch.jit.save(scripted_model, buffer)
+                model_data = buffer.getvalue()
+
                 model_update = training_pb2.ModelUpdateResponse(
                     snake_id=request.snake_id,
                     timestamp=datetime.now().isoformat(),
@@ -407,7 +412,7 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
                         except asyncio.TimeoutError:
                             logging.warning({"event": "timeout_queuing_model_update", "snake_id": request.snake_id})
                         except Exception as e:
-                            logging.warning({"event": "error_queuing_model_update", "exception": e})
+                            logging.warning({"event": "error_queuing_model_update", "exception": f"{e}"})
                 
                 logging.info({"event": "training_completed", "episode_count": len(episodes)})
                 
