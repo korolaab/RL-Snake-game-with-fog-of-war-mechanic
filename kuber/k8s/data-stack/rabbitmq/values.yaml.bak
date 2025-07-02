@@ -1,6 +1,13 @@
 # RabbitMQ Helm Values Template
 # Copy to values.yaml and customize with your credentials
 
+auth:
+  username: admin
+  # TODO: Set password in values.yaml (not committed)
+  password: ""
+  # Or use existing secret:
+  # existingPasswordSecret: "rabbitmq-credentials"
+
 persistence:
   enabled: true
   storageClass: "local-path"

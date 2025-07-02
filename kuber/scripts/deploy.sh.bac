@@ -1,0 +1,358 @@
+#!/bin/bash
+# Intelligent Deployment Script with Automatic Chart Source Detection
+# Automatically tries multiple methods and uses the best available option
+
+set -e
+
+# Configuration
+NAMESPACE="data-stack"
+ENVIRONMENT="${ENVIRONMENT:-dev}"
+CLICKHOUSE_RELEASE="clickhouse"
+RABBITMQ_RELEASE="rabbitmq"
+
+# Chart versions (update these as needed)
+CLICKHOUSE_VERSION="6.2.17"
+RABBITMQ_VERSION="14.6.6"
+
+# Colors
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+echo -e "${GREEN}🚀 Intelligent Data Stack Deployment${NC}"
+echo -e "${BLUE}Automatically detecting best chart source...${NC}"
+echo ""
+
+# Global variables for tracking deployment method
+DEPLOYMENT_METHOD=""
+REPO_STATUS=""
+
+# Utility function to test URL connectivity
+test_url() {
+    local url=$1
+    local timeout=${2:-5}
+    
+    if curl -s --max-time $timeout --head "$url" >/dev/null 2>&1; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Test Helm repository connectivity
+test_helm_repo() {
+    local repo_name=$1
+    local repo_url=$2
+    
+    echo -e "${CYAN}  Testing $repo_name repository...${NC}"
+    
+    # Try to add repo quietly
+    if helm repo add "$repo_name" "$repo_url" >/dev/null 2>&1; then
+        # Try to update and search for a chart
+        if helm repo update >/dev/null 2>&1 && helm search repo "$repo_name/clickhouse" >/dev/null 2>&1; then
+            echo -e "${GREEN}  ✅ $repo_name repository: Working${NC}"
+            return 0
+        else
+            echo -e "${YELLOW}  ⚠️  $repo_name repository: Added but not responding${NC}"
+            helm repo remove "$repo_name" >/dev/null 2>&1 || true
+            return 1
+        fi
+    else
+        echo -e "${RED}  ❌ $repo_name repository: Cannot connect${NC}"
+        return 1
+    fi
+}
+
+# Test OCI registry connectivity
+test_oci_registry() {
+    echo -e "${CYAN}  Testing OCI registry...${NC}"
+    
+    # Try to pull chart info from OCI registry
+    if helm show chart oci://registry-1.docker.io/bitnamicharts/clickhouse --version "$CLICKHOUSE_VERSION" >/dev/null 2>&1; then
+        echo -e "${GREEN}  ✅ OCI registry: Working${NC}"
+        return 0
+    else
+        echo -e "${YELLOW}  ⚠️  OCI registry: Not accessible${NC}"
+        return 1
+    fi
+}
+
+# Test direct chart download
+test_direct_download() {
+    echo -e "${CYAN}  Testing direct chart downloads...${NC}"
+    
+    local clickhouse_url="https://github.com/bitnami/charts/releases/download/clickhouse-${CLICKHOUSE_VERSION}/clickhouse-${CLICKHOUSE_VERSION}.tgz"
+    local rabbitmq_url="https://github.com/bitnami/charts/releases/download/rabbitmq-${RABBITMQ_VERSION}/rabbitmq-${RABBITMQ_VERSION}.tgz"
+    
+    if test_url "$clickhouse_url" 3 && test_url "$rabbitmq_url" 3; then
+        echo -e "${GREEN}  ✅ Direct downloads: Working${NC}"
+        return 0
+    else
+        echo -e "${YELLOW}  ⚠️  Direct downloads: Some charts not available${NC}"
+        return 1
+    fi
+}
+
+# Test chart repository clone
+test_repo_clone() {
+    echo -e "${CYAN}  Testing repository clone...${NC}"
+    
+    if test_url "https://github.com/bitnami/charts.git" 3; then
+        echo -e "${GREEN}  ✅ Repository clone: Available${NC}"
+        return 0
+    else
+        echo -e "${YELLOW}  ⚠️  Repository clone: Not accessible${NC}"
+        return 1
+    fi
+}
+
+# Automatically detect the best deployment method
+detect_deployment_method() {
+    echo -e "${YELLOW}🔍 Auto-detecting chart sources...${NC}"
+    
+    # Method 1: Try traditional Helm repositories
+    if test_helm_repo "bitnami" "https://charts.bitnami.com/bitnami"; then
+        DEPLOYMENT_METHOD="helm_repo"
+        REPO_STATUS="bitnami"
+        echo -e "${GREEN}📦 Using: Bitnami Helm Repository${NC}"
+        return 0
+    fi
+    
+    # Method 2: Try OCI registry
+    if test_oci_registry; then
+        DEPLOYMENT_METHOD="oci_registry"
+        echo -e "${GREEN}📦 Using: OCI Registry (Docker Hub)${NC}"
+        return 0
+    fi
+    
+    # Method 3: Try direct chart downloads
+    if test_direct_download; then
+        DEPLOYMENT_METHOD="direct_download"
+        echo -e "${GREEN}📦 Using: Direct Chart Downloads${NC}"
+        return 0
+    fi
+    
+    # Method 4: Try repository clone (slowest but most reliable)
+    if test_repo_clone; then
+        DEPLOYMENT_METHOD="repo_clone"
+        echo -e "${GREEN}📦 Using: Repository Clone${NC}"
+        return 0
+    fi
+    
+    # If all methods fail
+    echo -e "${RED}❌ No chart sources available!${NC}"
+    echo -e "${YELLOW}Possible solutions:${NC}"
+    echo "  1. Check internet connectivity"
+    echo "  2. Try again later (repositories might be temporarily down)"
+    echo "  3. Use a VPN if behind corporate firewall"
+    echo "  4. Contact your network administrator"
+    exit 1
+}
+
+# Download chart using the selected method
+download_chart() {
+    local chart_name=$1
+    local chart_version=$2
+    
+    case $DEPLOYMENT_METHOD in
+        "helm_repo")
+            # Charts are already available through repo, no download needed
+            echo "${REPO_STATUS}/${chart_name}"
+            ;;
+        "oci_registry")
+            # OCI charts are pulled during installation, no pre-download needed
+            echo "oci://registry-1.docker.io/bitnamicharts/${chart_name}"
+            ;;
+        "direct_download")
+            local url="https://github.com/bitnami/charts/releases/download/${chart_name}-${chart_version}/${chart_name}-${chart_version}.tgz"
+            local chart_file="charts/${chart_name}-${chart_version}.tgz"
+            
+            mkdir -p charts
+            
+            if [ ! -f "$chart_file" ]; then
+                echo -e "${CYAN}📥 Downloading ${chart_name} chart...${NC}"
+                if curl -L -o "$chart_file" "$url" --progress-bar; then
+                    echo -e "${GREEN}✅ Downloaded ${chart_name}${NC}"
+                else
+                    echo -e "${RED}❌ Failed to download ${chart_name}${NC}"
+                    exit 1
+                fi
+            else
+                echo -e "${BLUE}📋 Using cached ${chart_name} chart${NC}"
+            fi
+            
+            echo "$chart_file"
+            ;;
+        "repo_clone")
+            if [ ! -d "charts-repo" ]; then
+                echo -e "${CYAN}📥 Cloning charts repository...${NC}"
+                git clone --depth 1 https://github.com/bitnami/charts.git charts-repo >/dev/null 2>&1
+                echo -e "${GREEN}✅ Repository cloned${NC}"
+            else
+                echo -e "${BLUE}📋 Using cached repository${NC}"
+            fi
+            
+            echo "charts-repo/bitnami/${chart_name}"
+            ;;
+    esac
+}
+
+# Deploy a chart using the detected method
+deploy_chart() {
+    local release_name=$1
+    local chart_name=$2
+    local chart_version=$3
+    local values_file=$4
+    local env_values_file=$5
+    local timeout=$6
+    
+    echo -e "${YELLOW}🚀 Deploying ${chart_name}...${NC}"
+    
+    local chart_path=$(download_chart "$chart_name" "$chart_version")
+    
+    # Build helm command based on method
+    local helm_cmd="helm upgrade --install $release_name $chart_path"
+    helm_cmd="$helm_cmd --namespace $NAMESPACE"
+    helm_cmd="$helm_cmd --create-namespace"
+    helm_cmd="$helm_cmd --values $values_file"
+    
+    if [ -f "$env_values_file" ]; then
+        helm_cmd="$helm_cmd --values $env_values_file"
+    fi
+    
+    # Add version for specific methods
+    if [ "$DEPLOYMENT_METHOD" = "oci_registry" ] || [ "$DEPLOYMENT_METHOD" = "helm_repo" ]; then
+        helm_cmd="$helm_cmd --version $chart_version"
+    fi
+    
+    helm_cmd="$helm_cmd --wait --timeout=${timeout}"
+    
+    echo -e "${CYAN}Running: $helm_cmd${NC}"
+    
+    if eval $helm_cmd; then
+        echo -e "${GREEN}✅ ${chart_name} deployed successfully${NC}"
+    else
+        echo -e "${RED}❌ Failed to deploy ${chart_name}${NC}"
+        
+        # Show some debugging info
+        echo -e "${YELLOW}Debug information:${NC}"
+        kubectl get pods -n $NAMESPACE | grep $release_name || true
+        kubectl describe pod -l app.kubernetes.io/instance=$release_name -n $NAMESPACE | tail -20 || true
+        
+        exit 1
+    fi
+}
+
+# Check if credentials are set
+check_credentials() {
+    if [ ! -f "k8s/data-stack/clickhouse/values.yaml" ]; then
+        echo -e "${RED}❌ ClickHouse values.yaml not found!${NC}"
+        echo "Run: make init"
+        exit 1
+    fi
+    
+    if [ ! -f "k8s/data-stack/rabbitmq/values.yaml" ]; then
+        echo -e "${RED}❌ RabbitMQ values.yaml not found!${NC}"
+        echo "Run: make init"
+        exit 1
+    fi
+    
+    # Check if passwords are set
+    if grep -q 'password: ""' k8s/data-stack/clickhouse/values.yaml; then
+        echo -e "${YELLOW}⚠️  ClickHouse password not set in values.yaml${NC}"
+    fi
+    
+    if grep -q 'password: ""' k8s/data-stack/rabbitmq/values.yaml; then
+        echo -e "${YELLOW}⚠️  RabbitMQ password not set in values.yaml${NC}"
+    fi
+}
+
+# Clean up any failed deployments
+cleanup_failed_deployments() {
+    echo -e "${YELLOW}🧹 Cleaning up any failed deployments...${NC}"
+    
+    # Remove failed Helm releases
+    helm list -n $NAMESPACE --failed -q | xargs -r helm delete -n $NAMESPACE 2>/dev/null || true
+    
+    # Remove failed pods
+    kubectl delete pods --field-selector=status.phase=Failed -n $NAMESPACE 2>/dev/null || true
+    
+    # Remove pending PVCs if they exist
+    kubectl get pvc -n $NAMESPACE 2>/dev/null | grep Pending | awk '{print $1}' | xargs -r kubectl delete pvc -n $NAMESPACE 2>/dev/null || true
+}
+
+# Main deployment function
+main_deploy() {
+    echo -e "${BLUE}Starting intelligent deployment...${NC}"
+    echo ""
+    
+    # Pre-deployment checks
+    check_credentials
+    cleanup_failed_deployments
+    
+    # Auto-detect best deployment method
+    detect_deployment_method
+    echo ""
+    
+    # Apply base configurations
+    echo -e "${YELLOW}📁 Applying base configurations...${NC}"
+    kubectl apply -f k8s/namespaces/ 2>/dev/null || true
+    kubectl apply -f k8s/storage/ 2>/dev/null || true
+    echo ""
+    
+    # Deploy ClickHouse
+    deploy_chart "$CLICKHOUSE_RELEASE" "clickhouse" "$CLICKHOUSE_VERSION" \
+        "k8s/data-stack/clickhouse/values.yaml" \
+        "helm/values/${ENVIRONMENT}/clickhouse-values.yaml" \
+        "15m"
+    echo ""
+    
+    # Deploy RabbitMQ
+    deploy_chart "$RABBITMQ_RELEASE" "rabbitmq" "$RABBITMQ_VERSION" \
+        "k8s/data-stack/rabbitmq/values.yaml" \
+        "helm/values/${ENVIRONMENT}/rabbitmq-values.yaml" \
+        "10m"
+    echo ""
+    
+    # Apply network policies
+    echo -e "${YELLOW}🔒 Applying network policies...${NC}"
+    kubectl apply -f k8s/data-stack/network-policies.yaml 2>/dev/null || true
+    echo ""
+    
+    # Success message
+    echo -e "${GREEN}🎉 Deployment completed successfully!${NC}"
+    echo -e "${BLUE}Method used: $DEPLOYMENT_METHOD${NC}"
+    echo ""
+    
+    # Show status
+    echo -e "${YELLOW}📊 Current status:${NC}"
+    kubectl get pods -n $NAMESPACE
+    echo ""
+    
+    # Show next steps
+    echo -e "${GREEN}🔗 Next steps:${NC}"
+    echo "  make passwords      # View passwords"
+    echo "  make urls          # Get connection URLs"
+    echo "  make port-forward  # Access services locally"
+    echo "  make health        # Check service health"
+}
+
+# Cleanup function for downloaded files
+cleanup() {
+    if [ "$DEPLOYMENT_METHOD" = "direct_download" ]; then
+        echo -e "${YELLOW}🧹 Cleaning up downloaded charts...${NC}"
+        rm -rf charts/
+    elif [ "$DEPLOYMENT_METHOD" = "repo_clone" ]; then
+        echo -e "${YELLOW}🧹 Cleaning up cloned repository...${NC}"
+        rm -rf charts-repo/
+    fi
+}
+
+# Trap cleanup on script exit
+trap cleanup EXIT
+
+# Run main deployment
+main_deploy "$@"

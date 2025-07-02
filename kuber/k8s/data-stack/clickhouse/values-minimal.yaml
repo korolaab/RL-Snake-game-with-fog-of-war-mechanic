@@ -1,0 +1,25 @@
+auth:
+  existingSecret: "clickhouse-credentials" 
+  existingSecretKey: "password"
+
+service:
+  type: NodePort
+  ports:
+    http: 8123
+    tcp: 9000
+  nodePorts:
+    http: 8123
+    tcp: 9000
+
+persistence:
+  enabled: true
+  storageClass: "local-path"
+  size: 50Gi
+
+shards: 1
+replicasCount: 1
+
+keeper:
+  enabled: false        # Don't need keeper for single instance
+zookeeper:
+  enabled: false        # Don't need ZooKeeper either
