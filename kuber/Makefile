@@ -14,15 +14,31 @@ RED := \033[0;31m
 NC := \033[0m
 
 help: ## Show this help
-	@echo "ClickHouse Data Stack Commands:"
+	@echo "ClickHouse Data Stack - Available Commands"
 	@echo ""
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "$(BLUE)%-20s$(NC) %s\n", $$1, $$2}'
+	@echo "Setup & Deployment:"
+	@grep -E '^(init|secrets|deploy|quick-deploy):.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(BLUE)%-15s$(NC) %s\n", $$1, $$2}'
+	@echo ""
+	@echo "Management & Monitoring:"
+	@grep -E '^(status|health|logs|how-to-connect):.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(BLUE)%-15s$(NC) %s\n", $$1, $$2}'
+	@echo ""
+	@echo "Utilities:"
+	@grep -E '^(passwords|create-tables|destroy|clean):.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(BLUE)%-15s$(NC) %s\n", $$1, $$2}'
+	@echo ""
+	@echo "$(YELLOW)Getting Started (Cold Setup):$(NC)"
+	@echo "  1. make init           Create namespace and config files"
+	@echo "  2. make secrets        Generate passwords and create K8s secrets"
+	@echo "  3. make deploy         Deploy ClickHouse and RabbitMQ"
+	@echo "  4. make create-tables  Initialize database tables"
+	@echo "  5. make status         Verify everything is running"
 	@echo ""
 	@echo "$(YELLOW)Quick Start:$(NC)"
-	@echo "  1. make init      # Create config files from templates"
-	@echo "  2. make secrets   # Generate and create secrets"
-	@echo "  3. make deploy    # Deploy ClickHouse + RabbitMQ"
-	@echo "  4. make urls      # Get connection URLs"
+	@echo "  make quick-deploy      Run all setup steps automatically"
+	@echo ""
+	@echo "$(YELLOW)Daily Operations:$(NC)"
+	@echo "  make status           Check deployment status"
+	@echo "  make health           Run health checks"
+	@echo "  make how-to-connect   Get connection details"
 
 init: ## Initialize namespace
 	@echo "$(YELLOW)🔧 Creating namespace $(NAMESPACE)...$(NC)"
