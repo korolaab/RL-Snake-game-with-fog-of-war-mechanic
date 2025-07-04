@@ -128,7 +128,7 @@ create-tables:
 		CLICKHOUSE_PASSWORD=$$(cat .secrets/clickhouse_password); \
 		if kubectl exec $$CH_POD -n $(NAMESPACE) -- clickhouse-client --password $$CLICKHOUSE_PASSWORD -q "SELECT 1" >/dev/null 2>&1; then \
 			echo "$(GREEN)  ✅ ClickHouse is healthy$(NC)"; \
-			kubectl exec $$CH_POD -n $(NAMESPACE) -- clickhouse-client --password $$CLICKHOUSE_PASSWORD --query "$(cat scripts/tables.sql)"; \
+			kubectl exec $$CH_POD -n $(NAMESPACE) -- clickhouse-client --password $$CLICKHOUSE_PASSWORD --query "$$(cat scripts/tables.sql)"; \
 			echo "$(GREEN)  ✅ Tables Created$(NC)"; \
 		else \
 			echo "$(RED)  ❌ ClickHouse is not responding$(NC)"; \
@@ -136,9 +136,27 @@ create-tables:
 	else \
 		echo "$(RED)  ❌ ClickHouse pod not found$(NC)"; \
 	fi
-	
 
-quick-deploy: init create-secrets deploy health create-tables ## Complete setup: init + secrets + deploy
+setup-tech-creds:
+	@echo "$(GREEN) Setuping tech credentials... $(NC)"
+	@echo ""
+	@if kubectl get pod -l app.kubernetes.io/name=rabbitmq -n $(NAMESPACE) -o jsonpath='{.items[0].metadata.name}' >/dev/null 2>&1; then \
+		RMQ_POD=$$(kubectl get pod -l app.kubernetes.io/name=rabbitmq -n $(NAMESPACE) -o jsonpath='{.items[0].metadata.name}'); \
+		if kubectl exec $$RMQ_POD -n $(NAMESPACE) -- rabbitmq-diagnostics check_running >/dev/null 2>&1; then \
+			echo "$(GREEN)  ✅ RabbitMQ is healthy$(NC)"; \
+			kubectl exec $$RMQ_POD -n $(NAMESPACE) -- rabbitmq-diagnostics status | head -10; \
+    		kubectl -n $(NAMESPACE) exec -it $$RMQ_POD -- rabbitmqctl add_user tech tech; \
+			kubectl -n $(NAMESPACE) exec -it $$RMQ_POD -- rabbitmqctl set_permissions -p / tech ".*" ".*" ".*"; \
+			kubectl -n $(NAMESPACE) exec -it $$RMQ_POD -- rabbitmqctl set_user_tags tech ""; \
+			echo "$(GREEN)  tech credentials setuped$(NC)"; \
+		else \
+			echo "$(RED)  ❌ RabbitMQ is not responding$(NC)"; \
+		fi \
+	else \
+		echo "$(RED)  ❌ RabbitMQ pod not found$(NC)"; \
+	fi
+	
+quick-deploy: init create-secrets deploy health setup-tech-creds create-tables ## Complete setup: init + secrets + deploy
 
 destroy: ## Destroy data stack (WARNING: deletes data)
 	@echo "$(RED)⚠️  WARNING: This will delete all data in $(NAMESPACE)!$(NC)"
