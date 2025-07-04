@@ -16,10 +16,8 @@ COPY /utils/generate_grpc.py /app/
 COPY requirements.txt /app
 RUN pip install -r requirements.txt
 
+RUN apt update && apt install -y curl
 RUN python generate_grpc.py
 
 COPY /utils/logger.py /app/
-
-RUN apt update && apt install -y curl
-
-ENTRYPOINT []
+COPY /utils/rabbitmq_handler.py /app/

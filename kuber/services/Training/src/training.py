@@ -26,17 +26,6 @@ except ImportError:
     print("Please run generate_grpc.py first to generate training_pb2.py and training_pb2_grpc.py")
     sys.exit(1)
 
-def setup_logger(log_file: str):
-    """Setup logging configuration."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s %(levelname)s: %(message)s',
-        handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler(sys.stdout)
-        ]
-    )
-
 class SimpleModel(nn.Module):
     """Simple model for creating from scratch if needed."""
     def __init__(self, input_size, hidden_size=64, output_size=3):

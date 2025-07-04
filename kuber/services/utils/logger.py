@@ -1,14 +1,23 @@
 """
-RL Logger Module - JSON-based logging for RL systems
-To use as default logger across entire project:
-    # At the very start of your main.py or __init__.py:
+RL Logger Module - JSON-based logging for RL systems with multiple output handlers
+
+Features:
+- JSON-structured logging with nanosecond precision timestamps
+- Multiple output handlers: Console, File, RabbitMQ
+- Thread-safe operation for multi-threaded applications
+- Flask integration support
+- Comprehensive environment variable configuration
+- Automatic reconnection and error handling
+
+Usage:
+    # Simple setup
     import rl_logger
-    rl_logger.setup_as_default("snake_exp_001", log_file="logs/app.log")
+    rl_logger.setup("snake_exp_001")
     
-    # Then anywhere in your code:
     import logging
-    logging.info({"message": "This will be JSON!"})
+    logging.info({"message": "Training started", "epoch": 1})
 """
+
 import json
 import logging
 import sys
@@ -16,226 +25,71 @@ import os
 import time
 import uuid
 import threading
+import queue
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
+from abc import ABC, abstractmethod
 
-class DictJSONFormatter(logging.Formatter):
-    """Formatter that takes dict input and adds timestamp + metadata"""
-    
-    def __init__(self, experiment_name: str, run_id: str, container: str):
-        super().__init__()
-        self.experiment_name = experiment_name
-        self.run_id = run_id
-        self.container = container
-    
-    def format(self, record):
-        # Get timestamp with nanosecond precision
-        now = datetime.now(timezone.utc)
-        # Get nanoseconds from time.time_ns()
-        nanoseconds = time.time_ns() % 1_000_000_000  # Get nanosecond part
-        # Format with microseconds and add nanoseconds
-        timestamp_base = now.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]  # Remove last 3 digits of microseconds
-        timestamp = f"{timestamp_base}{nanoseconds:03d}+00:00"  # Add nanoseconds and timezone
-        
-        # Get the dictionary from the log record
-        if hasattr(record, 'dict_data') and isinstance(record.dict_data, dict):
-            # Start with the user's dictionary
-            log_entry = record.dict_data.copy()
-            
-            # Add our metadata (these will override if user provided them)
-            log_entry.update({
-                "experiment_name": self.experiment_name,
-                "run_id": self.run_id,
-                "container": self.container,
-                "level": record.levelname
-            })
-        else:
-            # Fallback for non-dict messages
-            log_entry = {
-                "experiment_name": self.experiment_name,
-                "run_id": self.run_id,
-                "container": self.container,
-                "level": record.levelname,
-                "message": record.getMessage()
-            }
-        
-        # Output: timestamp + TAB + json (TSV format)
-        json_str = json.dumps(log_entry, separators=(',', ':'))
-        return f"{timestamp}\t{json_str}"
+# Optional dependencies
+try:
+    import pika
+    from pika.exceptions import AMQPConnectionError, AMQPChannelError
+    RABBITMQ_AVAILABLE = True
+except ImportError:
+    RABBITMQ_AVAILABLE = False
 
-class DictJSONLogger:
-    """Logger that accepts dictionaries and adds metadata automatically"""
+
+class LogMetadata:
+    """Manages logging metadata (experiment name, run ID, container)"""
     
-    def __init__(self, 
-                 name: str = "rl_logger",
-                 experiment_name: str = None,
-                 run_id: str = None,
-                 log_file: str = None,
-                 log_level: str = "INFO"):
-        
-        # Get from env vars or use defaults
+    def __init__(self, experiment_name: str = None, run_id: str = None, container: str = None):
         self.experiment_name = experiment_name or os.getenv('EXPERIMENT_NAME', 'default_exp')
-        self.run_id = run_id or os.getenv('RUN_ID', f"run_{int(time.time())}_{uuid.uuid4().hex[:6]}")
-        
-        # Setup logger
-        self.logger = logging.getLogger(name)
-        self.logger.setLevel(getattr(logging, log_level.upper()))
-        
-        # Remove existing handlers
-        for handler in self.logger.handlers[:]:
-            self.logger.removeHandler(handler)
-        
-        # Create formatter
-        formatter = DictJSONFormatter(self.experiment_name, self.run_id)
-        
-        # Add console handler
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setFormatter(formatter)
-        self.logger.addHandler(console_handler)
-        
-        # Add file handler if specified
-        if log_file:
-            # Create directory if it doesn't exist
-            log_dir = os.path.dirname(log_file)
-            if log_dir and not os.path.exists(log_dir):
-                os.makedirs(log_dir, exist_ok=True)
-            
-            file_handler = logging.FileHandler(log_file)
-            file_handler.setFormatter(formatter)
-            self.logger.addHandler(file_handler)
-        
-        self.logger.propagate = False
+        self.run_id = run_id or os.getenv('RUN_ID', self._generate_run_id())
+        self.container = container or self._detect_container()
     
-    def _log_dict(self, level: str, data: Dict[str, Any]):
-        """Internal method to log dictionary with specific level"""
-        # Create a custom log record with the dict data
-        log_method = getattr(self.logger, level.lower())
-        
-        # Monkey patch to inject our dict
-        original_makeRecord = self.logger.makeRecord
-        def makeRecord(*args, **kwargs):
-            record = original_makeRecord(*args, **kwargs)
-            record.dict_data = data
-            return record
-        
-        self.logger.makeRecord = makeRecord
-        log_method("")  # Empty message since we use dict_data
-        self.logger.makeRecord = original_makeRecord  # Restore
+    def _generate_run_id(self) -> str:
+        """Generate a unique run ID"""
+        return f"run_{int(time.time())}_{uuid.uuid4().hex[:6]}"
     
-    def debug(self, data: Dict[str, Any]):
-        """Log DEBUG level with dictionary data"""
-        self._log_dict("DEBUG", data)
+    def _detect_container(self) -> str:
+        """Auto-detect container name from various sources"""
+        return (
+            os.getenv('CONTAINER_NAME') or
+            os.getenv('HOSTNAME', '').split('.')[0] or
+            os.path.basename(sys.argv[0]).replace('.py', '') or
+            'unknown'
+        )
     
-    def info(self, data: Dict[str, Any]):
-        """Log INFO level with dictionary data"""
-        self._log_dict("INFO", data)
-    
-    def warning(self, data: Dict[str, Any]):
-        """Log WARNING level with dictionary data"""
-        self._log_dict("WARNING", data)
-    
-    def error(self, data: Dict[str, Any]):
-        """Log ERROR level with dictionary data"""
-        self._log_dict("ERROR", data)
-    
-    def critical(self, data: Dict[str, Any]):
-        """Log CRITICAL level with dictionary data"""
-        self._log_dict("CRITICAL", data)
+    def to_dict(self) -> Dict[str, str]:
+        """Convert metadata to dictionary"""
+        return {
+            "experiment_name": self.experiment_name,
+            "run_id": self.run_id,
+            "container": self.container
+        }
 
-# Factory function to create logger with specific experiment/run
-def create_logger(experiment_name: str, 
-                  run_id: Optional[str] = None,
-                  name: Optional[str] = None,
-                  log_file: Optional[str] = None,
-                  log_level: str = "INFO",
-                  enable_stdout: bool = True) -> DictJSONLogger:
-    """
-    Create a logger with specific experiment name and run ID
-    
-    Args:
-        experiment_name: Name of the experiment (e.g., "snake_exp_001")
-        run_id: Optional run ID. If None, auto-generated
-        name: Optional logger name. If None, uses experiment_name
-        log_file: Optional file path for logging. If None, only console output
-        log_level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        enable_stdout: Whether to output to console (default: True)
-    
-    Returns:
-        DictJSONLogger instance
-    """
-    logger_name = name or f"rl_logger_{experiment_name}"
-    return DictJSONLogger(
-        name=logger_name,
-        experiment_name=experiment_name,
-        run_id=run_id,
-        log_file=log_file,
-        log_level=log_level
-    )
 
-# Global configuration for default logging
-_default_experiment_name = None
-_default_run_id = None
-_default_container = None
-_is_default_setup = False
-
-class DefaultLogAdapter(logging.LoggerAdapter):
-    """Adapter that converts regular logging calls to JSON format"""
+class TimestampGenerator:
+    """Generates high-precision timestamps"""
     
-    def process(self, msg, kwargs):
-        # If msg is already a dict, use it directly
-        if isinstance(msg, dict):
-            return msg, kwargs
-        
-        # If msg is a string, wrap it in message field
-        return {"message": str(msg)}, kwargs
-
-class DictJSONHandler(logging.Handler):
-    """Custom handler that processes both dict and string messages"""
-    
-    def __init__(self, stream=None, filename=None, thread_safe=False):
-        super().__init__()
-        self.experiment_name = _default_experiment_name or "default_exp"
-        self.run_id = _default_run_id or f"run_{int(time.time())}"
-        self.container = _default_container or "unknown"
-        
-        # Thread lock only if requested (for Flask/multi-threaded apps)
-        self._lock = threading.Lock() if thread_safe else None
-        
-        # Setup output streams - FIXED LOGIC
-        self.enable_console = stream is not None
-        self.enable_file = filename is not None
-        self.log_filename = filename
-        
-        if filename:
-            # Create directory if needed
-            log_dir = os.path.dirname(filename)
-            if log_dir and not os.path.exists(log_dir):
-                os.makedirs(log_dir, exist_ok=True)
-    
-    def emit(self, record):
-        try:
-            # Use lock only if thread_safe is enabled
-            if self._lock:
-                with self._lock:
-                    self._do_emit(record)
-            else:
-                self._do_emit(record)
-                        
-        except Exception:
-            # Don't let logging errors crash the app
-            self.handleError(record)
-    
-    def _do_emit(self, record):
-        """Internal emit method without locking"""
-        # Get timestamp with nanosecond precision
+    @staticmethod
+    def get_timestamp() -> str:
+        """Get ISO timestamp with nanosecond precision"""
         now = datetime.now(timezone.utc)
-        # Get nanoseconds from time.time_ns()
-        nanoseconds = time.time_ns() % 1_000_000_000  # Get nanosecond part
-        # Format with microseconds and add nanoseconds
-        timestamp_base = now.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]  # Remove last 3 digits of microseconds
-        timestamp = f"{timestamp_base}{nanoseconds:03d}+00:00"  # Add nanoseconds and timezone
-        
-        # Process the message - FIXED DICT HANDLING
+        nanoseconds = time.time_ns() % 1_000_000_000
+        timestamp_base = now.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
+        return f"{timestamp_base}{nanoseconds:03d}+00:00"
+
+
+class LogFormatter:
+    """Formats log records into JSON structure"""
+    
+    def __init__(self, metadata: LogMetadata):
+        self.metadata = metadata
+    
+    def format(self, record: logging.LogRecord) -> Dict[str, Any]:
+        """Format log record into structured dictionary"""
+        # Extract message data
         if isinstance(record.msg, dict):
             log_entry = record.msg.copy()
         elif hasattr(record, 'dict_data') and isinstance(record.dict_data, dict):
@@ -244,237 +98,623 @@ class DictJSONHandler(logging.Handler):
             log_entry = {"message": str(record.msg) if record.msg else record.getMessage()}
         
         # Add metadata
+        log_entry.update(self.metadata.to_dict())
         log_entry.update({
-            "experiment_name": self.experiment_name,
-            "run_id": self.run_id,
-            "container": self.container,
-            "level": record.levelname
+            "timestamp": TimestampGenerator.get_timestamp(),
+            "level": record.levelname,
+            "logger_name": record.name,
+            "module": record.module,
+            "function": record.funcName,
+            "line": record.lineno
         })
         
-        # Create final log line (TSV format: timestamp + TAB + json)
-        json_str = json.dumps(log_entry, separators=(',', ':'))
-        final_message = f"{timestamp}\t{json_str}"
-        
-        # Output to console - FIXED FOR DOCKER
-        if self.enable_console:
-            try:
-                sys.stdout.write(final_message + '\n')
-                sys.stdout.flush()
-            except (BrokenPipeError, OSError):
-                pass
-        
-        # Output to file
-        if self.enable_file and self.log_filename:
-            try:
-                with open(self.log_filename, 'a', encoding='utf-8') as f:
-                    f.write(final_message + '\n')
-                    f.flush()
-            except (OSError, IOError):
-                pass
+        return log_entry
 
-def setup_as_default(experiment_name: str = None, 
-                     run_id: Optional[str] = None,
-                     container: str = None,
-                     log_file: Optional[str] = None,
-                     log_level: str = "INFO",
-                     enable_stdout: bool = None,
-                     flask_app=None,
-                     thread_safe: bool = None):
-    """
-    Setup this logger as the default logging system for the entire application
+
+class BaseHandler(ABC):
+    """Abstract base class for log handlers"""
     
-    Args:
-        experiment_name: Name of the experiment (defaults to env var EXPERIMENT_NAME or 'default_exp')
-        run_id: Optional run ID. If None, uses env var RUN_ID or auto-generated
-        container: Container/service name (defaults to env var CONTAINER_NAME or auto-detect)
-        log_file: Optional file path for logging (can use env var LOG_FILE)
-        log_level: Log level (defaults to env var LOG_LEVEL or 'INFO')
-        enable_stdout: Whether to output to console (defaults to env var ENABLE_CONSOLE_LOGS or True)
-        flask_app: Flask app instance for proper Flask integration
-        thread_safe: Enable thread safety (auto-enabled for Flask, disabled otherwise)
+    def __init__(self, metadata: LogMetadata, level: str = "INFO"):
+        self.metadata = metadata
+        self.formatter = LogFormatter(metadata)
+        self.level = getattr(logging, level.upper())
+        self.enabled = True
     
-    Usage:
-        # Single-threaded services (training, inference):
-        rl_logger.setup_as_default(container="training")
+    @abstractmethod
+    def emit(self, record: logging.LogRecord) -> bool:
+        """Emit log record. Returns True if successful, False otherwise"""
+        pass
+    
+    def should_emit(self, record: logging.LogRecord) -> bool:
+        """Check if record should be emitted"""
+        return self.enabled and record.levelno >= self.level
+    
+    def close(self):
+        """Cleanup handler resources"""
+        pass
+
+
+class ConsoleHandler(BaseHandler):
+    """Handler for console output"""
+    
+    def __init__(self, metadata: LogMetadata, level: str = "INFO", 
+                 stream=None, use_tsv: bool = True):
+        super().__init__(metadata, level)
+        self.stream = stream or sys.stdout
+        self.use_tsv = use_tsv
+    
+    def emit(self, record: logging.LogRecord) -> bool:
+        """Emit to console"""
+        if not self.should_emit(record):
+            return True
         
-        # Flask/multi-threaded services:
-        rl_logger.setup_as_default(container="env", flask_app=app)
+        try:
+            log_data = self.formatter.format(record)
+            
+            if self.use_tsv:
+                # TSV format: timestamp + TAB + json
+                timestamp = log_data.pop("timestamp")
+                json_str = json.dumps(log_data, separators=(',', ':'))
+                message = f"{timestamp}\t{json_str}"
+            else:
+                # Pure JSON format
+                message = json.dumps(log_data, separators=(',', ':'))
+            
+            self.stream.write(message + '\n')
+            self.stream.flush()
+            return True
+            
+        except (BrokenPipeError, OSError):
+            return False
+        except Exception:
+            return False
+
+
+class FileHandler(BaseHandler):
+    """Handler for file output"""
+    
+    def __init__(self, metadata: LogMetadata, filename: str, level: str = "INFO",
+                 use_tsv: bool = True):
+        super().__init__(metadata, level)
+        self.filename = filename
+        self.use_tsv = use_tsv
+        self._ensure_directory()
+    
+    def _ensure_directory(self):
+        """Create directory if it doesn't exist"""
+        log_dir = os.path.dirname(self.filename)
+        if log_dir and not os.path.exists(log_dir):
+            os.makedirs(log_dir, exist_ok=True)
+    
+    def emit(self, record: logging.LogRecord) -> bool:
+        """Emit to file"""
+        if not self.should_emit(record):
+            return True
         
-        # Auto-detect container from environment:
-        rl_logger.setup_as_default()  # Uses CONTAINER_NAME env var
-    """
-    global _default_experiment_name, _default_run_id, _default_container, _is_default_setup
+        try:
+            log_data = self.formatter.format(record)
+            
+            if self.use_tsv:
+                # TSV format: timestamp + TAB + json
+                timestamp = log_data.pop("timestamp")
+                json_str = json.dumps(log_data, separators=(',', ':'))
+                message = f"{timestamp}\t{json_str}"
+            else:
+                # Pure JSON format
+                message = json.dumps(log_data, separators=(',', ':'))
+            
+            with open(self.filename, 'a', encoding='utf-8') as f:
+                f.write(message + '\n')
+                f.flush()
+            return True
+            
+        except (OSError, IOError):
+            return False
+        except Exception:
+            return False
+
+
+class RabbitMQHandler(BaseHandler):
+    """Handler for RabbitMQ output"""
     
-    # Get values from env vars with fallbacks
-    _default_experiment_name = experiment_name or os.getenv('EXPERIMENT_NAME', 'default_exp')
-    _default_run_id = run_id or os.getenv('RUN_ID', f"run_{int(time.time())}_{uuid.uuid4().hex[:6]}")
+    def __init__(self, metadata: LogMetadata, level: str = "INFO"):
+        if not RABBITMQ_AVAILABLE:
+            raise ImportError("pika library not available. Install with: pip install pika")
+        
+        super().__init__(metadata, level)
+        
+        # RabbitMQ configuration from environment
+        self.config = self._load_config()
+        
+        # Connection state
+        self.connection = None
+        self.channel = None
+        self.is_connected = False
+        self.retry_count = 0
+        self.lock = threading.Lock()
+        
+        # Initialize connection
+        self._connect()
     
-    # Auto-detect container name from various sources
-    if container is None:
-        container = (
-            os.getenv('CONTAINER_NAME') or           # Explicit env var
-            os.getenv('HOSTNAME', '').split('.')[0] or  # Docker hostname
-            os.path.basename(sys.argv[0]).replace('.py', '') or  # Script name
-            'unknown'
+    def _load_config(self) -> Dict[str, Any]:
+        """Load RabbitMQ configuration from environment variables"""
+        return {
+            'host': os.getenv('RABBITMQ_HOST', 'localhost'),
+            'port': int(os.getenv('RABBITMQ_PORT', '5672')),
+            'username': os.getenv('RABBITMQ_USERNAME', 'guest'),
+            'password': os.getenv('RABBITMQ_PASSWORD', 'guest'),
+            'vhost': os.getenv('RABBITMQ_VHOST', '/'),
+            'exchange': os.getenv('RABBITMQ_EXCHANGE', 'logs'),
+            'routing_key': os.getenv('RABBITMQ_ROUTING_KEY', 'rl_logs'),
+            'exchange_type': os.getenv('RABBITMQ_EXCHANGE_TYPE', 'topic'),
+            'durable': os.getenv('RABBITMQ_DURABLE', 'true').lower() == 'true',
+            'connection_timeout': int(os.getenv('RABBITMQ_CONNECTION_TIMEOUT', '10')),
+            'retry_delay': int(os.getenv('RABBITMQ_RETRY_DELAY', '5')),
+            'max_retries': int(os.getenv('RABBITMQ_MAX_RETRIES', '3'))
+        }
+    
+    def _connect(self):
+        """Establish connection to RabbitMQ"""
+        try:
+            credentials = pika.PlainCredentials(self.config['username'], self.config['password'])
+            parameters = pika.ConnectionParameters(
+                host=self.config['host'],
+                port=self.config['port'],
+                virtual_host=self.config['vhost'],
+                credentials=credentials,
+                connection_attempts=3,
+                retry_delay=2,
+                socket_timeout=self.config['connection_timeout'],
+                heartbeat=600,
+                blocked_connection_timeout=300
+            )
+            
+            self.connection = pika.BlockingConnection(parameters)
+            self.channel = self.connection.channel()
+            
+            # Declare exchange
+            #self.channel.exchange_declare(
+            #    exchange=self.config['exchange'],
+            #    exchange_type=self.config['exchange_type'],
+            #    durable=self.config['durable']
+            #)
+            
+            self.is_connected = True
+            self.retry_count = 0
+            
+        except Exception as e:
+            self.is_connected = False
+            if self.connection and not self.connection.is_closed:
+                try:
+                    self.connection.close()
+                except:
+                    pass
+            self.connection = None
+            self.channel = None
+    
+    def _reconnect(self) -> bool:
+        """Attempt to reconnect to RabbitMQ"""
+        if self.retry_count >= self.config['max_retries']:
+            return False
+        
+        self.retry_count += 1
+        time.sleep(self.config['retry_delay'])
+        self._connect()
+        return self.is_connected
+    
+    def emit(self, record: logging.LogRecord) -> bool:
+        """Emit to RabbitMQ"""
+        if not self.should_emit(record):
+            return True
+        
+        with self.lock:
+            try:
+                log_data = self.formatter.format(record)
+                json_message = json.dumps(log_data, separators=(',', ':'))
+                
+                if not self.is_connected:
+                    if not self._reconnect():
+                        return False
+                
+                # Publish message
+                self.channel.basic_publish(
+                    exchange=self.config['exchange'],
+                    routing_key=self.config['routing_key'],
+                    body=json_message,
+                    properties=pika.BasicProperties(
+                        delivery_mode=2 if self.config['durable'] else 1,
+                        content_type='application/json',
+                        timestamp=int(time.time())
+                    )
+                )
+                return True
+                
+            except Exception:
+                self.is_connected = False
+                # Try to reconnect and publish again
+                if self._reconnect():
+                    try:
+                        self.channel.basic_publish(
+                            exchange=self.config['exchange'],
+                            routing_key=self.config['routing_key'],
+                            body=json_message,
+                            properties=pika.BasicProperties(
+                                delivery_mode=2 if self.config['durable'] else 1,
+                                content_type='application/json',
+                                timestamp=int(time.time())
+                            )
+                        )
+                        return True
+                    except Exception:
+                        pass
+                return False
+    
+    def close(self):
+        """Close RabbitMQ connection"""
+        try:
+            if self.channel and not self.channel.is_closed:
+                self.channel.close()
+            if self.connection and not self.connection.is_closed:
+                self.connection.close()
+        except Exception:
+            pass
+        finally:
+            self.is_connected = False
+
+
+class AsyncRabbitMQHandler(BaseHandler):
+    """Asynchronous RabbitMQ handler using background thread"""
+    
+    def __init__(self, metadata: LogMetadata, level: str = "INFO", queue_size: int = 1000):
+        super().__init__(metadata, level)
+        
+        # Message queue
+        self.message_queue = queue.Queue(maxsize=queue_size)
+        self.queue_size = queue_size
+        
+        # Background thread
+        self.worker_thread = None
+        self.stop_event = threading.Event()
+        
+        # Underlying RabbitMQ handler
+        try:
+            self.rabbitmq_handler = RabbitMQHandler(metadata, level)
+            self._start_worker()
+        except ImportError:
+            raise
+        except Exception:
+            # RabbitMQ connection failed, but we still create the handler
+            self.rabbitmq_handler = None
+    
+    def _start_worker(self):
+        """Start background worker thread"""
+        self.worker_thread = threading.Thread(target=self._worker, daemon=True)
+        self.worker_thread.start()
+    
+    def _worker(self):
+        """Background worker that processes the message queue"""
+        while not self.stop_event.is_set():
+            try:
+                try:
+                    record = self.message_queue.get(timeout=1.0)
+                    if record is None:  # Shutdown signal
+                        break
+                    
+                    if self.rabbitmq_handler:
+                        self.rabbitmq_handler.emit(record)
+                    self.message_queue.task_done()
+                    
+                except queue.Empty:
+                    continue
+                    
+            except Exception:
+                time.sleep(1)
+    
+    def emit(self, record: logging.LogRecord) -> bool:
+        """Add record to queue for async processing"""
+        if not self.should_emit(record):
+            return True
+        
+        try:
+            self.message_queue.put_nowait(record)
+            return True
+        except queue.Full:
+            return False
+    
+    def close(self):
+        """Shutdown async handler"""
+        self.stop_event.set()
+        
+        try:
+            self.message_queue.put_nowait(None)
+        except queue.Full:
+            pass
+        
+        if self.worker_thread and self.worker_thread.is_alive():
+            self.worker_thread.join(timeout=5.0)
+        
+        if self.rabbitmq_handler:
+            self.rabbitmq_handler.close()
+
+
+class LoggerConfig:
+    """Configuration class for logger setup"""
+    
+    def __init__(self):
+        self.experiment_name = None
+        self.run_id = None
+        self.container = None
+        self.log_level = "INFO"
+        self.enable_console = True
+        self.enable_file = False
+        self.enable_rabbitmq = False
+        self.log_file = None
+        self.rabbitmq_async = True
+        self.flask_app = None
+        self.thread_safe = None
+        self.use_tsv_format = True
+    
+    @classmethod
+    def from_env(cls) -> 'LoggerConfig':
+        """Create configuration from environment variables"""
+        config = cls()
+        
+        config.experiment_name = os.getenv('EXPERIMENT_NAME')
+        config.run_id = os.getenv('RUN_ID')
+        config.container = os.getenv('CONTAINER_NAME')
+        config.log_level = os.getenv('LOG_LEVEL', 'INFO')
+        config.log_file = os.getenv('LOG_FILE')
+        
+        # Boolean environment variables
+        config.enable_console = os.getenv('ENABLE_CONSOLE_LOGS', 'true').lower().strip('"\'') == 'true'
+        config.enable_file = config.log_file is not None
+        config.enable_rabbitmq = os.getenv('ENABLE_RABBITMQ', 'false').lower().strip('"\'') == 'true'
+        config.rabbitmq_async = os.getenv('RABBITMQ_ASYNC', 'true').lower().strip('"\'') == 'true'
+        config.use_tsv_format = os.getenv('USE_TSV_FORMAT', 'true').lower().strip('"\'') == 'true'
+        
+        return config
+
+
+class RLLogger:
+    """Main logger class that manages multiple handlers"""
+    
+    def __init__(self, config: LoggerConfig):
+        self.config = config
+        self.metadata = LogMetadata(
+            experiment_name=config.experiment_name,
+            run_id=config.run_id,
+            container=config.container
         )
-    _default_container = container
+        self.handlers: List[BaseHandler] = []
+        self.root_logger = logging.getLogger()
+        self._setup_handlers()
+        self._setup_logging()
     
-    # Get other settings from env vars if not provided
-    final_log_file = log_file or os.getenv('LOG_FILE')
-    final_log_level = os.getenv('LOG_LEVEL', log_level)
+    def _setup_handlers(self):
+        """Setup all enabled handlers"""
+        # Console handler
+        if self.config.enable_console:
+            handler = ConsoleHandler(
+                self.metadata, 
+                level=self.config.log_level,
+                use_tsv=self.config.use_tsv_format
+            )
+            self.handlers.append(handler)
+        
+        # File handler
+        if self.config.enable_file and self.config.log_file:
+            handler = FileHandler(
+                self.metadata, 
+                filename=self.config.log_file,
+                level=self.config.log_level,
+                use_tsv=self.config.use_tsv_format
+            )
+            self.handlers.append(handler)
+        
+        # RabbitMQ handler
+        if self.config.enable_rabbitmq:
+            try:
+                if self.config.rabbitmq_async:
+                    handler = AsyncRabbitMQHandler(self.metadata, level=self.config.log_level)
+                else:
+                    handler = RabbitMQHandler(self.metadata, level=self.config.log_level)
+                self.handlers.append(handler)
+            except ImportError:
+                sys.stdout.write("⚠️  RabbitMQ handler requested but pika not installed\n")
+            except Exception as e:
+                sys.stdout.write(f"⚠️  Failed to setup RabbitMQ handler: {e}\n")
     
-    # Handle enable_stdout from env var - FIX: strip quotes
-    if enable_stdout is None:
-        env_val = os.getenv('ENABLE_CONSOLE_LOGS', 'true')
-        # Strip quotes if present
-        env_val = env_val.strip().strip('"').strip("'").lower()
-        enable_stdout = env_val == 'true'
+    def _setup_logging(self):
+        """Setup Python logging system"""
+        # Clear existing handlers
+        for handler in self.root_logger.handlers[:]:
+            self.root_logger.removeHandler(handler)
+        
+        # Set log level
+        self.root_logger.setLevel(getattr(logging, self.config.log_level.upper()))
+        
+        # Add our custom handler
+        custom_handler = MultiHandler(self.handlers)
+        self.root_logger.addHandler(custom_handler)
+        self.root_logger.propagate = False
+        
+        # Handle Flask integration
+        if self.config.flask_app:
+            self._setup_flask_logging()
+        
+        self._print_status()
     
-    # Auto-enable thread safety for Flask, otherwise disable by default
-    if thread_safe is None:
-        thread_safe = flask_app is not None
-    
-    _is_default_setup = True
-    
-    # Get root logger
-    root_logger = logging.getLogger()
-    
-    # Remove all existing handlers to avoid conflicts
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
-    
-    # Set log level
-    root_logger.setLevel(getattr(logging, final_log_level.upper()))
-    
-    # Add our custom handler with thread safety control
-    handler = DictJSONHandler(
-        stream=sys.stdout if enable_stdout else None, 
-        filename=final_log_file,
-        thread_safe=thread_safe
-    )
-    root_logger.addHandler(handler)
-    
-    # Prevent propagation to avoid duplicates
-    root_logger.propagate = False
-    
-    # Handle Flask app logging specially (after root logger setup)
-    if flask_app is not None:
-        # Configure Flask's logger to use the same handler
+    def _setup_flask_logging(self):
+        """Setup Flask-specific logging"""
+        flask_app = self.config.flask_app
+        
+        # Configure Flask's logger
         flask_app.logger.handlers.clear()
-        flask_app.logger.setLevel(getattr(logging, final_log_level.upper()))
-        flask_app.logger.addHandler(handler)  # Use same handler
+        flask_app.logger.setLevel(getattr(logging, self.config.log_level.upper()))
+        flask_app.logger.addHandler(MultiHandler(self.handlers))
         flask_app.logger.propagate = False
         
-        # Also configure werkzeug logger (Flask's HTTP server)
+        # Configure werkzeug logger
         werkzeug_logger = logging.getLogger('werkzeug')
         werkzeug_logger.handlers.clear()
         werkzeug_logger.setLevel(logging.WARNING)
-        werkzeug_logger.addHandler(handler)  # Use same handler
+        werkzeug_logger.addHandler(MultiHandler(self.handlers))
         werkzeug_logger.propagate = False
     
-    status_msg = f"✅ Default logging setup - Experiment: {_default_experiment_name}, Run: {_default_run_id}, Container: {_default_container}"
-    if final_log_file and enable_stdout:
-        status_msg += f" (Console + File: {final_log_file})"
-    elif final_log_file:
-        status_msg += f" (File only: {final_log_file})"
-    else:
-        status_msg += " (Console only)"
-    
-    if flask_app:
-        status_msg += " [Flask integrated]"
-    elif thread_safe:
-        status_msg += " [Thread-safe]"
-    else:
-        status_msg += " [Single-threaded]"
-    
-    # Use direct write for setup message
-    sys.stdout.write(status_msg + '\n')
-    sys.stdout.flush()
-    
-    # Create debug messages using our JSON format
-    def debug_log(message, **data):
-        now = datetime.now(timezone.utc)
-        # Get nanoseconds from time.time_ns()
-        nanoseconds = time.time_ns() % 1_000_000_000  # Get nanosecond part
-        # Format with microseconds and add nanoseconds
-        timestamp_base = now.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]  # Remove last 3 digits of microseconds
-        timestamp = f"{timestamp_base}{nanoseconds:03d}+00:00"  # Add nanoseconds and timezone
+    def _print_status(self):
+        """Print setup status message"""
+        handlers_info = []
+        if self.config.enable_console:
+            handlers_info.append("Console")
+        if self.config.enable_file:
+            handlers_info.append(f"File({self.config.log_file})")
+        if self.config.enable_rabbitmq:
+            mode = "Async" if self.config.rabbitmq_async else "Sync"
+            handlers_info.append(f"RabbitMQ({mode})")
         
-        log_entry = {
-            "experiment_name": _default_experiment_name,
-            "run_id": _default_run_id,
-            "container": _default_container,
-            "level": "DEBUG",
-            "message": message,
-            **data
-        }
-        json_str = json.dumps(log_entry, separators=(',', ':'))
-        sys.stdout.write(f"{timestamp}\t{json_str}\n")
+        status = f"✅ RL Logger initialized - {self.metadata.experiment_name}:{self.metadata.run_id}@{self.metadata.container}"
+        if handlers_info:
+            status += f" -> {', '.join(handlers_info)}"
+        
+        sys.stdout.write(status + '\n')
         sys.stdout.flush()
     
-    # DEBUG: Check logger configuration using JSON format
-    debug_log("Logger configuration check", 
-              root_logger_level=root_logger.level,
-              info_level=logging.INFO,
-              effective_level=root_logger.getEffectiveLevel(),
-              handler_count=len(root_logger.handlers),
-              final_log_level=final_log_level,
-              parsed_log_level=getattr(logging, final_log_level.upper()),
-              enable_console_logs_env=os.getenv('ENABLE_CONSOLE_LOGS'),
-              enable_stdout_processed=enable_stdout)
-    
-    for i, h in enumerate(root_logger.handlers):
-        debug_log(f"Handler {i} configuration",
-                  handler_type=type(h).__name__,
-                  enable_console=getattr(h, 'enable_console', None),
-                  enable_file=getattr(h, 'enable_file', None),
-                  log_filename=getattr(h, 'log_filename', None))
-    
-    # IMMEDIATE TEST - Force direct call to handler
-    debug_log("Testing handler directly")
-    
-    # Test with INFO level (should work)
-    try:
-        test_record = logging.LogRecord(
-            name="test", level=logging.INFO, pathname="", lineno=0,
-            msg={"message": "Direct handler test", "test": True}, 
-            args=(), exc_info=None
-        )
-        handler._do_emit(test_record)
-        debug_log("Direct handler call completed successfully")
-    except Exception as e:
-        debug_log("Direct handler call failed", error=str(e))
-    
-    # Test normal logging
-    debug_log("Testing normal logging calls")
-    
-    root_logger.error({"message": "ERROR level test", "should": "appear"})
-    root_logger.warning({"message": "WARNING level test", "should": "appear"})
-    root_logger.info({"message": "INFO level test", "should": "appear"})
-    
-    debug_log("Normal logging test completed")
+    def close(self):
+        """Close all handlers"""
+        for handler in self.handlers:
+            handler.close()
 
-def get_logger(name: Optional[str] = None):
+
+class MultiHandler(logging.Handler):
+    """Logging handler that dispatches to multiple custom handlers"""
+    
+    def __init__(self, handlers: List[BaseHandler]):
+        super().__init__()
+        self.handlers = handlers
+    
+    def emit(self, record):
+        """Emit to all handlers"""
+        for handler in self.handlers:
+            try:
+                success = handler.emit(record)
+                if not success and isinstance(handler, (RabbitMQHandler, AsyncRabbitMQHandler)):
+                    # Log RabbitMQ failures to stderr
+                    log_data = handler.formatter.format(record)
+                    json_str = json.dumps(log_data, separators=(',', ':'))
+                    sys.stdout.write(f"RABBITMQ_FAILED: {json_str}\n")
+                    sys.stdout.flush()
+            except Exception:
+                self.handleError(record)
+    
+    def close(self):
+        """Close all handlers"""
+        for handler in self.handlers:
+            handler.close()
+        super().close()
+
+
+# Global logger instance
+_global_logger: Optional[RLLogger] = None
+
+
+def setup(experiment_name: str = None, 
+          run_id: str = None,
+          container: str = None,
+          log_file: str = None,
+          log_level: str = "INFO",
+          enable_console: bool = None,
+          enable_rabbitmq: bool = None,
+          rabbitmq_async: bool = None,
+          flask_app=None,
+          use_env: bool = True) -> RLLogger:
     """
-    Get a logger instance that works with the default setup
+    Setup RL Logger with specified configuration
     
     Args:
-        name: Optional logger name
-        
-    Returns:
-        Logger that outputs JSON format
-    """
-    if not _is_default_setup:
-        raise RuntimeError("Must call setup_as_default() first!")
+        experiment_name: Name of the experiment
+        run_id: Unique run identifier
+        container: Container/service name
+        log_file: Path to log file (enables file logging)
+        log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        enable_console: Enable console output
+        enable_rabbitmq: Enable RabbitMQ output
+        rabbitmq_async: Use async RabbitMQ handler
+        flask_app: Flask app instance for integration
+        use_env: Whether to read from environment variables
     
-    logger = logging.getLogger(name)
-    return logger
+    Returns:
+        RLLogger instance
+    """
+    global _global_logger
+    
+    # Start with environment config if requested
+    if use_env:
+        config = LoggerConfig.from_env()
+    else:
+        config = LoggerConfig()
+    
+    # Override with explicit parameters
+    if experiment_name is not None:
+        config.experiment_name = experiment_name
+    if run_id is not None:
+        config.run_id = run_id
+    if container is not None:
+        config.container = container
+    if log_file is not None:
+        config.log_file = log_file
+        config.enable_file = True
+    if log_level is not None:
+        config.log_level = log_level
+    if enable_console is not None:
+        config.enable_console = enable_console
+    if enable_rabbitmq is not None:
+        config.enable_rabbitmq = enable_rabbitmq
+    if rabbitmq_async is not None:
+        config.rabbitmq_async = rabbitmq_async
+    if flask_app is not None:
+        config.flask_app = flask_app
+        config.thread_safe = True
+    
+    # Close existing logger
+    if _global_logger:
+        _global_logger.close()
+    
+    # Create new logger
+    _global_logger = RLLogger(config)
+    return _global_logger
 
-# Test function for debugging
+
+def get_logger(name: str = None) -> logging.Logger:
+    """Get a logger instance"""
+    if _global_logger is None:
+        setup()  # Setup with defaults
+    return logging.getLogger(name)
+
+
+# Convenience functions
+def info(data: Dict[str, Any]):
+    """Log INFO level"""
+    logging.info(data)
+
+def debug(data: Dict[str, Any]):
+    """Log DEBUG level"""
+    logging.debug(data)
+
+def warning(data: Dict[str, Any]):
+    """Log WARNING level"""
+    logging.warning(data)
+
+def error(data: Dict[str, Any]):
+    """Log ERROR level"""
+    logging.error(data)
+
+def critical(data: Dict[str, Any]):
+    """Log CRITICAL level"""
+    logging.critical(data)
+
+
 def test_logging():
     """Test function to verify logging works"""
-    # Note: logging is already imported at module level
-    
     sys.stdout.write("=== Testing RL Logger ===\n")
     sys.stdout.flush()
     
@@ -491,56 +731,30 @@ def test_logging():
     sys.stdout.write("=== End Test ===\n")
     sys.stdout.flush()
 
-# Convenience functions (FIXED)
-def get_default_logger():
-    """Get default logger"""
-    if not _is_default_setup:
-        setup_as_default()
-    return logging.getLogger()
 
-def info(data: Dict[str, Any]):
-    """Log INFO level using default logger"""
-    logging.info(data)
+# Backward compatibility aliases
+setup_as_default = setup  # For backward compatibility with your existing code
 
-def debug(data: Dict[str, Any]):
-    """Log DEBUG level using default logger"""
-    logging.debug(data)
 
-def warning(data: Dict[str, Any]):
-    """Log WARNING level using default logger"""
-    logging.warning(data)
-
-def error(data: Dict[str, Any]):
-    """Log ERROR level using default logger"""
-    logging.error(data)
-
-def critical(data: Dict[str, Any]):
-    """Log CRITICAL level using default logger"""
-    logging.critical(data)
-
-# Example usage
 if __name__ == "__main__":
-    # Setup as default logger
-    setup_as_default("snake_exp_001", log_file="logs/test.log")
+    # Example usage
+    setup(
+        experiment_name="snake_exp_001",
+        log_file="logs/test.log",
+        enable_rabbitmq=True,
+        rabbitmq_async=True
+    )
     
     # Run test
     test_logging()
     
-    # Now use regular Python logging anywhere in your code
-    # Note: logging is already imported at module level
+    # Example usage
+    import logging
     
-    # These all work and output JSON:
     logging.info({"message": "Episode completed", "reward": 133.5})
     logging.error({"component": "training", "error_code": "CUDA_OOM"})
     logging.debug({"component": "env", "action": "forward"})
     
-    # Plain strings also work:
+    # Plain strings also work
     logging.info("This is a plain message")
     logging.warning("Something went wrong")
-    
-    # Different loggers all use the same JSON format:
-    training_logger = logging.getLogger("training")
-    inference_logger = logging.getLogger("inference")
-    
-    training_logger.info({"component": "training", "message": "Batch processed"})
-    inference_logger.error({"component": "inference", "message": "Model failed"})

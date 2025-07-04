@@ -19,3 +19,4 @@ grpcio-status>=1.60.0
 
 # Optional: For better gRPC performance
 grpcio-reflection>=1.60.0
+pika

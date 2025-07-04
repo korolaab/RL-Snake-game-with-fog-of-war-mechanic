@@ -48,12 +48,6 @@ RUN_ID="${TIMESTAMP}_${UUID_SHORT}"
 print_info "Experiment Name: $EXPERIMENT_NAME"
 print_info "Generated Run ID: $RUN_ID"
 
-# Create/update .env file
-cat > .env << EOF
-EXPERIMENT_NAME=$EXPERIMENT_NAME
-RUN_ID=$RUN_ID
-TIMESTAMP=$TIMESTAMP
-EOF
 
 print_info "Environment variables written to .env file"
 
@@ -63,6 +57,14 @@ export RUN_ID="$RUN_ID"
 export TIMESTAMP="$TIMESTAMP"
 export LOG_FILE="/output/test_log.tsv"
 export ENABLE_CONSOLE_LOGS=true
+
+export ENABLE_RABBITMQ="true"
+export RABBITMQ_HOST="192.168.88.253"
+export RABBITMQ_USERNAME="tech"
+export RABBITMQ_PASSWORD="tech"
+
+export RABBITMQ_EXCHANGE=""                    # Use default exchange
+export RABBITMQ_ROUTING_KEY="rabbitmq_rl_snake_logs"     # Same as your queue name
 
 print_info "Starting Docker Compose with --build flag..."
 

@@ -11,12 +11,28 @@ services:
       - "5000:5000"
     command: ["python","app.py","--fps","100","--seed","1", "--max-steps-without-food","100"]
     environment:
-      - PYTHONUNBUFFERED=1
-      - ENABLE_CONSOLE_LOGS=true
-      - EXPERIMENT_NAME=${EXPERIMENT_NAME}
-      - ENABLE_CONSOLE_LOGS=${ENABLE_CONSOLE_LOGS}
-      - LOG_FILE=${LOG_FILE}
-      - RUN_ID=${RUN_ID}
+      PYTHONUNBUFFERED: 1
+      EXPERIMENT_NAME: ${EXPERIMENT_NAME:-unknown}
+      RUN_ID: ${RUN_ID:-unknown}
+      ENABLE_RABBITMQ: ${ENABLE_RABBITMQ:-true}
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-}
+      RABBITMQ_ROUTING_KEY: ${RABBITMQ_ROUTING_KEY}
+      RABBITMQ_EXCHANGE_TYPE: ${RABBITMQ_EXCHANGE_TYPE:-direct}
+      RABBITMQ_DURABLE: ${RABBITMQ_DURABLE:-true}
+      RABBITMQ_ASYNC: ${RABBITMQ_ASYNC:-true}
+      RABBITMQ_CONNECTION_TIMEOUT: ${RABBITMQ_CONNECTION_TIMEOUT:-10}
+      RABBITMQ_RETRY_DELAY: ${RABBITMQ_RETRY_DELAY:-5}
+      RABBITMQ_MAX_RETRIES: ${RABBITMQ_MAX_RETRIES:-3}
+      # Logger Configuration
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FILE: ${LOG_FILE:-}
+      ENABLE_CONSOLE_LOGS: false
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:5000"]
       interval: 30s
@@ -51,12 +67,27 @@ services:
       "--port", "50051"
     ]
     environment:
-      - PYTHONUNBUFFERED=1
-      - ENABLE_CONSOLE_LOGS=true
-      - EXPERIMENT_NAME=${EXPERIMENT_NAME}
-      - ENABLE_CONSOLE_LOGS=${ENABLE_CONSOLE_LOGS}
-      - LOG_FILE=${LOG_FILE}
-      - RUN_ID=${RUN_ID}
+      PYTHONUNBUFFERED: 1
+      EXPERIMENT_NAME: ${EXPERIMENT_NAME:-unknown}
+      RUN_ID: ${RUN_ID:-unknown}
+      ENABLE_RABBITMQ: ${ENABLE_RABBITMQ:-true}
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-}
+      RABBITMQ_ROUTING_KEY: ${RABBITMQ_ROUTING_KEY}
+      RABBITMQ_EXCHANGE_TYPE: ${RABBITMQ_EXCHANGE_TYPE:-direct}
+      RABBITMQ_DURABLE: ${RABBITMQ_DURABLE:-true}
+      RABBITMQ_ASYNC: ${RABBITMQ_ASYNC:-true}
+      RABBITMQ_CONNECTION_TIMEOUT: ${RABBITMQ_CONNECTION_TIMEOUT:-10}
+      RABBITMQ_RETRY_DELAY: ${RABBITMQ_RETRY_DELAY:-5}
+      RABBITMQ_MAX_RETRIES: ${RABBITMQ_MAX_RETRIES:-3}
+      # Logger Configuration
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FILE: ${LOG_FILE:-}
+      ENABLE_CONSOLE_LOGS: ${ENABLE_CONSOLE_LOGS:-false}
     volumes:
       - shared-output:/output
       - ./shared/configs:/configs:ro
@@ -87,12 +118,27 @@ services:
       "--batch_size", "10"
     ] 
     environment:
-      - PYTHONUNBUFFERED=1
-      - ENV_HOST=env:5000
-      - ENABLE_CONSOLE_LOGS=${ENABLE_CONSOLE_LOGS}
-      - EXPERIMENT_NAME=${EXPERIMENT_NAME}
-      - LOG_FILE=${LOG_FILE}
-      - RUN_ID=${RUN_ID}
+      PYTHONUNBUFFERED: 1
+      EXPERIMENT_NAME: ${EXPERIMENT_NAME:-unknown}
+      RUN_ID: ${RUN_ID:-unknown}
+      ENABLE_RABBITMQ: ${ENABLE_RABBITMQ:-true}
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-}
+      RABBITMQ_ROUTING_KEY: ${RABBITMQ_ROUTING_KEY}
+      RABBITMQ_EXCHANGE_TYPE: ${RABBITMQ_EXCHANGE_TYPE:-direct}
+      RABBITMQ_DURABLE: ${RABBITMQ_DURABLE:-true}
+      RABBITMQ_ASYNC: ${RABBITMQ_ASYNC:-true}
+      RABBITMQ_CONNECTION_TIMEOUT: ${RABBITMQ_CONNECTION_TIMEOUT:-10}
+      RABBITMQ_RETRY_DELAY: ${RABBITMQ_RETRY_DELAY:-5}
+      RABBITMQ_MAX_RETRIES: ${RABBITMQ_MAX_RETRIES:-3}
+      # Logger Configuration
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FILE: ${LOG_FILE:-}
+      ENABLE_CONSOLE_LOGS: ${ENABLE_CONSOLE_LOGS:-false}
     volumes:
       - shared-output:/output
       - ./shared/configs:/configs:ro
@@ -112,5 +158,5 @@ networks:
   rl-network:
     driver: bridge
     ipam:
-      config:
-        - subnet: 172.20.0.0/16
+      config: 
+      - subnet: 172.20.0.0/16
