@@ -17,7 +17,7 @@ persistence:
   size: 50Gi
 
 shards: 1
-replicasCount: 1
+replicaCount: 1
 
 keeper:
   enabled: false        # Don't need keeper for single instance
