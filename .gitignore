@@ -4,10 +4,10 @@ __pycache__
 *.swo
 *.log
 # Secrets and credentials
-secrets/
+.secrets/
 *.secret
 *-secret.yaml
-*.secrets.yaml
+*-secrets.yaml
 .env
 .env.local
 
