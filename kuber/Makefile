@@ -79,7 +79,7 @@ create-secrets: generate-passwords ## Create Kubernetes secrets from password fi
 		echo "$(GREEN)✅ RabbitMQ secret created$(NC)"; \
 	fi
 
-secrets: create-secrets ## Alias for create-secrets
+secrets: create-secrets write-rabbitmq-secrets## Alias for create-secrets
 
 passwords: ## View current passwords
 	@echo "$(YELLOW)🔑 Password Information$(NC)"
@@ -111,7 +111,7 @@ passwords: ## View current passwords
 		echo "$(YELLOW)RabbitMQ secret not found in Kubernetes$(NC)"; \
 	fi
 
-deploy: create-secrets ## Deploy data stack (auto-detects best chart source)
+deploy: secrets ## Deploy data stack (auto-detects best chart source)
 	@echo "$(GREEN) Data Stack Deployment$(NC)"
 	@if [ ! -f k8s/data-stack/clickhouse/values.yaml ]; then \
 		echo "$(RED)❌ Run 'make init' first to create config files$(NC)"; \
@@ -155,8 +155,15 @@ setup-tech-creds:
 	else \
 		echo "$(RED)  ❌ RabbitMQ pod not found$(NC)"; \
 	fi
+
+write-rabbitmq-secrets:
+	@echo "$(GREEN) copy rabbitmq secrets to values-secrets.yaml$(NC)"
+	@echo "auth:" > k8s/data-stack/rabbitmq/values-secrets.yaml
+	@echo "  username: admin" >> k8s/data-stack/rabbitmq/values-secrets.yaml
+	@echo "  password: $$(cat .secrets/rabbitmq_password)" >> k8s/data-stack/rabbitmq/values-secrets.yaml
+	@echo "RabbitMQ secrets written to k8s/data-stack/rabbitmq/values-secrets.yaml"
 	
-quick-deploy: init create-secrets deploy health setup-tech-creds create-tables ## Complete setup: init + secrets + deploy
+quick-deploy: init secrets deploy health setup-tech-creds create-tables ## Complete setup: init + secrets + deploy
 
 destroy: ## Destroy data stack (WARNING: deletes data)
 	@echo "$(RED)⚠️  WARNING: This will delete all data in $(NAMESPACE)!$(NC)"
