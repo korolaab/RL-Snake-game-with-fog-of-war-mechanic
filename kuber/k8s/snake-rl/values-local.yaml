@@ -1,0 +1,76 @@
+global:
+  imageRegistry: "localhost:5000"
+  imageTag: "latest"
+  imagePullPolicy: IfNotPresent
+
+env:
+  enabled: true
+  service:
+    type: NodePort
+    port: 5000
+    targetPort: 5000
+    nodePort: 8000
+  
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+
+  storage:
+    enabled: true
+    accessMode: "ReadWriteOnce"
+    storageClass: "local-path"
+    size: "5Gi"
+
+training:
+  enabled: true
+  service:
+    type: ClusterIP
+    port: 50051
+    targetPort: 50051
+  args:
+    port: "50051"
+
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "200m"
+    limits:
+      memory: "512Mi"
+      cpu: "400m"
+  storage:
+    enabled: true
+    accessMode: "ReadWriteOnce"
+    storageClass: "local-path"
+    size: "5Gi"
+
+inference:
+  enabled: true
+  args:
+    envHost: "snake-rl-env:5000"
+    grpcHost: "snake-rl-training"
+    grpcPort: "50051"
+  
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "200m"
+    limits:
+      memory: "512Mi"
+      cpu: "400m"
+
+  storage:
+    enabled: true
+    accessMode: "ReadWriteOnce"
+    storageClass: "local-path"
+    size: "5Gi"
+
+rabbitmq:
+  enabled: false
+
+logging:
+  level: "DEBUG"
+  enableConsoleLogs: true

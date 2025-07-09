@@ -1,0 +1,59 @@
+{{- if .Values.inference.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "snake-rl.fullname" . }}-inference
+  labels:
+    {{- include "snake-rl.labels" . | nindent 4 }}
+    app.kubernetes.io/component: inference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "snake-rl.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: inference
+  template:
+    metadata:
+      labels:
+        {{- include "snake-rl.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: inference
+    spec:
+      containers:
+      - name: inference
+        image: "{{ .Values.global.imageRegistry }}/{{ .Values.inference.image.repository }}:{{ .Values.inference.image.tag | default .Values.global.imageTag }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        command: ["python", "main.py"]
+        args:
+          - "--snake_id"
+          - {{ .Values.inference.args.snakeId | quote }}
+          - "--env_host"
+          - {{ .Values.inference.args.envHost | quote }}
+          - "--model_save_dir"
+          - {{ .Values.inference.args.modelSaveDir | quote }}
+          - "--log_file"
+          - {{ .Values.inference.args.logFile | quote }}
+          - "--grpc_host"
+          - {{ .Values.inference.args.grpcHost | quote }}
+          - "--grpc_port"
+          - {{ .Values.inference.args.grpcPort | quote }}
+          - "--batch_size"
+          - {{ .Values.inference.args.batchSize | quote }}
+          - "--learning_rate"
+          - {{ .Values.inference.args.learningRate | quote }}
+        env:
+        {{- include "snake-rl.commonEnvVars" . | nindent 8 }}
+        {{- include "snake-rl.rabbitmqEnvVars" . | nindent 8 }}
+        resources:
+          {{- toYaml .Values.inference.resources | nindent 10 }}
+        {{- if .Values.storage.enabled }}
+        volumeMounts:
+        - name: shared-storage
+          mountPath: /output
+        {{- end }}
+      {{- if .Values.storage.enabled }}
+      volumes:
+      - name: shared-storage
+        persistentVolumeClaim:
+          claimName: {{ include "snake-rl.fullname" . }}-inference-storage
+      {{- end }}
+{{- end }}

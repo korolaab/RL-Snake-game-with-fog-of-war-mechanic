@@ -1,0 +1,126 @@
+global:
+  imageRegistry: "localhost:5000"
+  imageTag: "latest"
+  imagePullPolicy: IfNotPresent
+
+# Environment Service Configuration
+env:
+  enabled: true
+  image:
+    repository: "snake-rl/env"
+    tag: ""
+  
+  service:
+    type: ClusterIP
+    port: 5000
+    targetPort: 5000
+  
+  args:
+    fps: 100
+    seed: 1
+    maxStepsWithoutFood: 100
+    gridWidth: 20
+    gridHeight: 20
+    visionRadius: 5
+    visionDisplayCols: 11
+    visionDisplayRows: 11
+    maxSnakes: 1
+    rewardConfig: '{"alive": 1}'
+  
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+# Training Service Configuration
+training:
+  enabled: true
+  image:
+    repository: "snake-rl/training"
+    tag: ""
+  
+  service:
+    type: ClusterIP
+    port: 50051
+    targetPort: 50051
+  
+  args:
+    snakeId: "adam"
+    learningRate: 0.001
+    logFile: "/output/training.log"
+    port: 50051
+  
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+
+# Inference Service Configuration
+inference:
+  enabled: true
+  image:
+    repository: "snake-rl/inference"
+    tag: ""
+  
+  args:
+    snakeId: "adam"
+    envHost: "snake-rl-env:5000"
+    modelSaveDir: "/output/models"
+    logFile: "/output/agent1.log"
+    grpcHost: "snake-rl-training"
+    grpcPort: 50051
+    batchSize: 10
+    learningRate: 0.001
+  
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+
+# RabbitMQ Configuration
+rabbitmq:
+  enabled: true
+  host: "rabbitmq"
+  port: 5672
+  username: "guest"
+  password: "guest"
+  vhost: "/"
+  exchange: ""
+  routingKey: ""
+  exchangeType: "direct"
+  durable: true
+  async: true
+  connectionTimeout: 10
+  retryDelay: 5
+  maxRetries: 3
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  file: ""
+  enableConsoleLogs: false
+
+# Experiment Configuration
+experiment:
+  name: "snake-rl-experiment"
+  runId: "run-1"
+
+# Storage Configuration
+storage:
+  enabled: true
+  storageClass: "local-path"
+  accessMode: ReadWriteMany
+  size: "10Gi"
+
+# Network Configuration
+networkPolicy:
+  enabled: false

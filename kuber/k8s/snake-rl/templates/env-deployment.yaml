@@ -1,0 +1,77 @@
+{{- if .Values.env.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "snake-rl.fullname" . }}-env
+  labels:
+    {{- include "snake-rl.labels" . | nindent 4 }}
+    app.kubernetes.io/component: env
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "snake-rl.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: env
+  template:
+    metadata:
+      labels:
+        {{- include "snake-rl.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: env
+    spec:
+      containers:
+      - name: env
+        image: "{{ .Values.global.imageRegistry }}/{{ .Values.env.image.repository }}:{{ .Values.env.image.tag | default .Values.global.imageTag }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        command: ["python", "app.py"]
+        args:
+          - "--fps"
+          - {{ .Values.env.args.fps | quote }}
+          - "--seed"
+          - {{ .Values.env.args.seed | quote }}
+          - "--max-steps-without-food"
+          - {{ .Values.env.args.maxStepsWithoutFood | quote }}
+          - "--grid_width"
+          - {{ .Values.env.args.gridWidth | quote }}
+          - "--grid_height"
+          - {{ .Values.env.args.gridHeight | quote }}
+          - "--vision_radius"
+          - {{ .Values.env.args.visionRadius | quote }}
+          - "--vision_display_cols"
+          - {{ .Values.env.args.visionDisplayCols | quote }}
+          - "--vision_display_rows"
+          - {{ .Values.env.args.visionDisplayRows | quote }}
+          - "--max_snakes"
+          - {{ .Values.env.args.maxSnakes | quote }}
+          - "--reward-config"
+          - {{ .Values.env.args.rewardConfig | quote }}
+        ports:
+        - containerPort: {{ .Values.env.service.targetPort }}
+        env:
+        {{- include "snake-rl.commonEnvVars" . | nindent 8 }}
+        {{- include "snake-rl.rabbitmqEnvVars" . | nindent 8 }}
+        livenessProbe:
+          httpGet:
+            path: /
+            port: {{ .Values.env.service.targetPort }}
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: {{ .Values.env.service.targetPort }}
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          {{- toYaml .Values.env.resources | nindent 10 }}
+        {{- if .Values.storage.enabled }}
+        volumeMounts:
+        - name: shared-storage
+          mountPath: /output
+        {{- end }}
+      {{- if .Values.storage.enabled }}
+      volumes:
+      - name: shared-storage
+        persistentVolumeClaim:
+          claimName: {{ include "snake-rl.fullname" . }}-env-storage
+      {{- end }}
+{{- end }}
