@@ -1,13 +1,15 @@
 {{- if .Values.inference.enabled }}
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
-  name: {{ include "snake-rl.fullname" . }}-inference
+  name: inference
   labels:
     {{- include "snake-rl.labels" . | nindent 4 }}
     app.kubernetes.io/component: inference
+  annotations:
+     "helm.sh/hook-weight": "3"
 spec:
-  replicas: 1
+  replicas: {{.Values.inference.replicaCount | default 1}}
   selector:
     matchLabels:
       {{- include "snake-rl.selectorLabels" . | nindent 6 }}
@@ -18,6 +20,32 @@ spec:
         {{- include "snake-rl.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: inference
     spec:
+      initContainers:
+      # Wait for training service to be ready
+      - name: wait-for-training
+        image: busybox:1.28
+        command: ['sh', '-c']
+        args:
+          - |
+            echo "Waiting for training service..."
+            until nc -z training 50051; do
+              echo "Training service not ready, waiting..."
+              sleep 5
+            done
+            echo "Training service is ready!"
+      
+      # Wait for env service to be ready
+      - name: wait-for-env
+        image: busybox:1.28
+        command: ['sh', '-c']
+        args:
+          - |
+            echo "Waiting for env service..."
+            until nc -z env 5000; do
+              echo "Env service not ready, waiting..."
+              sleep 5
+            done
+            echo "Env service is ready!"
       containers:
       - name: inference
         image: "{{ .Values.global.imageRegistry }}/{{ .Values.inference.image.repository }}:{{ .Values.inference.image.tag | default .Values.global.imageTag }}"

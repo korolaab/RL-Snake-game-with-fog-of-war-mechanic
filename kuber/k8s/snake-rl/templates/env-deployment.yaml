@@ -1,13 +1,15 @@
 {{- if .Values.env.enabled }}
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
-  name: {{ include "snake-rl.fullname" . }}-env
+  name: env
   labels:
     {{- include "snake-rl.labels" . | nindent 4 }}
     app.kubernetes.io/component: env
+  annotations:
+     "helm.sh/hook-weight": "1"
 spec:
-  replicas: 1
+  replicas: {{.Values.env.replicaCount | default 1}}
   selector:
     matchLabels:
       {{- include "snake-rl.selectorLabels" . | nindent 6 }}

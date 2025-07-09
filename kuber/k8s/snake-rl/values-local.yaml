@@ -50,8 +50,8 @@ training:
 inference:
   enabled: true
   args:
-    envHost: "snake-rl-env:5000"
-    grpcHost: "snake-rl-training"
+    envHost: "env:5000"
+    grpcHost: "training"
     grpcPort: "50051"
   
   resources:

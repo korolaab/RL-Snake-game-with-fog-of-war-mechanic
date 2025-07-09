@@ -11,9 +11,10 @@ auth:
 persistence:
   enabled: true
   storageClass: "local-path"
-  size: 50Gi
+  size: 100Gi
   accessModes:
     - ReadWriteOnce
+  mountPath: /data-storage/hdd2/persistence_volumes/clickhouse
 
 resources:
   limits:
