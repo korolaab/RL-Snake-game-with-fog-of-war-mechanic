@@ -11,9 +11,10 @@ env:
     tag: ""
   
   service:
-    type: ClusterIP
+    type: NodePort
     port: 5000
     targetPort: 5000
+    nodePort: 8000
   
   args:
     fps: 100
@@ -34,6 +35,12 @@ env:
     limits:
       memory: "512Mi"
       cpu: "500m"
+
+  storage:
+    enabled: true
+    accessMode: "ReadWriteOnce"
+    storageClass: "local-path"
+    size: "5Gi"
 
 # Training Service Configuration
 training:
@@ -61,6 +68,12 @@ training:
       memory: "1Gi"
       cpu: "1000m"
 
+  storage:
+    enabled: true
+    accessMode: "ReadWriteOnce"
+    storageClass: "local-path"
+    size: "5Gi"
+
 # Inference Service Configuration
 inference:
   enabled: true
@@ -70,10 +83,10 @@ inference:
   
   args:
     snakeId: "adam"
-    envHost: "snake-rl-env:5000"
+    envHost: "env:5000"
     modelSaveDir: "/output/models"
     logFile: "/output/agent1.log"
-    grpcHost: "snake-rl-training"
+    grpcHost: "training"
     grpcPort: 50051
     batchSize: 10
     learningRate: 0.001
@@ -86,16 +99,28 @@ inference:
       memory: "1Gi"
       cpu: "1000m"
 
+  storage:
+    enabled: true
+    accessMode: "ReadWriteOnce"
+    storageClass: "local-path"
+    size: "5Gi"
+
+storage:
+  enabled: true
+  accessMode: "ReadWriteOnce"
+  storageClass: "local-path"
+  size: "10Gi"
+
 # RabbitMQ Configuration
 rabbitmq:
   enabled: true
-  host: "rabbitmq"
+  host: "rabbitmq.data-stack.svc.cluster.local"
   port: 5672
-  username: "guest"
-  password: "guest"
+  username: "tech"
+  password: "tech"
   vhost: "/"
   exchange: ""
-  routingKey: ""
+  routingKey: "rabbitmq_rl_snake_logs"
   exchangeType: "direct"
   durable: true
   async: true
@@ -111,15 +136,8 @@ logging:
 
 # Experiment Configuration
 experiment:
-  name: "snake-rl-experiment"
+  name: "test_helm_setup"
   runId: "run-1"
-
-# Storage Configuration
-storage:
-  enabled: true
-  storageClass: "local-path"
-  accessMode: ReadWriteMany
-  size: "10Gi"
 
 # Network Configuration
 networkPolicy:
