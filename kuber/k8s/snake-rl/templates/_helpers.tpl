@@ -49,6 +49,17 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
+Generate ISO datetime - use from values if provided, otherwise generate dynamically
+*/}}
+{{- define "myapp.runID" -}}
+{{- if .Values.experiment.deploymentTimeISO }}
+{{- .Values.experiment.deploymentTimeISO }}
+{{- else }}
+{{- now | date "2006-01-02T15:04:05Z07:00" }}
+{{- end }}
+{{- end }}
+
+{{/*
 Environment variables for RabbitMQ
 */}}
 {{- define "snake-rl.rabbitmqEnvVars" -}}
@@ -91,7 +102,7 @@ Common environment variables
 - name: EXPERIMENT_NAME
   value: {{ .Values.experiment.name | quote }}
 - name: RUN_ID
-  value: {{ .Values.experiment.runId | quote }}
+  value: {{ include "myapp.runID" . | quote }}
 - name: LOG_LEVEL
   value: {{ .Values.logging.level | quote }}
 - name: LOG_FILE

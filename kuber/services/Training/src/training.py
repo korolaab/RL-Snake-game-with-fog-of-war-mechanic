@@ -261,7 +261,7 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
             policy_loss = -(log_probs * returns).mean()
             
             # Add entropy bonus to encourage exploration
-            entropy_coeff = 0.01
+            entropy_coeff = 0.1
             total_loss = policy_loss - entropy_coeff * entropy
             
             if torch.isnan(total_loss):

@@ -137,7 +137,6 @@ logging:
 # Experiment Configuration
 experiment:
   name: "test_helm_setup"
-  runId: "run-4"
 
 # Network Configuration
 networkPolicy:
