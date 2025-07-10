@@ -1,7 +1,7 @@
 global:
   imageRegistry: "localhost:5000"
   imageTag: "latest"
-  imagePullPolicy: IfNotPresent
+  imagePullPolicy: Always
 
 # Environment Service Configuration
 env:
@@ -137,7 +137,7 @@ logging:
 # Experiment Configuration
 experiment:
   name: "test_helm_setup"
-  runId: "run-1"
+  runId: "run-4"
 
 # Network Configuration
 networkPolicy:
