@@ -16,6 +16,14 @@ persistence:
   storageClass: "local-path"
   size: 50Gi
 
+resources:
+  limits:
+    cpu: 6000m
+    memory: 30Gi
+  requests:
+    cpu: 4000m
+    memory: 10Gi
+
 shards: 1
 replicaCount: 1
 
