@@ -321,15 +321,27 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
                 }
             
             self.training_step += 1
-            logging.info({"event": "training_step_completed", "step": self.training_step})
-            logging.info({"event": "training_metrics", "policy_loss": f"{policy_loss.item():.4f}", "entropy": f"{entropy.item():.4f}"})
-            logging.info({"event": "training_metrics", "avg_return": f"{avg_return.item():.3f}", "max_action_prob": f"{max_action_prob.item():.3f}"})
-            logging.info({"event": "action_distribution", "left": f"{action_distribution[2]:.2f}", "right": f"{action_distribution[1]:.2f}", "forward": f"{action_distribution[0]:.2f}"})
+
+            logging.info({
+                "event": "training_step_summary",
+                "step": self.training_step,
+                "policy_loss": f"{policy_loss.item():.4f}",
+                "entropy": f"{entropy.item():.4f}",
+                "avg_return": f"{avg_return.item():.3f}",
+                "max_action_prob": f"{max_action_prob.item():.3f}",
+                "action_distribution": {
+                    "left": f"{action_distribution[2]:.2f}",
+                    "right": f"{action_distribution[1]:.2f}",
+                    "forward": f"{action_distribution[0]:.2f}"
+                }
+            })
+
+
             
             return metrics
             
         except Exception as e:
-            logging.error({"event": "training_step_error", "exception": e})
+            logging.error({"event": "training_step_error", "exception": str(e)})
             raise
     
     async def SendTrainingBatch(self, request: training_pb2.TrainingBatchRequest, context) -> training_pb2.TrainingBatchResponse:
@@ -360,7 +372,7 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
                 if not episodes:
                     raise ValueError("No valid episodes found")
             except Exception as e:
-                logging.error({"event": "failed_to_organize_episodes", "exception": e})
+                logging.error({"event": "failed_to_organize_episodes", "exception": str(e)})
                 return training_pb2.TrainingBatchResponse(
                     success=False,
                     message=f"Episode organization failed: {str(e)}",
@@ -371,7 +383,7 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
             try:
                 states, actions, returns, input_size = self.process_episodes_for_training(episodes)
             except Exception as e:
-                logging.error({"event": "failed_to_process_episodes", "exception": e})
+                logging.error({"event": "failed_to_process_episodes", "exception": str(e)})
                 return training_pb2.TrainingBatchResponse(
                     success=False,
                     message=f"Episode processing failed: {str(e)}",
@@ -433,7 +445,7 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
                 )
                 
             except Exception as e:
-                logging.error({"event": "failed_to_create_model_update", "exception": e})
+                logging.error({"event": "failed_to_create_model_update", "exception": str(e)})
                 return training_pb2.TrainingBatchResponse(
                     success=False,
                     message=f"Model update creation failed: {str(e)}",
@@ -441,8 +453,7 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
                 )
             
         except Exception as e:
-            logging.error({"event": "error_processing_training_batch", "exception": e})
-            logging.error({"event": "traceback", "traceback": traceback.format_exc()})
+            logging.error({"event": "error_processing_training_batch", "exception": str(e)})
             return training_pb2.TrainingBatchResponse(
                 success=False,
                 message=f"Training failed: {str(e)}",
@@ -475,7 +486,7 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
         except asyncio.CancelledError:
             logging.info({"event": "model_update_stream_cancelled", "snake_id": request.snake_id})
         except Exception as e:
-            logging.error({"event": "error_in_model_update_stream", "exception": e})
+            logging.error({"event": "error_in_model_update_stream", "exception": str(e)})
         finally:
             # Clean up: remove this queue from the snake's queue list
             if request.snake_id in self.model_update_queues:
@@ -516,8 +527,8 @@ async def serve(port: int,
     
     try:
         await server.wait_for_termination()
-    except KeyboardInterrupt:
-        logging.info({"event": "shutting_down_grpc_server"})
+    except KeyboardInterrupt as e:
+        logging.info({"event": "shutting_down_grpc_server", "reason": f"{e}"})
         await server.stop(5)
 
 async def main():
