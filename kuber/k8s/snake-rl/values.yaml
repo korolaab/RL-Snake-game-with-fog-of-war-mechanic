@@ -59,6 +59,8 @@ training:
     learningRate: 0.001
     logFile: "/output/training.log"
     port: 50051
+    gamma: 0.7
+    beta: 0.1
   
   resources:
     requests:
@@ -88,7 +90,7 @@ inference:
     logFile: "/output/agent1.log"
     grpcHost: "training"
     grpcPort: 50051
-    batchSize: 10
+    batchSize: 1
     learningRate: 0.001
   
   resources:

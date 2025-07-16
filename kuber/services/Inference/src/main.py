@@ -86,7 +86,7 @@ def send_move(move_url, move: str):
     try:
         response = requests.post(move_url, json=payload, headers=headers)
         response.raise_for_status()
-        logging.info({"event": "sent_move", "move": move})
+        logging.debug({"event": "sent_move", "move": move})
     except requests.RequestException as e:
         logging.error({"event": "error_sending_move", "exception": e})
 

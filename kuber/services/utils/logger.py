@@ -34,6 +34,7 @@ from abc import ABC, abstractmethod
 try:
     import pika
     from pika.exceptions import AMQPConnectionError, AMQPChannelError
+    logging.getLogger("pika").propagate = False
     RABBITMQ_AVAILABLE = True
 except ImportError:
     RABBITMQ_AVAILABLE = False
@@ -572,7 +573,7 @@ class RLLogger:
             mode = "Async" if self.config.rabbitmq_async else "Sync"
             handlers_info.append(f"RabbitMQ({mode})")
         
-        status = f"✅ RL Logger initialized - {self.metadata.experiment_name}:{self.metadata.run_id}@{self.metadata.container}"
+        status = f"✅ RL Logger initialized (level:{self.config.log_level})- {self.metadata.experiment_name}:{self.metadata.run_id}@{self.metadata.container} "
         if handlers_info:
             status += f" -> {', '.join(handlers_info)}"
         
@@ -621,7 +622,7 @@ def setup(experiment_name: str = None,
           run_id: str = None,
           container: str = None,
           log_file: str = None,
-          log_level: str = "INFO",
+          log_level: str = None,
           enable_console: bool = None,
           enable_rabbitmq: bool = None,
           rabbitmq_async: bool = None,

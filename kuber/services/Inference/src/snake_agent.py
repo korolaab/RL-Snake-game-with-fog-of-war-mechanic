@@ -9,6 +9,8 @@ from snake_model import ModelManager
 from state_processor import StateProcessor
 from data_manager import DataManager
 import io
+import traceback
+import sys
 
 # Import generated protobuf classes
 try:
@@ -201,8 +203,9 @@ class GRPCSnakeAgent:
                 self.model.train()  # Set back to training mode
 
             predicted_action = self.actions[action_idx]
-            logging.debug({"event": "predicted_action", "action": predicted_action, "probabilities": action_probs.numpy()})
-            
+            logging.debug({"event": "predicted_action", 
+                           "action": predicted_action, 
+                           "probabilities": action_probs.numpy().tolist()})
             return predicted_action
             
         except Exception as e:
@@ -356,10 +359,9 @@ class GRPCSnakeAgent:
                         updated_model = torch.jit.load(buffer, map_location='cpu')
                         if not isinstance(updated_model, torch.nn.Module):
                             raise ValueError(f"Received invalid model type: {type(updated_model)}")
-                        
-                        # Update our model
-                        self.model = updated_model
-                        self.model.train()  # Ensure training mode
+                        trace = torch.jit.trace(updated_model, torch.randn(1,180)) #DEBUG LINE
+
+                        logging.debug({"model_graph":f"{trace.graph}"})
                         
                         # Update optimizer with new model parameters
                         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
@@ -373,14 +375,17 @@ class GRPCSnakeAgent:
                                    f"Episodes: {total_episodes}, Total Experiences: {metrics.num_samples}")
                         
                     except Exception as e:
-                        logging.error({"event": "failed_to_deserialize_updated_model", "exception": e})
-                        return False
+                        logging.critical({
+                            "event": "failed_to_deserialize_updated_model", 
+                            "exception": f"{e}"})
+                        sys.exit(1)
+                        
                     
                 except asyncio.TimeoutError:
                     logging.error({"event": "timeout_waiting_for_model_update"})
                     return False
                 except Exception as e:
-                    logging.error({"event": "error_getting_model_update", "exception": e})
+                    logging.error({"event": "error_getting_model_update", "exception": f"{e}"})
                     return False
                 
                 # Clear completed episodes and update counters

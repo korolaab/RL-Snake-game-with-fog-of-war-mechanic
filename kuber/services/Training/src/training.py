@@ -45,9 +45,15 @@ class SimpleModel(nn.Module):
 class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
     """gRPC Training Service Implementation."""
     
-    def __init__(self, snake_id: str, learning_rate: float = 0.001):
+    def __init__(self, 
+                 snake_id: str, 
+                 learning_rate: float = 0.001,
+                 gamma: float = 0.99,
+                 beta: float = 0.1):
         self.snake_id = snake_id
         self.learning_rate = learning_rate
+        self.gamma = gamma
+        self.beta = beta
         self.model = None
         self.optimizer = None
         self.training_step = 0
@@ -185,13 +191,12 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
                 continue
             
             # Calculate discounted returns for this episode (REINFORCE style)
-            gamma = 0.99
             episode_returns = []
             discounted_return = 0
             
             # Calculate returns from end to beginning (proper REINFORCE)
             for reward in reversed(episode_rewards):
-                discounted_return = reward + gamma * discounted_return
+                discounted_return = reward + self.gamma * discounted_return
                 episode_returns.insert(0, discounted_return)
             
             # Convert to tensors
@@ -228,16 +233,33 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
         states_tensor = torch.stack(padded_states)
         actions_tensor = torch.tensor(all_actions, dtype=torch.long)
         returns_tensor = torch.tensor(all_returns, dtype=torch.float32)
-        
-        logging.info({"event": "final_batch_prepared", "transition_count": len(all_states), "episode_count": len(episodes)})
-        logging.info({"event": "tensor_shape_info", "tensor_type": "states", "shape": states_tensor.shape})
-        logging.info({"event": "tensor_shape_info", "tensor_type": "actions", "shape": actions_tensor.shape})
-        logging.info({"event": "tensor_shape_info", "tensor_type": "returns", "shape": returns_tensor.shape})
-        logging.info({"event": "return_statistics", "mean": f"{returns_tensor.mean():.3f}", "std": f"{returns_tensor.std():.3f}"})
-        
+        logging.debug({
+                "event": "batch_debug_summary",
+                "data": {
+                    "final_batch_prepared": {
+                        "transition_count": len(all_states),
+                        "episode_count": len(episodes)
+                    },
+                    "tensor_shape_info": {
+                        "states": tuple(states_tensor.shape),
+                        "actions": tuple(actions_tensor.shape),
+                        "returns": tuple(returns_tensor.shape)
+                    },
+                    "return_statistics": {
+                        "mean": f"{returns_tensor.mean():.3f}",
+                        "std": f"{returns_tensor.std():.3f}"
+                    }
+                }
+            })
+ 
         return states_tensor, actions_tensor, returns_tensor, max_length
     
-    def perform_training_step(self, states: torch.Tensor, actions: torch.Tensor, returns: torch.Tensor, input_size: int) -> Dict[str, float]:
+    def perform_training_step(self, 
+                              states: torch.Tensor, 
+                              actions: torch.Tensor, 
+                              returns: torch.Tensor,
+
+                              input_size: int) -> Dict[str, float]:
         """Perform one REINFORCE training step on episode batch."""
         logging.info({"event": "training_step_started", "step": self.training_step + 1})
         
@@ -261,8 +283,7 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
             policy_loss = -(log_probs * returns).mean()
             
             # Add entropy bonus to encourage exploration
-            entropy_coeff = 0.1
-            total_loss = policy_loss - entropy_coeff * entropy
+            total_loss = policy_loss - self.beta * entropy
             
             if torch.isnan(total_loss):
                 raise ValueError("Loss is NaN!")
@@ -466,10 +487,18 @@ class GRPCTrainingService(training_pb2_grpc.TrainingServiceServicer):
                     pass  # Queue already removed
             logging.info({"event": "model_update_stream_ended", "snake_id": request.snake_id})
 
-async def serve(port: int, snake_id: str, learning_rate: float):
+async def serve(port: int, 
+                snake_id: str, 
+                learning_rate: float,
+                gamma: float,
+                beta: float):
+
     """Start the gRPC server."""
     # Create the training service
-    training_service = GRPCTrainingService(snake_id, learning_rate)
+    training_service = GRPCTrainingService(snake_id, 
+                                           learning_rate,
+                                           gamma,
+                                           beta)
     
     # Create server
     server = grpc.aio.server(futures.ThreadPoolExecutor(max_workers=10))
@@ -496,13 +525,19 @@ async def main():
     parser.add_argument("--port", type=int, default=50051, help="gRPC server port")
     parser.add_argument("--snake_id", required=True, help="Snake ID")
     parser.add_argument("--learning_rate", type=float, default=0.001, help="Learning rate")
+    parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor")
+    parser.add_argument("--beta", type=float, default=0.1, help="Exploration rate")
     parser.add_argument("--log_file", default="grpc_training.log", help="Log file path")
     
     args = parser.parse_args()
     
     logger.setup_as_default()
     
-    await serve(args.port, args.snake_id, args.learning_rate)
+    await serve(args.port, 
+                args.snake_id, 
+                args.learning_rate,
+                args.gamma,
+                args.beta)
 
 if __name__ == "__main__":
     asyncio.run(main())

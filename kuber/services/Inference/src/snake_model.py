@@ -237,6 +237,9 @@ class ModelManager:
     def validate_input_size(self, model, expected_size: int):
         """Проверка совместимости размера входных данных с моделью."""
         actual_size = self.get_model_input_size(model)
+        logging.debug({"event": "validate_input_size", 
+                       "actual_size": actual_size,
+                       "expected_size": expected_size})
         if actual_size is None:
             return False
         return actual_size == expected_size
