@@ -118,9 +118,41 @@ class GameManager:
 
     def game_loop(self):
         import time
+        import socket
+        import logging
+        
+        # Synchronizer UDP configuration
+        SYNC_ENABLED = True  # Set to False to use original FPS-based timing
+        UDP_PORT = 5555  # Port to listen for sync signals
+        BUFFER_SIZE = 1024
+        
+        # Set up UDP socket for sync signals if enabled
+        if SYNC_ENABLED:
+            try:
+                sync_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sync_socket.bind(('0.0.0.0', UDP_PORT))
+                logging.info(f"Game loop waiting for UDP sync signals on port {UDP_PORT}")
+            except Exception as e:
+                logging.error(f"Failed to set up UDP socket: {e}")
+                SYNC_ENABLED = False
+                logging.warning("Falling back to internal timing")
+        
         self.reset_game()
         while True:
-            time.sleep(1.0 / self.FPS)
+            # Wait for next step trigger (either external UDP or internal timer)
+            if SYNC_ENABLED:
+                # External synchronization - wait for UDP packet
+                try:
+                    data, addr = sync_socket.recvfrom(BUFFER_SIZE)
+                    logging.debug(f"Received sync signal from {addr}")
+                except Exception as e:
+                    logging.error(f"UDP sync error: {e}")
+                    # Don't fall back to sleep - just continue with the loop
+            else:
+                # Internal timing based on FPS
+                time.sleep(1.0 / self.FPS)
+            
+            # Process game state updates
             for sid, game in list(self.snakes.items()):
                 with self.snake_locks[sid]:
                     status = game.update(self.GAME_OVER)
@@ -148,6 +180,5 @@ class GameManager:
                     
             if len(self.FOODS) == 0:
                 self.spawn_food()
-
 
 
