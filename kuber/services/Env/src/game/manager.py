@@ -17,7 +17,10 @@ class GameManager:
                        seed,
                        maxStepsWithoutApple,
                        reward_config,
-                       max_snakes=10):
+                       max_snakes=10,
+                       sync_enabled=False,
+                       sync_port=5555,
+                       sync_buffer_size=1024):
         self.GRID_WIDTH = grid_width
         self.GRID_HEIGHT = grid_height
         self.VISION_RADIUS = vision_radius
@@ -33,9 +36,31 @@ class GameManager:
         self.seed = seed 
         self.reward_config = reward_config
         self.maxStepsWithoutApple = maxStepsWithoutApple
+        
+        # UDP Synchronization configuration
+        self.SYNC_ENABLED = sync_enabled
+        self.SYNC_PORT = sync_port
+        self.SYNC_BUFFER_SIZE = sync_buffer_size
+        self.sync_socket = None
+        
+        if self.SYNC_ENABLED:
+            self._setup_sync_socket()
+        
         set_seed(self.seed)
         self.game_over_raised = False
         threading.Thread(target=self.game_loop, daemon=True).start()
+        
+    def _setup_sync_socket(self):
+        """Setup UDP socket for synchronization"""
+        import socket
+        try:
+            self.sync_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.sync_socket.bind(('0.0.0.0', self.SYNC_PORT))
+            logging.info({"event": "sync_setup", "status": "success", "port": self.SYNC_PORT})
+        except Exception as e:
+            logging.error({"event": "sync_setup", "status": "error", "error": str(e)})
+            self.SYNC_ENABLED = False
+            self.sync_socket = None
 
     def state(self):
         grid = {f"{x},{y}": [] for x in range(self.GRID_WIDTH) for y in range(self.GRID_HEIGHT)}
@@ -118,32 +143,15 @@ class GameManager:
 
     def game_loop(self):
         import time
-        import socket
         import logging
-        
-        # Synchronizer UDP configuration
-        SYNC_ENABLED = True  # Set to False to use original FPS-based timing
-        UDP_PORT = 5555  # Port to listen for sync signals
-        BUFFER_SIZE = 1024
-        
-        # Set up UDP socket for sync signals if enabled
-        if SYNC_ENABLED:
-            try:
-                sync_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                sync_socket.bind(('0.0.0.0', UDP_PORT))
-                logging.info(f"Game loop waiting for UDP sync signals on port {UDP_PORT}")
-            except Exception as e:
-                logging.error(f"Failed to set up UDP socket: {e}")
-                SYNC_ENABLED = False
-                logging.warning("Falling back to internal timing")
         
         self.reset_game()
         while True:
             # Wait for next step trigger (either external UDP or internal timer)
-            if SYNC_ENABLED:
+            if self.SYNC_ENABLED and self.sync_socket:
                 # External synchronization - wait for UDP packet
                 try:
-                    data, addr = sync_socket.recvfrom(BUFFER_SIZE)
+                    data, addr = self.sync_socket.recvfrom(self.SYNC_BUFFER_SIZE)
                     logging.debug(f"Received sync signal from {addr}")
                 except Exception as e:
                     logging.error(f"UDP sync error: {e}")
@@ -180,5 +188,3 @@ class GameManager:
                     
             if len(self.FOODS) == 0:
                 self.spawn_food()
-
-
