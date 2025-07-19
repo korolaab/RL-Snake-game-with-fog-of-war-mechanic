@@ -1,5 +1,6 @@
 import random
 import logging
+from queue import Queue
 
 class SnakeGame:
     def __init__(self, snake_id, game):
@@ -19,6 +20,7 @@ class SnakeGame:
         self.reset()
         self.maxStepsWithoutApple = game.maxStepsWithoutApple
         self.stepsSinceLastApple = 0
+        self.state_queue = Queue(maxsize=1)
 
     def find_safe_spawn_location(self):
         occupied = {pos for g in self.snakes.values() for pos in g.snake} | self.foods
@@ -62,6 +64,8 @@ class SnakeGame:
         new_head = ((head[0] + self.direction[0]) % self.grid_width,
                     (head[1] + self.direction[1]) % self.grid_height)
         occupied = {pos for game in self.snakes.values() for pos in game.snake}
+        
+        self._update_visible_state()
         if new_head in occupied:
             return 'collision'
         self.snake.insert(0, new_head)
@@ -77,6 +81,27 @@ class SnakeGame:
         return ''
 
     def get_visible_cells(self):
+        try:
+            state = self.q.get()  # Block until new state is available
+            return state
+        except Exception as e:
+            logging.error({
+                "event": "can't get last visible statue from queue",
+                "exception": str(e)
+            })
+            return {}
+
+    def _update_visible_cells(self):
+        state = self._calc_visible_cells()
+        if not self.state_queue.empty():
+            try:
+                self.state_queue.get_nowait()
+            except queue.Empty:
+                pass
+        self.state_queue.put_nowait(state)
+
+
+    def _calc_visible_cells(self):
         head = self.snake[0]
         rotate_map = {
             (0, -1): lambda dx, dy: (dx, dy),

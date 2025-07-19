@@ -30,7 +30,6 @@ def stream_vision(sid):
                               'datetime': datetime.datetime.now().isoformat() }) + '\n'
             if is_game_over:
                 break
-            time.sleep(1.0 / game_manager.FPS)
     return Response(gen(), mimetype='application/x-ndjson', headers={'Cache-Control': 'no-cache', 'Connection': 'keep-alive'})
 
 @snake_bp.route('/snake/<sid>/move', methods=['POST'])

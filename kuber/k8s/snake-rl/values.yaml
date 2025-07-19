@@ -17,7 +17,7 @@ env:
     nodePort: 8000
   
   args:
-    fps: 100
+    fps: 10 
     seed: 1
     maxStepsWithoutFood: 100
     gridWidth: 20
