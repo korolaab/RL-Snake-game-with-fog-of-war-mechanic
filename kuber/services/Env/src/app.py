@@ -28,10 +28,13 @@ game_manager = GameManager(
     vision_display_cols=args.vision_display_cols,
     vision_display_rows=args.vision_display_rows,
     fps=args.fps, 
-    seed = args.seed,
-    reward_config = reward_config,
-    maxStepsWithoutApple = args.max_steps_without_food,
-    max_snakes=args.max_snakes if hasattr(args, 'max_snakes') else 10
+    seed=args.seed,
+    reward_config=reward_config,
+    maxStepsWithoutApple=args.max_steps_without_food,
+    max_snakes=args.max_snakes if hasattr(args, 'max_snakes') else 10,
+    sync_enabled=args.sync_enabled,
+    sync_port=args.sync_port,
+    sync_buffer_size=args.sync_buffer_size
 )
 
 # Создание приложения
@@ -67,4 +70,3 @@ if __name__ == "__main__":
         debug=True,
         threaded=True
     )
-
