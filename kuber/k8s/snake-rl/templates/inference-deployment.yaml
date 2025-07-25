@@ -75,6 +75,8 @@ spec:
           - "--sync_buffer_size"
           - {{ .Values.inference.args.syncBufferSize | quote }}
           {{- end }}
+          - "--sync_host"
+          - {{ .Values.inference.args.syncHost | quote }}
         env:
         {{- include "snake-rl.commonEnvVars" . | nindent 8 }}
         {{- include "snake-rl.rabbitmqEnvVars" . | nindent 8 }}
@@ -90,5 +92,5 @@ spec:
       - name: shared-storage
         persistentVolumeClaim:
           claimName: {{ include "snake-rl.fullname" . }}-inference-storage
-      {{- end }}
+{{- end }}
 {{- end }}

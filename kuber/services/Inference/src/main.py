@@ -178,7 +178,7 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
                             line = sync_socket_file.readline()
                             if not line:
                                 raise Exception("Sync TCP connection closed")
-                            logging.info({"event": "received_sync_signal_TCP", "message": line.decode().strip()})
+                            logging.info({"event": "received_sync_signal_TCP"})
                         except Exception as e:
                             logging.error({"event": "sync_signal_error_TCP", "error": str(e)})
 
