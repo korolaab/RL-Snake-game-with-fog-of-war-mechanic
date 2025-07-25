@@ -20,13 +20,17 @@ env:
     fps: 10 
     seed: 1
     maxStepsWithoutFood: 100
-    gridWidth: 20
-    gridHeight: 20
+    gridWidth: 11
+    gridHeight: 11
     visionRadius: 5
     visionDisplayCols: 11
     visionDisplayRows: 11
     maxSnakes: 1
     rewardConfig: '{"alive": 1}'
+    syncEnabled: true
+    syncHost: "sync"
+    syncPort: 5555
+    syncBufferSize: 1024
   
   resources:
     requests:
@@ -61,7 +65,6 @@ training:
     port: 50051
     gamma: 0.7
     beta: 0.1
-  
   resources:
     requests:
       memory: "512Mi"
@@ -83,6 +86,9 @@ inference:
     repository: "snake-rl/inference"
     tag: ""
   
+  service:
+    type: ClusterIP
+  
   args:
     snakeId: "adam"
     envHost: "env:5000"
@@ -92,6 +98,10 @@ inference:
     grpcPort: 50051
     batchSize: 1
     learningRate: 0.001
+    syncEnabled: true
+    syncHost: "sync"
+    syncPort: 5555
+    syncBufferSize: 1024
   
   resources:
     requests:
@@ -106,6 +116,27 @@ inference:
     accessMode: "ReadWriteOnce"
     storageClass: "local-path"
     size: "5Gi"
+
+# SyncService Configuration
+sync:
+  enabled: true
+  image:
+    repository: "snake-rl/sync"
+    tag: ""
+  
+  args:
+    # Ports below refer to TCP for sync (now using TCP, not UDP)
+    host: "0.0.0.0"
+    port: 5555
+    frequency: 1
+  
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "128Mi"
+      cpu: "100m"
 
 storage:
   enabled: true
@@ -143,3 +174,9 @@ experiment:
 # Network Configuration
 networkPolicy:
   enabled: false
+
+# Monitoring Configuration
+monitoring:
+  enabled: false
+  prometheus:
+    enabled: false

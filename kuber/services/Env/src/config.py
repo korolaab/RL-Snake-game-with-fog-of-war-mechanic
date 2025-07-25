@@ -14,7 +14,7 @@ VISION_DISPLAY_ROWS = 11
 FPS = 10
 MAX_SNAKES = 10
 
-# UDP Synchronization defaults
+# TCP Synchronization defaults
 SYNC_ENABLED = False
 SYNC_PORT = 5555
 SYNC_BUFFER_SIZE = 1024
@@ -33,12 +33,14 @@ def parse_args():
     parser.add_argument('--reward-config', type=str, default='{"alive": 1}', help='Reward configuration as JSON string')
     parser.add_argument('--max-steps-without-food', type=int, default=50, help='Maximum steps before game over if no food eaten')
     
-    # UDP Synchronization arguments
-    parser.add_argument('--sync-enabled', action='store_true', default=SYNC_ENABLED, 
-                        help='Enable UDP synchronization for game loop timing')
-    parser.add_argument('--sync-port', type=int, default=SYNC_PORT, 
-                        help='Port to listen for UDP synchronization signals')
-    parser.add_argument('--sync-buffer-size', type=int, default=SYNC_BUFFER_SIZE, 
-                        help='Buffer size for UDP socket')
+    # TCP Synchronization arguments
+    parser.add_argument('--sync_enabled', action='store_true',
+                        help='Enable TCP synchronization for game loop timing')
+    parser.add_argument('--sync_host', type=str, default='sync_service_host',
+                        help='Host to connect for TCP synchronization signals')
+    parser.add_argument('--sync_port', type=int, default=5555,
+                        help='Port to connect for TCP synchronization signals')
+    parser.add_argument('--sync_buffer_size', type=int, default=1024,
+                        help='Buffer size for TCP socket')
     
     return parser.parse_args()

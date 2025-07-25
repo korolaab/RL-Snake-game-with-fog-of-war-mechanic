@@ -68,6 +68,13 @@ spec:
           - {{ .Values.inference.args.batchSize | quote }}
           - "--learning_rate"
           - {{ .Values.inference.args.learningRate | quote }}
+          {{- if .Values.inference.args.syncEnabled }}
+          - "--sync_enabled"
+          - "--sync_port"
+          - {{ .Values.inference.args.syncPort | quote }}
+          - "--sync_buffer_size"
+          - {{ .Values.inference.args.syncBufferSize | quote }}
+          {{- end }}
         env:
         {{- include "snake-rl.commonEnvVars" . | nindent 8 }}
         {{- include "snake-rl.rabbitmqEnvVars" . | nindent 8 }}

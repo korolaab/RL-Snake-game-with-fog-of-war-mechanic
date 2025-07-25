@@ -12,9 +12,16 @@ spec:
   - port: {{ .Values.env.service.port }}
     targetPort: {{ .Values.env.service.targetPort }}
     protocol: TCP
+    name: http
     {{- if and (eq .Values.env.service.type "NodePort") .Values.env.service.nodePort }}
     nodePort: {{ .Values.env.service.nodePort }}
     {{- end }}
+  {{- if .Values.env.args.syncEnabled }}
+  - port: {{ .Values.env.args.syncPort }}
+    targetPort: {{ .Values.env.args.syncPort }}
+    protocol: UDP
+    name: sync
+  {{- end }}
   selector:
     {{- include "snake-rl.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: env

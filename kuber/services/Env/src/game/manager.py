@@ -51,14 +51,16 @@ class GameManager:
         threading.Thread(target=self.game_loop, daemon=True).start()
         
     def _setup_sync_socket(self):
-        """Setup UDP socket for synchronization"""
+        """Setup TCP socket for synchronization (client)"""
         import socket
         try:
-            self.sync_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.sync_socket.bind(('0.0.0.0', self.SYNC_PORT))
-            logging.info({"event": "sync_setup", "status": "success", "port": self.SYNC_PORT})
+            # TCP Client mode: connect to the sync server
+            self.sync_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.sync_socket.connect(('sync_service_host', self.SYNC_PORT))  # TODO: set correct host
+            self.sync_socket_file = self.sync_socket.makefile('rb')  # For easy readline
+            logging.info({"event": "sync_setup", "status": "success (TCP)", "port": self.SYNC_PORT})
         except Exception as e:
-            logging.error({"event": "sync_setup", "status": "error", "error": str(e)})
+            logging.error({"event": "sync_setup", "status": "error (TCP)", "error": str(e)})
             self.SYNC_ENABLED = False
             self.sync_socket = None
 
@@ -144,18 +146,22 @@ class GameManager:
     def game_loop(self):
         import time
         import logging
+        import json
         
         self.reset_game()
+        buffer = b''
         while True:
-            # Wait for next step trigger (either external UDP or internal timer)
+            # Wait for next step trigger (either external TCP sync or internal timer)
             if self.SYNC_ENABLED and self.sync_socket:
-                # External synchronization - wait for UDP packet
+                # External synchronization - wait for TCP message (newline delimited)
                 try:
-                    data, addr = self.sync_socket.recvfrom(self.SYNC_BUFFER_SIZE)
-                    logging.debug(f"Received sync signal from {addr}")
+                    line = self.sync_socket_file.readline()
+                    if not line:
+                        raise Exception("Sync TCP connection closed")
+                    logging.info({"event": "Received sync signal (TCP)", "message": line.decode().strip()})
                 except Exception as e:
-                    logging.error(f"UDP sync error: {e}")
-                    # Don't fall back to sleep - just continue with the loop
+                    logging.error({"event": f"TCP sync error: {e}"})
+                    # Optionally try to reconnect or continue
             else:
                 # Internal timing based on FPS
                 time.sleep(1.0 / self.FPS)

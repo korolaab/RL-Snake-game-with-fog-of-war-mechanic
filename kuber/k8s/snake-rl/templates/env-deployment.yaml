@@ -46,6 +46,17 @@ spec:
           - {{ .Values.env.args.maxSnakes | quote }}
           - "--reward-config"
           - {{ .Values.env.args.rewardConfig | quote }}
+          {{- if .Values.env.args.syncEnabled }}
+          - "--sync_enabled"
+          - "--sync_port"
+          - {{ .Values.env.args.syncPort | quote }}
+          - "--sync_buffer_size"
+          - {{ .Values.env.args.syncBufferSize | quote }}
+          {{- end }}
+          {{- if .Values.env.args.syncHost }}
+          - "--sync_host"
+          - {{ .Values.env.args.syncHost | quote }}
+        {{- end }}
         ports:
         - containerPort: {{ .Values.env.service.targetPort }}
         env:
@@ -75,5 +86,5 @@ spec:
       - name: shared-storage
         persistentVolumeClaim:
           claimName: {{ include "snake-rl.fullname" . }}-env-storage
-      {{- end }}
+{{- end }}
 {{- end }}

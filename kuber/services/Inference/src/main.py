@@ -97,7 +97,8 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
                            batch_size: int = 5,
                            sync_enabled: bool = False,
                            sync_port: int = 5555,
-                           sync_buffer_size: int = 1024):
+                           sync_buffer_size: int = 1024,
+                           sync_host: str = "sync_service_host"):  # Add sync_host param
     """
     Neural agent with gRPC communication to training service.
     batch_size = number of episodes before sending to training
@@ -111,9 +112,10 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
         grpc_host: gRPC training service host
         grpc_port: gRPC training service port
         batch_size: Number of episodes before sending to training
-        sync_enabled: Whether to use UDP synchronization
-        sync_port: Port to listen for sync signals
+        sync_enabled: Whether to use TCP synchronization
+        sync_port: Port to connect for sync signals
         sync_buffer_size: Buffer size for UDP socket
+        sync_host: Host to connect for sync signals
     """
     base_url = f"http://{env_host}/snake/{snake_id}"
     move_url = f"{base_url}/move"
@@ -124,16 +126,18 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
     logging.info({"event": "grpc_training_service_configured", "host": grpc_host, "port": grpc_port})
     logging.info({"event": "mode_configured", "mode": "collect_episodes_then_batch_train"})
     
-    # UDP Synchronization setup
+    # TCP Synchronization setup
     sync_socket = None
+    sync_socket_file = None
     if sync_enabled:
         try:
             import socket
-            sync_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sync_socket.bind(('0.0.0.0', sync_port))
-            logging.info({"event": "sync_setup", "status": "success", "port": sync_port})
+            sync_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sync_socket.connect((sync_host, sync_port))  # connect to Sync TCP server
+            sync_socket_file = sync_socket.makefile('rb')  # For easy readline
+            logging.info({"event": "sync_setup", "status": "success (TCP)", "host": sync_host, "port": sync_port})
         except Exception as e:
-            logging.error({"event": "sync_setup", "status": "error", "error": str(e)})
+            logging.error({"event": "sync_setup", "status": "error (TCP)", "error": str(e)})
             sync_enabled = False
             sync_socket = None
     
@@ -171,11 +175,13 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
                     # Wait for sync signal if enabled
                     if sync_enabled and sync_socket:
                         try:
-                            data_signal, addr = sync_socket.recvfrom(sync_buffer_size)
-                            logging.debug({"event": "received_sync_signal", "from": str(addr)})
+                            line = sync_socket_file.readline()
+                            if not line:
+                                raise Exception("Sync TCP connection closed")
+                            logging.info({"event": "received_sync_signal_TCP", "message": line.decode().strip()})
                         except Exception as e:
-                            logging.error({"event": "sync_signal_error", "error": str(e)})
-                    
+                            logging.error({"event": "sync_signal_error_TCP", "error": str(e)})
+
                     # Get latest state from stream
                     data, tech_timestamp = stream_reader.get_latest_state()
                     
@@ -276,7 +282,8 @@ def neural_agent(snake_id: str, log_file: str, env_host: str,
                 batch_size: int = 5,
                 sync_enabled: bool = False,
                 sync_port: int = 5555,
-                sync_buffer_size: int = 1024):
+                sync_buffer_size: int = 1024,
+                sync_host: str = "sync_service_host"):
     """
     Synchronous wrapper for running async gRPC agent.
     batch_size = number of episodes before sending to training
@@ -293,7 +300,8 @@ def neural_agent(snake_id: str, log_file: str, env_host: str,
             batch_size=batch_size,
             sync_enabled=sync_enabled,
             sync_port=sync_port,
-            sync_buffer_size=sync_buffer_size
+            sync_buffer_size=sync_buffer_size,
+            sync_host=sync_host
         ))
     except KeyboardInterrupt:
         logging.info({"event": "agent_interrupted_by_user"})
@@ -322,9 +330,10 @@ if __name__ == "__main__":
     parser.add_argument("--grpc_host", default="localhost", help="gRPC training service host")
     parser.add_argument("--grpc_port", type=int, default=50051, help="gRPC training service port")
     parser.add_argument("--batch_size", type=int, default=5, help="Number of episodes before sending to training")
-    parser.add_argument("--sync_enabled", action="store_true", help="Enable UDP synchronization")
-    parser.add_argument("--sync_port", type=int, default=5555, help="Port to listen for sync signals")
+    parser.add_argument("--sync_enabled", action="store_true", help="Enable TCP synchronization")
+    parser.add_argument("--sync_port", type=int, default=5555, help="Port to connect for sync signals (TCP)")
     parser.add_argument("--sync_buffer_size", type=int, default=1024, help="Buffer size for UDP socket")
+    parser.add_argument("--sync_host", type=str, default="sync_service_host", help="Host to connect for sync signals (TCP)")
     
     args = parser.parse_args()
 
@@ -341,5 +350,6 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         sync_enabled=args.sync_enabled,
         sync_port=args.sync_port,
-        sync_buffer_size=args.sync_buffer_size
+        sync_buffer_size=args.sync_buffer_size,
+        sync_host=args.sync_host
     )

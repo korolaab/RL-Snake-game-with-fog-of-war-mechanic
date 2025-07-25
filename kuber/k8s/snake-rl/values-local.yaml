@@ -68,6 +68,20 @@ inference:
     storageClass: "local-path"
     size: "5Gi"
 
+# SyncService Configuration for Local Development
+sync:
+  enabled: true
+  args:
+    frequency: 5.0  # Lower frequency for local development
+    verbose: true   # Enable verbose logging for debugging
+  resources:
+    requests:
+      memory: "32Mi"
+      cpu: "25m"
+    limits:
+      memory: "64Mi"
+      cpu: "50m"
+
 rabbitmq:
   enabled: false
 
