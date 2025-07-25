@@ -33,6 +33,7 @@ game_manager = GameManager(
     maxStepsWithoutApple=args.max_steps_without_food,
     max_snakes=args.max_snakes if hasattr(args, 'max_snakes') else 10,
     sync_enabled=args.sync_enabled,
+    sync_host=args.sync_host,
     sync_port=args.sync_port,
     sync_buffer_size=args.sync_buffer_size
 )

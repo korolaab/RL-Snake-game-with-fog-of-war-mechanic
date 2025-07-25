@@ -19,6 +19,7 @@ class GameManager:
                        reward_config,
                        max_snakes=10,
                        sync_enabled=False,
+                       sync_host="sync_service_host",
                        sync_port=5555,
                        sync_buffer_size=1024):
         self.GRID_WIDTH = grid_width
@@ -39,6 +40,7 @@ class GameManager:
         
         # UDP Synchronization configuration
         self.SYNC_ENABLED = sync_enabled
+        self.SYNC_HOST = sync_host
         self.SYNC_PORT = sync_port
         self.SYNC_BUFFER_SIZE = sync_buffer_size
         self.sync_socket = None
@@ -56,9 +58,9 @@ class GameManager:
         try:
             # TCP Client mode: connect to the sync server
             self.sync_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.sync_socket.connect(('sync_service_host', self.SYNC_PORT))  # TODO: set correct host
+            self.sync_socket.connect((self.SYNC_HOST, self.SYNC_PORT))
             self.sync_socket_file = self.sync_socket.makefile('rb')  # For easy readline
-            logging.info({"event": "sync_setup", "status": "success (TCP)", "port": self.SYNC_PORT})
+            logging.info({"event": "sync_setup", "status": "success (TCP)", "host": self.SYNC_HOST, "port": self.SYNC_PORT})
         except Exception as e:
             logging.error({"event": "sync_setup", "status": "error (TCP)", "error": str(e)})
             self.SYNC_ENABLED = False
@@ -158,7 +160,7 @@ class GameManager:
                     line = self.sync_socket_file.readline()
                     if not line:
                         raise Exception("Sync TCP connection closed")
-                    logging.info({"event": "Received sync signal (TCP)", "message": line.decode().strip()})
+                    logging.info({"event": "received_sync_signal_TCP"})
                 except Exception as e:
                     logging.error({"event": f"TCP sync error: {e}"})
                     # Optionally try to reconnect or continue
