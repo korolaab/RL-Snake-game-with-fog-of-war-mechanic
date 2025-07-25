@@ -176,23 +176,31 @@ class GameManager:
                         self.GAME_OVER = True
                         logging.info({"event": "game_over", "reason": status, "snake_id": sid})
 
-            if self.GAME_OVER != True:
-                grid, visions, statuses, game_over = self.state()
-                logging.info({"grid": grid, 
-                             "visions": visions,
-                             "statuses": statuses,
-                             "game_over": game_over})
-            elif self.game_over_raised == False:
-                snake_lens = {}
-                for sid, game in list(self.snakes.items()):
-                    with self.snake_locks[sid]:
-                        snake_len = len(game.snake)
-                    snake_lens[sid] = snake_len
+                    if self.GAME_OVER != True:
+                        grid, visions, statuses, game_over = self.state()
+                        logging.info({"grid": grid,
+                                    "visions": visions,
+                                    "statuses": statuses,
+                                    "game_over": game_over})
+                    elif self.game_over_raised == False:
+                        snake_lens = {}
+                        for sid, game in list(self.snakes.items()):
+                            with self.snake_locks[sid]:
+                                snake_len = len(game.snake)
+                            snake_lens[sid] = snake_len
 
-                logging.info({"event": "game_over_results", 
-                        "snakes_lengths": snake_lens
-                        })
-                self.game_over_raised = True
-                    
-            if len(self.FOODS) == 0:
-                self.spawn_food()
+                        logging.info({"event": "game_over_results",
+                                "snakes_lengths": snake_lens
+                                })
+                        self.game_over_raised = True
+
+                    if len(self.FOODS) == 0:
+                        self.spawn_food()
+
+                    # ---- SEND ready at END of LOOP ----
+                    if self.SYNC_ENABLED and self.sync_socket:
+                        try:
+                            self.sync_socket.sendall(b"ready\n")
+                            logging.debug({"event": "sent_ready_TCP"})
+                        except Exception as e:
+                            logging.error({"event": f"tcp_send_ready_error: {e}"})

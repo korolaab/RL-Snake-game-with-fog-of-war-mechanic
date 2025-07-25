@@ -51,45 +51,67 @@ class SyncService:
             logger.error({"event": "accept_clients_error", "error": str(e)})
 
     def run(self):
-        logger.info({"message": "Starting sync service (TCP)"})
+        logger.info({"message": "Starting sync service (TCP; algorithm: wait for ready packets)"})
         signal_count = 0
+
+        def recv_ready(sock):
+            try:
+                data = b""
+                while not data.endswith(b'\n'):
+                    chunk = sock.recv(1024)
+                    if not chunk:
+                        raise Exception("Client closed connection while waiting for ready")
+                    data += chunk
+                msg = data.decode().strip()
+                logger.debug({"event": "recv_ready", "from": str(sock.getpeername()), "msg": msg})
+                return msg == "ready"
+            except Exception as e:
+                logger.warning({"event": "error_waiting_for_ready", "error": str(e)})
+                return False
+
         try:
             while True:
-                start_time = time.time()
                 self.accept_clients()
+
+                if len(self.client_sockets) < 2:
+                    logger.info("Waiting for both Env and Inference to connect...")
+                    time.sleep(1)
+                    continue
+
+                env_sock, inf_sock = self.client_sockets[:2]
                 signal_count += 1
                 timestamp = datetime.now().isoformat()
                 signal_data = json.dumps({
                     "timestamp": timestamp,
                     "sequence": signal_count
-                }).encode('utf-8') + b'\n'  # newline as delimiter
+                }).encode('utf-8') + b'\n'
 
-                # Send message to all clients, drop on error
-                disconnected = []
-                for sock in self.client_sockets:
-                    try:
-                        sock.sendall(signal_data)
-                    except Exception as e:
-                        logger.warning({"event": "client_disconnected", "error": str(e)})
-                        disconnected.append(sock)
-                for dsock in disconnected:
-                    self.client_sockets.remove(dsock)
-                    dsock.close()
+                # [1] Send sync to Env, wait for ready
+                try:
+                    env_sock.sendall(signal_data)
+                    logger.debug({"event": "Sent sync to Env", "signal_number": signal_count})
+                    if not recv_ready(env_sock):
+                        raise Exception("Did not receive ready from Env")
+                except Exception as e:
+                    logger.warning({"event": "env_disconnected", "error": str(e)})
+                    self.client_sockets.remove(env_sock)
+                    env_sock.close()
+                    continue
 
-                logger.debug({
-                    "event": "Sent sync signal (TCP)",
-                    "signal_number": signal_count
-                })
+                # [2] Send sync to Inference, wait for ready
+                try:
+                    inf_sock.sendall(signal_data)
+                    logger.debug({"event": "Sent sync to Inf", "signal_number": signal_count})
+                    if not recv_ready(inf_sock):
+                        raise Exception("Did not receive ready from Inf")
+                except Exception as e:
+                    logger.warning({"event": "inference_disconnected", "error": str(e)})
+                    self.client_sockets.remove(inf_sock)
+                    inf_sock.close()
+                    continue
 
-                elapsed = time.time() - start_time
-                sleep_time = max(0, self.interval - elapsed)
-                if self.verbose and sleep_time < 0:
-                    logger.warning({
-                        "message": "Sync signal took longer than interval",
-                        "elapsed": round(elapsed, 4),
-                        "interval": round(self.interval, 4)
-                    })
-                time.sleep(sleep_time)
+                # [3] Control timing if needed
+                time.sleep(max(0, self.interval - (time.time() - datetime.fromisoformat(timestamp).timestamp())))
         except KeyboardInterrupt:
             logger.info({"message": "Sync service stopped by user"})
         except Exception as e:
@@ -118,5 +140,4 @@ if __name__ == "__main__":
         frequency=args.frequency,
         verbose=args.verbose
     )
-    sync_service.run()
     sync_service.run()
