@@ -4,7 +4,7 @@ import threading
 import random
 import logging
 from utils.seed import set_seed  
-
+import socket
 from .snake import SnakeGame
 
 class GameManager:
@@ -145,6 +145,112 @@ class GameManager:
     def get_lock(self, snake_id):
         return self.snake_locks.get(snake_id)
 
+    def connect_sync_socket(self):
+        """Setup TCP socket for synchronization (client)"""
+        import socket
+        try:
+            # Detailed logging before connection attempt
+            logging.debug({
+                "event": "sync_socket_connection_start", 
+                "host": self.SYNC_HOST, 
+                "port": self.SYNC_PORT,
+                "current_time": str(datetime.now())
+            })
+
+            # TCP Client mode: connect to the sync server
+            self.sync_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            
+            # Set socket options for more robust connection
+            self.sync_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.sync_socket.settimeout(10)  # 10-second timeout for connection
+            
+            try:
+                # Attempt connection
+                self.sync_socket.connect((self.SYNC_HOST, self.SYNC_PORT))
+                
+                # Log successful connection details
+                logging.debug({
+                    "event": "sync_socket_connected", 
+                    "local_address": self.sync_socket.getsockname(),
+                    "remote_address": self.sync_socket.getpeername()
+                })
+                
+                # Send identification with extra logging
+                identification = b'ENV\n'
+                logging.debug({
+                    "event": "sending_client_identification", 
+                    "identification_bytes": identification,
+                    "identification_str": identification.decode().strip()
+                })
+                
+                send_result = self.sync_socket.send(identification)
+                logging.debug({
+                    "event": "client_identification_sent", 
+                    "bytes_sent": send_result
+                })
+                
+                # Reset timeout for subsequent operations
+                self.sync_socket.settimeout(None)
+                
+                # Create file-like object for easier reading
+                self.sync_socket_file = self.sync_socket.makefile('rb')
+                
+                logging.info({
+                    "event": "sync_setup", 
+                    "status": "success (TCP)", 
+                    "host": self.SYNC_HOST, 
+                    "port": self.SYNC_PORT,
+                    "connection_details": {
+                        "local_address": self.sync_socket.getsockname(),
+                        "remote_address": self.sync_socket.getpeername()
+                    }
+                })
+            
+            except (socket.timeout, socket.error) as conn_error:
+                logging.error({
+                    "event": "sync_connection_error", 
+                    "error": str(conn_error),
+                    "error_type": type(conn_error).__name__,
+                    "host": self.SYNC_HOST, 
+                    "port": self.SYNC_PORT
+                })
+                raise
+        
+        except Exception as e:
+            logging.error({
+                "event": "sync_setup", 
+                "status": "error (TCP)", 
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "host": self.SYNC_HOST, 
+                "port": self.SYNC_PORT
+            })
+            self.SYNC_ENABLED = False
+            self.sync_socket = None
+            self.sync_socket_file = None
+        import socket
+        try:
+            self.sync_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.sync_socket.connect((self.SYNC_HOST, self.SYNC_PORT))
+            # Identify as ENV
+            self.sync_socket.sendall(b'ENV\n')
+            self.sync_socket_file = self.sync_socket.makefile('rb')  # For easy readline
+            logging.info({"event": "sync_reconnect", "status": "success (TCP)", "host": self.SYNC_HOST, "port": self.SYNC_PORT})
+        except Exception as e:
+            self.sync_socket = None
+            self.sync_socket_file = None
+            logging.error({"event": "tcp_reconnect_failed", "error": str(e)})
+
+    def check_sync_socket(self):
+        if self.sync_socket is None:
+            self.connect_sync_socket()
+        else:
+            try:
+                # Do not send ping to server; just check with empty bytes (triggers socket error if broken)
+                self.sync_socket.sendall(b"")
+            except Exception:
+                self.connect_sync_socket()
+
     def game_loop(self):
         import time
         import logging
@@ -153,17 +259,66 @@ class GameManager:
         self.reset_game()
         buffer = b''
         while True:
-            # Wait for next step trigger (either external TCP sync or internal timer)
-            if self.SYNC_ENABLED and self.sync_socket:
-                # External synchronization - wait for TCP message (newline delimited)
-                try:
-                    line = self.sync_socket_file.readline()
-                    if not line:
-                        raise Exception("Sync TCP connection closed")
-                    logging.info({"event": "received_sync_signal_TCP"})
-                except Exception as e:
-                    logging.error({"event": f"TCP sync error: {e}"})
-                    # Optionally try to reconnect or continue
+    # Wait for next step trigger (either external TCP sync or internal timer)
+            if self.SYNC_ENABLED:
+                self.check_sync_socket()  # << Ensure connected (including first time)
+                if self.sync_socket and self.sync_socket_file:
+                    try:
+                        # Detailed sync process logging
+                        logging.debug({
+                            "event": "preparing_to_read_sync_signal",
+                            "socket_status": {
+                                "local_address": self.sync_socket.getsockname(),
+                                "remote_address": self.sync_socket.getpeername()
+                            }
+                        })
+                        
+                        # Read with timeout and detailed logging
+                        self.sync_socket.settimeout(10)  # 10-second timeout
+                        line = self.sync_socket_file.readline()
+                        
+                        if not line:
+                            logging.warning({
+                                "event": "empty_sync_signal", 
+                                "message": "Sync TCP connection seems closed"
+                            })
+                            raise Exception("Sync TCP connection closed")
+                        
+                        # Log received line details
+                        logging.debug({
+                            "event": "received_sync_signal_TCP", 
+                            "raw_line": line,
+                            "decoded_line": line.decode().strip() if line else None
+                        })
+                        
+                        logging.info({
+                            "event": "sync_signal_processed", 
+                            "status": "success"
+                        })
+                    
+                    except socket.timeout:
+                        logging.warning({
+                            "event": "sync_signal_timeout", 
+                            "message": "Timeout waiting for sync signal"
+                        })
+                        self.sync_socket = None
+                        self.sync_socket_file = None
+                        continue
+                    except Exception as e:
+                        logging.error({
+                            "event": "TCP_sync_error", 
+                            "error": str(e),
+                            "error_type": type(e).__name__
+                        })
+                        self.sync_socket = None
+                        self.sync_socket_file = None
+                        continue  # Try to recover next loop
+                else:
+                    logging.debug({
+                        "event": "sync_socket_not_ready", 
+                        "sync_socket": self.sync_socket is not None,
+                        "sync_socket_file": self.sync_socket_file is not None
+                    })
             else:
                 # Internal timing based on FPS
                 time.sleep(1.0 / self.FPS)
@@ -197,10 +352,12 @@ class GameManager:
                     if len(self.FOODS) == 0:
                         self.spawn_food()
 
-                    # ---- SEND ready at END of LOOP ----
-                    if self.SYNC_ENABLED and self.sync_socket:
-                        try:
-                            self.sync_socket.sendall(b"ready\n")
-                            logging.debug({"event": "sent_ready_TCP"})
-                        except Exception as e:
-                            logging.error({"event": f"tcp_send_ready_error: {e}"})
+            # ---- SEND ready at END of LOOP ----
+            if self.SYNC_ENABLED:
+                if self.sync_socket:
+                    try:
+                        self.sync_socket.sendall(b"ready\n")
+                        logging.debug({"event": "sent_ready_TCP"})
+                    except Exception as e:
+                        logging.error({"event": f"tcp_send_ready_error: {e}"})
+                        self.sync_socket = None

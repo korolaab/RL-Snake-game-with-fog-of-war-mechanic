@@ -10,6 +10,7 @@ from datetime import datetime
 import threading
 import logging
 import logger
+import socket
 
 
 class StreamReader:
@@ -91,18 +92,106 @@ def send_move(move_url, move: str):
         logging.error({"event": "error_sending_move", "exception": e})
 
 
-async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str, 
-                           model_save_dir: str = "models", learning_rate: float = 0.001,
-                           grpc_host: str = "localhost", grpc_port: int = 50051,
-                           batch_size: int = 5,
-                           sync_enabled: bool = False,
-                           sync_port: int = 5555,
-                           sync_buffer_size: int = 1024,
+def connect_sync_socket(sync_host, sync_port):      
+    try:
+        # Detailed logging before connection attempt
+        logging.debug({
+            "event": "sync_socket_connection_start", 
+            "host": sync_host, 
+            "port": sync_port,
+            "current_time": str(datetime.now())
+        })
+
+        # Create socket with more robust configuration
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.settimeout(10)  # 10-second timeout for connection
+
+        try:
+            # Attempt connection
+            sock.connect((sync_host, sync_port))
+            
+            # Log successful connection details
+            logging.debug({
+                "event": "sync_socket_connected", 
+                "local_address": sock.getsockname(),
+                "remote_address": sock.getpeername()
+            })
+            
+            # Send identification with extra logging
+            identification = b'INF\n'
+            logging.debug({
+                "event": "sending_client_identification", 
+                "identification_bytes": identification,
+                "identification_str": identification.decode().strip()
+            })
+            
+            send_result = sock.send(identification)
+            logging.debug({
+                "event": "client_identification_sent", 
+                "bytes_sent": send_result
+            })
+            
+            # Reset timeout for subsequent operations
+            sock.settimeout(None)
+            
+            # Create file-like object for easier reading
+            sock_file = sock.makefile('rb')
+            
+            logging.info({
+                "event": "sync_reconnect", 
+                "status": "success (TCP)", 
+                "host": sync_host, 
+                "port": sync_port,
+                "connection_details": {
+                    "local_address": sock.getsockname(),
+                    "remote_address": sock.getpeername()
+                }
+            })
+            
+            return sock, sock_file
+        
+        except (socket.timeout, socket.error) as conn_error:
+            logging.error({
+                "event": "sync_connection_error", 
+                "error": str(conn_error),
+                "error_type": type(conn_error).__name__,
+                "host": sync_host, 
+                "port": sync_port
+            })
+            raise
+    
+    except Exception as e:
+        logging.error({
+            "event": "sync_reconnect_failed", 
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "host": sync_host, 
+            "port": sync_port
+        })
+        return None, None
+
+def check_sync_socket(sock, sock_file, sync_host, sync_port):
+    if sock is None:
+        return connect_sync_socket(sync_host, sync_port)
+    try:
+        # Don't send ping, just check if usable by a dummy write (OS may throw if closed)
+        sock.sendall(b"")  # lightweight check
+        return sock, sock_file
+    except Exception:
+        return connect_sync_socket(sync_host, sync_port)
+
+async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
+                model_save_dir: str = "models", learning_rate: float = 0.001,
+                grpc_host: str = "localhost", grpc_port: int = 50051,
+                batch_size: int = 5,
+                sync_enabled: bool = False,
+                sync_port: int = 5555,
+                sync_buffer_size: int = 1024,
                            sync_host: str = "sync_service_host"):  # Add sync_host param
     """
     Neural agent with gRPC communication to training service.
     batch_size = number of episodes before sending to training
-    
     Args:
         snake_id: ID of the snake
         log_file: Path to the log file
@@ -130,24 +219,15 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
     sync_socket = None
     sync_socket_file = None
     if sync_enabled:
-        try:
-            import socket
-            sync_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sync_socket.connect((sync_host, sync_port))  # connect to Sync TCP server
-            sync_socket_file = sync_socket.makefile('rb')  # For easy readline
-            logging.info({"event": "sync_setup", "status": "success (TCP)", "host": sync_host, "port": sync_port})
-        except Exception as e:
-            logging.error({"event": "sync_setup", "status": "error (TCP)", "error": str(e)})
-            sync_enabled = False
-            sync_socket = None
-    
+        sync_socket, sync_socket_file = connect_sync_socket(sync_host, sync_port)
+
     # Create agent
     agent = GRPCSnakeAgent(
-        snake_id=snake_id, 
-        model_save_dir=model_save_dir, 
-        learning_rate=learning_rate,
-        grpc_host=grpc_host,
-        grpc_port=grpc_port,
+            snake_id=snake_id,
+            model_save_dir=model_save_dir,
+            learning_rate=learning_rate,
+            grpc_host=grpc_host,
+            grpc_port=grpc_port,
         batch_size=batch_size
     )
     
@@ -173,24 +253,84 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
                 # Inner loop for one episode (game)
                 while True:
                     # Wait for sync signal if enabled
-                    if sync_enabled and sync_socket:
-                        try:
-                            line = sync_socket_file.readline()
-                            if not line:
-                                raise Exception("Sync TCP connection closed")
-                            logging.info({"event": "received_sync_signal_TCP"})
-                        except Exception as e:
-                            logging.error({"event": "sync_signal_error_TCP", "error": str(e)})
+                    if sync_enabled:
+                        sync_socket, sync_socket_file = check_sync_socket(sync_socket, sync_socket_file, sync_host, sync_port)
+                        if sync_socket and sync_socket_file:
+                            try:
+                                # Detailed sync process logging
+                                logging.debug({
+                                    "event": "preparing_to_read_sync_signal",
+                                    "socket_status": {
+                                        "local_address": sync_socket.getsockname(),
+                                        "remote_address": sync_socket.getpeername()
+                                    }
+                                })
+                                
+                                sync_socket.settimeout(15)  # Increased timeout
+
+                                # Read initial message (could be a ready check)
+                                line = sync_socket_file.readline()
+                                # Log received line details
+                                logging.debug({
+                                    "event": "received_sync_signal_TCP", 
+                                    "raw_line": line,
+                                    "decoded_line": line.decode().strip() if line else None
+                                })
+                                
+                                # Check if this is a ready check from server
+                                decoded_line = line.decode().strip().lower() if line else ''
+                                if decoded_line.startswith('sync_ready_check'):
+                                    # Respond with ready message
+                                    try:
+                                        logging.debug({
+                                            "event": "responding_to_sync_ready_check",
+                                            "response": "ready"
+                                        })
+                                        sync_socket.sendall(b'ready\n')
+                                    except Exception as send_error:
+                                        logging.warning({
+                                                    "event": "failed_to_send_ready",
+                                                    "error": str(send_error)
+                                        })
+                                logging.info({
+                                    "event": "sync_signal_processed",
+                                    "status": "success",
+                                    "server_message": decoded_line
+                                })
+                            except socket.timeout:
+                                logging.warning({
+                                    "event": "sync_signal_timeout", 
+                                    "message": "Timeout waiting for sync signal"
+                                })
+                                sync_socket, sync_socket_file = None, None
+                        continue
+
+        except Exception as e:
+                                logging.error({
+                                    "event": "sync_signal_error_TCP", 
+                                    "error": str(e),
+                                    "error_type": type(e).__name__
+                                })
+                                sync_socket, sync_socket_file = None, None
+                                continue
+                        else:
+                            logging.debug({
+                                "event": "sync_socket_not_ready", 
+                                "sync_socket": sync_socket is not None,
+                                "sync_socket_file": sync_socket_file is not None
+                            })
 
                     # Get latest state from stream
+                    # non-blocking read (0.1 s timeout)
+                    logging.info({"event": "get_latest_state"})
                     data, tech_timestamp = stream_reader.get_latest_state()
                     
                     if data is None or tech_timestamp is None:
                         logging.warning({"event": "no_data_received_from_stream"})
                         continue
-                    
-                    send_datetime_str = data.get("datetime") 
-                    send_timestamp = datetime.fromisoformat(send_datetime_str).timestamp() 
+
+                    send_datetime_str = data.get("datetime")
+                    send_timestamp = datetime.fromisoformat(send_datetime_str).timestamp()
                     delay = tech_timestamp - send_timestamp
                     
                     logging.debug({"event": "state_received", "reward": data.get("reward", 0), "delay": f"{delay:.3f}s"})
@@ -201,8 +341,8 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
                         action=previous_action,
                         reward=data.get("reward", 0),
                         done=data.get("game_over", False)
-                    )
-                    
+    )
+
                     # If episode ended, check if we should send batch
                     if data.get("game_over"):
                         logging.info({"event": "episode_ended", "episode_count": episode_count})
@@ -340,8 +480,8 @@ if __name__ == "__main__":
     logger.setup_as_default()
 
     neural_agent(
-        snake_id=args.snake_id, 
-        log_file=args.log_file, 
+        snake_id=args.snake_id,
+        log_file=args.log_file,
         env_host=args.env_host,
         model_save_dir=args.model_save_dir, 
         learning_rate=args.learning_rate,

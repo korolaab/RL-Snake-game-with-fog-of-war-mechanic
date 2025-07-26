@@ -163,7 +163,7 @@ rabbitmq:
 
 # Logging Configuration
 logging:
-  level: "INFO"
+  level: "DEBUG"
   file: ""
   enableConsoleLogs: false
 
