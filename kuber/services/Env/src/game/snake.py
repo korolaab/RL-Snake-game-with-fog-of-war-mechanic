@@ -1,6 +1,6 @@
 import random
 import logging
-from queue import Queue
+import threading
 
 class SnakeGame:
     def __init__(self, snake_id, game):
@@ -20,7 +20,10 @@ class SnakeGame:
         self.reset()
         self.maxStepsWithoutApple = game.maxStepsWithoutApple
         self.stepsSinceLastApple = 0
-        self.state_queue = Queue(maxsize=1)
+
+        # Simple state management
+        self._last_known_state = {}
+        self._state_lock = threading.Lock()
 
     def find_safe_spawn_location(self):
         occupied = {pos for g in self.snakes.values() for pos in g.snake} | self.foods
@@ -51,7 +54,40 @@ class SnakeGame:
     def turn(self, cmd):
         self.direction = self.relative_turn(cmd)
 
+    def _update_visible_state(self):
+        """
+        Update the last known visible state
+        """
+        try:
+            # Calculate the new state
+            new_state = self._calc_visible_cells()
+
+            # Use a lock to safely update the last known state
+            with self._state_lock:
+                self._last_known_state = new_state
+        except Exception as e:
+            logging.error(f"Error updating visible state for snake {self.snake_id}: {e}")
+
+    def get_visible_cells(self):
+        """
+        Retrieve the last known visible state
+        """
+        try:
+            # Return a copy of the last known state
+                with self._state_lock:
+                    return self._last_known_state.copy()
+        except Exception as e:
+            logging.error({
+                "event": "error getting visible cells",
+                "snake_id": self.snake_id,
+                "exception": str(e)
+            })
+            return {}
+
     def update(self, game_over):
+        """
+        Modified update method to ensure visible state is updated
+        """
         self.reward = 0
         if game_over:
             self.reward += self.reward_config['game_over']
@@ -64,44 +100,34 @@ class SnakeGame:
         new_head = ((head[0] + self.direction[0]) % self.grid_width,
                     (head[1] + self.direction[1]) % self.grid_height)
         occupied = {pos for game in self.snakes.values() for pos in game.snake}
-        
-        self._update_visible_state()
+
+        # Ensure visible state is updated
+        try:
+            self._update_visible_state()
+        except Exception as e:
+            logging.error(f"Failed to update visible state: {e}")
+
         if new_head in occupied:
             return 'collision'
+
         self.snake.insert(0, new_head)
         if new_head in self.foods:
             self.foods.remove(new_head)
             self.reward += self.reward_config['eat_food']
-            self.stepsSinceLastApple = 0 
+            self.stepsSinceLastApple = 0
         else:
             self.snake.pop()
             self.stepsSinceLastApple += 1
+
         self.ticks += 1
         self.reward += self.reward_config['alive']
         return ''
 
-    def get_visible_cells(self):
-        try:
-            state = self.q.get()  # Block until new state is available
-            return state
-        except Exception as e:
-            logging.error({
-                "event": "can't get last visible statue from queue",
-                "exception": str(e)
-            })
-            return {}
-
-    def _update_visible_cells(self):
-        state = self._calc_visible_cells()
-        if not self.state_queue.empty():
-            try:
-                self.state_queue.get_nowait()
-            except queue.Empty:
-                pass
-        self.state_queue.put_nowait(state)
-
-
     def _calc_visible_cells(self):
+        """
+        Calculate visible cells based on snake's current state
+        No changes to the original implementation
+        """
         head = self.snake[0]
         rotate_map = {
             (0, -1): lambda dx, dy: (dx, dy),
@@ -139,4 +165,3 @@ class SnakeGame:
                     obj = 'EMPTY'
                 vis[f"{cx},{cy}"] = obj
         return vis
-

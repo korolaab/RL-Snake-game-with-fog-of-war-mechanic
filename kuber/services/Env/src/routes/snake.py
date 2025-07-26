@@ -4,6 +4,7 @@ import json
 import time
 import datetime
 import threading
+import logging
 
 snake_bp = Blueprint('snake', __name__)
 
@@ -23,13 +24,19 @@ def stream_vision(sid):
             with game_manager.snake_locks[sid]:
                 vis = game_manager.snakes[sid].get_visible_cells()
                 reward = game_manager.snakes[sid].reward
-            yield json.dumps({'snake_id': sid, 
+            # Add episode and frame counters from game_manager
+            payload = {'snake_id': sid,
                               'visible_cells': vis,
                               'reward': reward, 
                               'game_over': is_game_over,
-                              'datetime': datetime.datetime.now().isoformat() }) + '\n'
+                              'episode': game_manager.episode_number,   # Added
+                              'frame': game_manager.frame_number,       # Added
+                       'datetime': datetime.datetime.now().isoformat() }
+            #ogging.debug({"event": "stream_vision_payload", **payload})
+            yield json.dumps(payload) + '\n'
             if is_game_over:
                 break
+            time.sleep(1.0 / game_manager.FPS)
     return Response(gen(), mimetype='application/x-ndjson', headers={'Cache-Control': 'no-cache', 'Connection': 'keep-alive'})
 
 @snake_bp.route('/snake/<sid>/move', methods=['POST'])
@@ -47,4 +54,3 @@ def move_snake(sid):
     with game_manager.snake_locks[sid]:
         game_manager.snakes[sid].turn(cmd)
     return jsonify({'snake_id': sid, 'game_over': False})
-

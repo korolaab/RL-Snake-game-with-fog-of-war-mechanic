@@ -52,21 +52,21 @@ spec:
         imagePullPolicy: {{ .Values.global.imagePullPolicy }}
         command: ["python", "main.py"]
         args:
-          - "--snake_id"
+          - "--snake-id"
           - {{ .Values.inference.args.snakeId | quote }}
-          - "--env_host"
+          - "--env-host"
           - {{ .Values.inference.args.envHost | quote }}
-          - "--model_save_dir"
+          - "--model-dir"
           - {{ .Values.inference.args.modelSaveDir | quote }}
-          - "--log_file"
+          - "--log-file"
           - {{ .Values.inference.args.logFile | quote }}
-          - "--grpc_host"
+          - "--grpc-host"
           - {{ .Values.inference.args.grpcHost | quote }}
-          - "--grpc_port"
+          - "--grpc-port"
           - {{ .Values.inference.args.grpcPort | quote }}
-          - "--batch_size"
+          - "--batch-size"
           - {{ .Values.inference.args.batchSize | quote }}
-          - "--learning_rate"
+          - "--learning-rate"
           - {{ .Values.inference.args.learningRate | quote }}
         env:
         {{- include "snake-rl.commonEnvVars" . | nindent 8 }}

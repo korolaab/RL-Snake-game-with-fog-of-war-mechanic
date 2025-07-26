@@ -33,6 +33,8 @@ class GameManager:
         self.seed = seed 
         self.reward_config = reward_config
         self.maxStepsWithoutApple = maxStepsWithoutApple
+        self.episode_number = 0  # New: episode counter
+        self.frame_number = 0    # New: frame counter
         set_seed(self.seed)
         self.game_over_raised = False
         threading.Thread(target=self.game_loop, daemon=True).start()
@@ -84,7 +86,6 @@ class GameManager:
     def reset_game(self):
         with self.game_over_lock:
             self.GAME_OVER = True
-        # Дать стримам завершиться
         import time
         time.sleep(0.1)
         with self.game_over_lock:
@@ -94,7 +95,10 @@ class GameManager:
         self.FOODS.clear()
         self.spawn_food()
         self.game_over_raised = False
-        logging.info({"event": "game_reset", "action": "all_snakes_removed_food_respawned"})
+        self.episode_number += 1
+        self.frame_number = 0
+        logging.info({"event": "game_reset", "action": "all_snakes_removed_food_respawned", "episode": self.episode_number})
+        logging.debug({"event": "episode_frame_reset", "episode": self.episode_number, "frame": self.frame_number})
 
     def add_snake(self, snake_id):
         if len(self.snakes) >= self.MAX_SNAKES:
@@ -121,6 +125,8 @@ class GameManager:
         self.reset_game()
         while True:
             time.sleep(1.0 / self.FPS)
+            self.frame_number += 1
+            logging.debug({"event": "frame_incremented", "episode": self.episode_number, "frame": self.frame_number})
             for sid, game in list(self.snakes.items()):
                 with self.snake_locks[sid]:
                     status = game.update(self.GAME_OVER)
@@ -148,6 +154,3 @@ class GameManager:
                     
             if len(self.FOODS) == 0:
                 self.spawn_food()
-
-
-
