@@ -207,8 +207,11 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
                         break  # Exit inner loop (end of episode)
                     
                     # Predict action for next step
-                    action = agent.predict_action(data)
-                      
+                    #action = agent.predict_action(data)
+                    import random
+
+                    action = random.choice['right','left','forward']
+
                     if action != "forward":
                         send_move(move_url, action)
                     previous_action = action

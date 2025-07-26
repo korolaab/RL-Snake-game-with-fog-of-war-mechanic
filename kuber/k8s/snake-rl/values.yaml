@@ -17,24 +17,24 @@ env:
     nodePort: 8000
   
   args:
-    fps: 10 
+    fps: 500
     seed: 1
-    maxStepsWithoutFood: 100
-    gridWidth: 20
-    gridHeight: 20
+    maxStepsWithoutFood: 1000
+    gridWidth: 11
+    gridHeight: 11
     visionRadius: 5
     visionDisplayCols: 11
     visionDisplayRows: 11
     maxSnakes: 1
-    rewardConfig: '{"alive": 1}'
+    rewardConfig: '{"alive": 1, "eat_food":10, "game_over":-10 }'
   
   resources:
     requests:
       memory: "256Mi"
-      cpu: "250m"
+      cpu: "1000m"
     limits:
       memory: "512Mi"
-      cpu: "500m"
+      cpu: "1000m"
 
   storage:
     enabled: true
@@ -59,16 +59,16 @@ training:
     learningRate: 0.001
     logFile: "/output/training.log"
     port: 50051
-    gamma: 0.7
-    beta: 0.1
+    gamma: 0.98
+    beta: 0.01
   
   resources:
     requests:
-      memory: "512Mi"
-      cpu: "500m"
+      memory: "2Gi"
+      cpu: "8000m"
     limits:
-      memory: "1Gi"
-      cpu: "1000m"
+      memory: "2Gi"
+      cpu: "8000m"
 
   storage:
     enabled: true
@@ -96,7 +96,7 @@ inference:
   resources:
     requests:
       memory: "512Mi"
-      cpu: "500m"
+      cpu: "1000m"
     limits:
       memory: "1Gi"
       cpu: "1000m"

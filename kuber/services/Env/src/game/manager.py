@@ -148,7 +148,9 @@ class GameManager:
                     snake_lens[sid] = snake_len
 
                 logging.info({"event": "game_over_results", 
-                        "snakes_lengths": snake_lens
+                        "snakes_lengths": snake_lens,
+                        "episode": self.episode_number,
+                        "frames": self.frame_number
                         })
                 self.game_over_raised = True
                     
