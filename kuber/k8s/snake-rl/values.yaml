@@ -17,7 +17,7 @@ env:
     nodePort: 8000
   
   args:
-    fps: 500
+    fps: 400
     seed: 1
     maxStepsWithoutFood: 1000
     gridWidth: 11
@@ -30,10 +30,10 @@ env:
   
   resources:
     requests:
-      memory: "256Mi"
+      memory: "1Gi"
       cpu: "1000m"
     limits:
-      memory: "512Mi"
+      memory: "1Gi"
       cpu: "1000m"
 
   storage:
@@ -65,10 +65,10 @@ training:
   resources:
     requests:
       memory: "2Gi"
-      cpu: "8000m"
+      cpu: "2000m"
     limits:
       memory: "2Gi"
-      cpu: "8000m"
+      cpu: "2000m"
 
   storage:
     enabled: true
@@ -95,11 +95,11 @@ inference:
   
   resources:
     requests:
-      memory: "512Mi"
-      cpu: "1000m"
+      memory: "1Gi"
+      cpu: "2000m"
     limits:
       memory: "1Gi"
-      cpu: "1000m"
+      cpu: "2000m"
 
   storage:
     enabled: true
@@ -125,7 +125,7 @@ rabbitmq:
   routingKey: "rabbitmq_rl_snake_logs"
   exchangeType: "direct"
   durable: true
-  async: true
+  async: false
   connectionTimeout: 10
   retryDelay: 5
   maxRetries: 3

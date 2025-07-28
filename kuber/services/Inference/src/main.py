@@ -78,12 +78,10 @@ class StreamReader:
                         with self.lock:
                             self.latest_state = data
                             self.latest_timestamp = time.time()
+                            
                         
                         self.new_state_event.set()
 
-                        if data.get('game_over'):
-                            logging.info({"event": "game_over_detected", "source": "stream"})
-                            break
                             
                     except json.JSONDecodeError:
                         logging.warning({"event": "failed_to_parse_json", "data": decoded})
@@ -100,7 +98,7 @@ def send_move(move_url, move: str):
     try:
         response = requests.post(move_url, json=payload, headers=headers)
         response.raise_for_status()
-        logging.debug({"event": "sent_move", "move": move})
+        logging.info({"event": "sent_move", "move": move})
     except requests.RequestException as e:
         logging.error({"event": "error_sending_move", "exception": e})
 
@@ -144,7 +142,7 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
 
         while True:  # Outer loop for multiple games
             episode_count += 1
-            logging.info({"event": "starting_episode", "episode_count": episode_count})
+            logging.info({"event": "starting_episode", "episode": episode_count})
 
             previous_action = "forward"
             stream_reader = StreamReader(base_url)
@@ -178,7 +176,7 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
 
                     # If episode ended, check if we should send batch
                     if data.get("game_over"):
-                        logging.info({"event": "episode_ended", "episode_count": episode_count})
+                        logging.info({"event": "episode_ended", "episode": episode_count})
 
                         # Check if we have enough episodes for a batch
                         if should_send_batch:
@@ -187,7 +185,7 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
                             if success:
                                 logging.info({"event": "received_improved_model", "source": "batch_training"})
                             else:
-                                logging.warning({"event": "failed_to_get_model_update", "action": "continuing_with_current_model"})
+                                logging.error({"event": "failed_to_get_model_update", "action": "continuing_with_current_model"})
                         else:
                             completed_episodes = len(agent.completed_episodes)
                             remaining = agent.batch_size - completed_episodes
@@ -202,22 +200,22 @@ async def neural_agent_grpc(snake_id: str, log_file: str, env_host: str,
                             else:
                                 logging.warning({"event": "reset_failed", "status_code": reset_response.status_code})
                         except Exception as reset_error:
-                            logging.error({"event": "error_resetting_environment", "exception": reset_error})
+                            logging.error({"event": "error_resetting_environment", "exception": str(reset_error)})
                         
                         break  # Exit inner loop (end of episode)
                     
                     # Predict action for next step
-                    #action = agent.predict_action(data)
-                    import random
+                    action = agent.predict_action(data)
+                    #import random
 
-                    action = random.choice['right','left','forward']
+                    #action = random.choice(['right','left','forward'])
 
                     if action != "forward":
                         send_move(move_url, action)
                     previous_action = action
                     
             except Exception as game_error:
-                logging.error({"event": "error_during_episode", "episode_count": episode_count, "exception": game_error})
+                logging.error({"event": "error_during_episode", "episode_count": episode_count, "exception": str(game_error)})
                 # Save data even on error
                 try:
                     # Send any remaining episodes if we have some
@@ -251,7 +249,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Configure logging
+    logging.getLogger("urllib3").propagate = False
     logger.setup_as_default()
+    
 
     # Run the agent
     asyncio.run(neural_agent_grpc(

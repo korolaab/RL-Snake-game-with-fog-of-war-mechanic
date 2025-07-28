@@ -163,8 +163,8 @@ class GRPCSnakeAgent:
         """Ensure model is initialized with correct dimensions."""
         if not self.model_initialized:
             # Cold start - create new model
-            self.model, self.optimizer = self.model_manager.create_new_model(
-                input_size, self.learning_rate
+            self.model  = self.model_manager.create_new_model(
+                input_size
             )
             self.model_initialized = True
             self.is_cold_start = True
@@ -173,47 +173,43 @@ class GRPCSnakeAgent:
             # Check size compatibility
             if not self.model_manager.validate_input_size(self.model, input_size):
                 actual_size = self.model_manager.get_model_input_size(self.model)
-                logging.warning({"event": "input_size_mismatch", "expected": actual_size, "got": input_size})
-                logging.info({"event": "recreating_model_with_correct_input_size"})
+                logging.error({"event": "input_size_mismatch", "expected": actual_size, "got": input_size})
                 
-                self.model, self.optimizer = self.model_manager.create_new_model(
-                    input_size, self.learning_rate
-                )
+                for input in self.model.graph.inputs():
+                    print(input, input.type())
+                # logging.info({"event": "recreating_model_with_correct_input_size"})
+                
+                # self.model, self.optimizer = self.model_manager.create_new_model(
+                #      input_size, self.learning_rate
+                # )
                 self.is_cold_start = True
     
     def predict_action(self, state):
-        """Predict action based on state."""
-        try:
-            # Process state
-            state_tensor = self.state_processor.process_state(state)
-            
-            # Convert to flat vector for model input
-            flat_tensor = state_tensor.flatten().unsqueeze(0)  # add batch dimension
-            input_size = flat_tensor.shape[1]
-            
-            # Ensure model is initialized
-            self.ensure_model_initialized(input_size)
-            
-            # Prediction
-            with torch.no_grad():
-                self.model.eval()  # Set to evaluation mode
-                action_probs = self.model(flat_tensor)
-                m = torch.distributions.Categorical(action_probs)
-                action_idx = m.sample()
-                self.model.train()  # Set back to training mode
+        """Predict action based on state.""" 
+        # Process state
+        state_tensor = self.state_processor.process_state(state)
+        
+        # Convert to flat vector for model input
+        flat_tensor = state_tensor.flatten().unsqueeze(0)  # add batch dimension
+        input_size = flat_tensor.shape[1]
+        
+        # Ensure model is initialized
+        self.ensure_model_initialized(input_size)
+        
+        # Prediction
+        with torch.no_grad():
+            self.model.eval()  # Set to evaluation mode
+            action_probs = self.model(flat_tensor)
+            m = torch.distributions.Categorical(action_probs)
+            action_idx = m.sample()
+            self.model.train()  # Set back to training mode
 
-            predicted_action = self.actions[action_idx]
-            logging.debug({"event": "predicted_action", 
-                           "action": predicted_action, 
-                           "probabilities": action_probs.numpy().tolist()})
-            return predicted_action
-            
-        except Exception as e:
-            logging.error({"event": "error_predicting_action", "exception": e})
-            # Return random action on error
-            import random
-            return random.choice(self.actions)
-    
+        predicted_action = self.actions[action_idx]
+        logging.info({"event": "predicted_action", 
+                        "action": predicted_action, 
+                        "probabilities": action_probs.numpy().tolist()})
+        return predicted_action
+               
     def add_experience(self, state, action, reward, next_state=None, done=False):
         """Add experience to current episode."""
         experience = {
@@ -303,20 +299,20 @@ class GRPCSnakeAgent:
             
             # Serialize model with error handling
             try:
-                scripted_model = torch.jit.script(self.model)
+                traced_model = torch.jit.trace(self.model, example_input)
                 buffer = io.BytesIO()
-                torch.jit.save(scripted_model, buffer)
+                traced_model.save(buffer)
                 model_data = buffer.getvalue()
                 logging.debug({"event": "serialized_model", "size_bytes": len(model_data)})
             except Exception as e:
-                logging.error({"event": "failed_to_serialize_model", "exception": e})
-                return False
+                logging.critical({"event": "failed_to_serialize_model", "exception": str(e)})
+                sys.exit()
             
             # Create training batch request
             request = training_pb2.TrainingBatchRequest(
                 snake_id=self.snake_id,
                 timestamp=datetime.now().isoformat(),
-                episode=self.current_episode,  # Next episode number
+                episode=self.current_episode,
                 batch_number=self.batch_number,
                 total_steps=self.total_steps,
                 is_cold_start=self.is_cold_start,
@@ -338,7 +334,7 @@ class GRPCSnakeAgent:
                 return False
             
             if response.success:
-                await asyncio.sleep(0.1) #TODO This is a workarround for race condition and time sync problem. Training can send result earlyer than inference ready to read it
+               # await asyncio.sleep(1) #TODO This is a workarround for race condition and time sync problem. Training can send result earlyer than inference ready to read it
                 logging.info({"event": "training_batch_sent_successfully", "response_message": response.message})
                 
                 # Wait for model update from stream
@@ -359,9 +355,9 @@ class GRPCSnakeAgent:
                         updated_model = torch.jit.load(buffer, map_location='cpu')
                         if not isinstance(updated_model, torch.nn.Module):
                             raise ValueError(f"Received invalid model type: {type(updated_model)}")
-                        trace = torch.jit.trace(updated_model, torch.randn(1,180)) #DEBUG LINE
-
-                        logging.debug({"model_graph":f"{trace.graph}"})
+                        #trace = torch.jit.trace(updated_model, torch.randn(1,180)) #DEBUG LINE
+                        self.model = updated_model
+                        #logging.debug({"model_graph":f"{trace.graph}"})
                         
                         # Update optimizer with new model parameters
                         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)

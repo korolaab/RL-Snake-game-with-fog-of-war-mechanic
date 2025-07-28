@@ -97,8 +97,10 @@ class GameManager:
         self.game_over_raised = False
         self.episode_number += 1
         self.frame_number = 0
-        logging.info({"event": "game_reset", "action": "all_snakes_removed_food_respawned", "episode": self.episode_number})
-        logging.debug({"event": "episode_frame_reset", "episode": self.episode_number, "frame": self.frame_number})
+        logging.info({"event": "game_reset", 
+                      "action": "all_snakes_removed_food_respawned", 
+                      "episode": self.episode_number, 
+                      "frame": self.frame_number})
 
     def add_snake(self, snake_id):
         if len(self.snakes) >= self.MAX_SNAKES:
@@ -126,7 +128,6 @@ class GameManager:
         while True:
             time.sleep(1.0 / self.FPS)
             self.frame_number += 1
-            logging.debug({"event": "frame_incremented", "episode": self.episode_number, "frame": self.frame_number})
             for sid, game in list(self.snakes.items()):
                 with self.snake_locks[sid]:
                     status = game.update(self.GAME_OVER)
@@ -136,10 +137,13 @@ class GameManager:
 
             if self.GAME_OVER != True:
                 grid, visions, statuses, game_over = self.state()
-                logging.info({"grid": grid, 
+                logging.info({"event":"frame",
+                             "grid": grid, 
                              "visions": visions,
                              "statuses": statuses,
-                             "game_over": game_over})
+                             "game_over": game_over,
+                             "episode": self.episode_number,
+                             "frame": self.frame_number})
             elif self.game_over_raised == False:
                 snake_lens = {}
                 for sid, game in list(self.snakes.items()):

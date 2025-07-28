@@ -15,6 +15,7 @@ class SnakeNet(nn.Module):
     
     def __init__(self, input_size):
         super(SnakeNet, self).__init__()
+        self.input_size = input_size  # Add this line
         self.network = nn.Sequential(
             nn.Linear(input_size, 16),
             nn.Tanh(),
@@ -29,7 +30,6 @@ class SnakeNet(nn.Module):
     def forward(self, x):
         return self.network(x)
 
-
 class ModelManager:
     """Менеджер для создания, загрузки и сохранения моделей."""
     
@@ -42,9 +42,8 @@ class ModelManager:
         """Создание новой модели с нуля."""
         self.input_size = input_size
         model = SnakeNet(self.input_size)
-        optimizer = optim.Adam(model.parameters(), lr=learning_rate)
         logging.info({"event": "created_new_model", "input_size": input_size})
-        return model, optimizer
+        return model
     
     def find_latest_model(self, snake_id: str = None):
         """Search for the latest ONNX model for a specific snake or any snake."""      
@@ -126,8 +125,6 @@ class ModelManager:
             if state_path.exists():
                 try:
                     checkpoint = torch.load(state_path, map_location='cpu')
-                    if 'optimizer_state_dict' in checkpoint:
-                        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
                     if 'snake_id' in checkpoint:
                         model_info['snake_id'] = checkpoint['snake_id']
                     if 'timestamp' in checkpoint:
@@ -210,7 +207,7 @@ class ModelManager:
             logging.info({"event": "training_state_saved", "path": state_path})
             
             # Set model back to training mode
-            model.train()
+          #  model.train()
             
             return onnx_model_path
         
@@ -235,11 +232,18 @@ class ModelManager:
             return None
     
     def validate_input_size(self, model, expected_size: int):
-        """Проверка совместимости размера входных данных с моделью."""
+        """
+        Ensure that the model's input size matches the expected dimension.
+        Raises a ValueError if there is a mismatch or if the input size cannot be determined.
+        """
         actual_size = self.get_model_input_size(model)
-        logging.debug({"event": "validate_input_size", 
-                       "actual_size": actual_size,
-                       "expected_size": expected_size})
-        if actual_size is None:
-            return False
-        return actual_size == expected_size
+        logging.debug({
+            "event": "validate_input_size",
+            "actual_size": actual_size,
+            "expected_size": expected_size
+        })
+        if actual_size != expected_size:
+            raise ValueError(
+                f"Input size mismatch: expected {expected_size}, got {actual_size}. "
+                "Verify that the model's architecture and input specification are correct."
+            )
