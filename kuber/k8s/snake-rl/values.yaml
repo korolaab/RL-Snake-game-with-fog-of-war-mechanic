@@ -26,7 +26,7 @@ env:
     visionDisplayCols: 11
     visionDisplayRows: 11
     maxSnakes: 1
-    rewardConfig: '{"alive": 0.1, "eat_food":0.5, "game_over":-0.5 }'
+    rewardConfig: '{"alive": 0.1, "eat_food":0.5, "game_over":0 }'
   
   resources:
     requests:
@@ -57,7 +57,7 @@ inference:
     batchSize: 1
     learningRate: 0.001
     gamma: 0.9
-    beta: 0.1
+    beta: 0.05
   
   
   resources:

@@ -104,7 +104,9 @@ class SnakeAgent:
         predicted_action = self.actions[action_idx]
         logging.info({"event": "predicted_action",
                         "action": predicted_action,
-                        "probabilities": action_probs.numpy().tolist()})
+                        "probabilities": action_probs.numpy().tolist(),
+                        "frame": state.get('frame'),
+                        "episode": state.get('episode')})
         return predicted_action
                
     def add_experience(self, state, action, reward, next_state=None, done=False):
