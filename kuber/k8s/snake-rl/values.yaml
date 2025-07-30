@@ -17,7 +17,7 @@ env:
     nodePort: 8000
   
   args:
-    fps: 40
+    fps: 100
     seed: 1
     maxStepsWithoutFood: 1000
     gridWidth: 11
@@ -26,7 +26,7 @@ env:
     visionDisplayCols: 11
     visionDisplayRows: 11
     maxSnakes: 1
-    rewardConfig: '{"alive": 1, "eat_food":10, "game_over":-10 }'
+    rewardConfig: '{"alive": 0.1, "eat_food":0.5, "game_over":-0.5 }'
   
   resources:
     requests:
@@ -35,40 +35,6 @@ env:
     limits:
       memory: "1Gi"
       cpu: "1000m"
-
-  storage:
-    enabled: true
-    accessMode: "ReadWriteOnce"
-    storageClass: "local-path"
-    size: "5Gi"
-
-# Training Service Configuration
-training:
-  enabled: true
-  image:
-    repository: "snake-rl/training"
-    tag: ""
-  
-  service:
-    type: ClusterIP
-    port: 50051
-    targetPort: 50051
-  
-  args:
-    snakeId: "adam"
-    learningRate: 0.001
-    logFile: "/output/training.log"
-    port: 50051
-    gamma: 0.98
-    beta: 0.01
-  
-  resources:
-    requests:
-      memory: "2Gi"
-      cpu: "2000m"
-    limits:
-      memory: "2Gi"
-      cpu: "2000m"
 
   storage:
     enabled: true
@@ -88,10 +54,11 @@ inference:
     envHost: "env:5000"
     modelSaveDir: "/output/models"
     logFile: "/output/agent1.log"
-    grpcHost: "training"
-    grpcPort: 50051
     batchSize: 1
     learningRate: 0.001
+    gamma: 0.9
+    beta: 0.1
+  
   
   resources:
     requests:

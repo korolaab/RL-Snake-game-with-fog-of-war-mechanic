@@ -21,19 +21,6 @@ spec:
         app.kubernetes.io/component: inference
     spec:
       initContainers:
-      # Wait for training service to be ready
-      - name: wait-for-training
-        image: busybox:1.28
-        command: ['sh', '-c']
-        args:
-          - |
-            echo "Waiting for training service..."
-            until nc -z training 50051; do
-              echo "Training service not ready, waiting..."
-              sleep 5
-            done
-            echo "Training service is ready!"
-      
       # Wait for env service to be ready
       - name: wait-for-env
         image: busybox:1.28
@@ -43,7 +30,7 @@ spec:
             echo "Waiting for env service..."
             until nc -z env 5000; do
               echo "Env service not ready, waiting..."
-              sleep 5
+              sleep 1
             done
             echo "Env service is ready!"
       containers:
@@ -60,14 +47,14 @@ spec:
           - {{ .Values.inference.args.modelSaveDir | quote }}
           - "--log-file"
           - {{ .Values.inference.args.logFile | quote }}
-          - "--grpc-host"
-          - {{ .Values.inference.args.grpcHost | quote }}
-          - "--grpc-port"
-          - {{ .Values.inference.args.grpcPort | quote }}
           - "--batch-size"
           - {{ .Values.inference.args.batchSize | quote }}
           - "--learning-rate"
           - {{ .Values.inference.args.learningRate | quote }}
+          - "--gamma"
+          - {{ .Values.inference.args.gamma | quote }}
+          - "--beta"
+          - {{ .Values.inference.args.beta | quote }}
         env:
         {{- include "snake-rl.commonEnvVars" . | nindent 8 }}
         {{- include "snake-rl.rabbitmqEnvVars" . | nindent 8 }}

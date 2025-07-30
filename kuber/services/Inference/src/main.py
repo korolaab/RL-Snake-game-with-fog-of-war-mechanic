@@ -235,10 +235,7 @@ if __name__ == "__main__":
     parser.add_argument("--env-host", type=str, default="localhost:5000", help="Environment host URL")
     parser.add_argument("--model-dir", type=str, default="models", help="Directory to save models")
     parser.add_argument("--learning-rate", type=float, default=0.001, help="Learning rate")
-    parser.add_argument("--grpc-host", type=str, default="localhost", help="gRPC server host")
-    parser.add_argument("--grpc-port", type=int, default=50051, help="gRPC server port")
     parser.add_argument("--batch-size", type=int, default=5, help="Episodes per batch")
-    parser.add_argument("--mode", type=str, default="local", choices=["local", "grpc"], help="Agent mode: local or grpc")
     parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor (gamma) for RL")
     parser.add_argument("--beta", type=float, default=0.1, help="Entropy bonus (beta)")
 
