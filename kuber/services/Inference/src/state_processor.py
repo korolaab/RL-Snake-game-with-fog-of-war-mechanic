@@ -24,14 +24,22 @@ class StateProcessor:
         Returns:
             torch.Tensor: Тензор размером [N, 3] где N - количество видимых ячеек
         """
-        visible_cells = state.get('visible_cells', {})
         
+        visible_cells = state.get('visible_cells', {})
+        episode = state.get('episode', 'null')
+        frame = state.get('frame', 'null')
+        logging.debug({'event':'debug_visible_cells_in_process_state',
+                       'episode': episode,
+                       'frame': frame,
+                       'type':f'{type(visible_cells)}',
+                       'visible_cells': str(visible_cells)
+                       })
         # Исключаем HEAD из обработки
         filtered_cells = {k: v for k, v in visible_cells.items() if v != 'HEAD'}
         
         if not filtered_cells:
-            logging.warning({"event": "no_visible_cells_found", "exclusion": "HEAD"})
-            return torch.zeros(1, 3)  # если нет видимых ячеек
+            logging.error({"event": "no_visible_cells_found", "exclusion": "HEAD"})
+            return torch.zeros(3, 60)  # если нет видимых ячеек
         
         # Сортируем ячейки по координатам (x, y)
         sorted_cells = []
@@ -45,7 +53,7 @@ class StateProcessor:
         
         if not sorted_cells:
             logging.warning({"event": "no_valid_coordinates_found"})
-            return torch.zeros(1, 3)
+            return torch.zeros(3, 60)
         
         # Сортируем по x, затем по y
         sorted_cells.sort(key=lambda item: (item[0], item[1]))
@@ -57,9 +65,9 @@ class StateProcessor:
             tensor_data.append(encoding)
         
         if not tensor_data:
-            return torch.zeros(1, 3)
+            return torch.zeros(3,60)
         
-        result = torch.tensor(tensor_data, dtype=torch.float32)
+        result = torch.tensor(tensor_data, dtype=torch.float32).flatten()
         logging.debug({"event": "processed_state", "cell_count": len(sorted_cells), "tensor_shape": result.shape})
         
         return result

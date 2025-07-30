@@ -17,7 +17,7 @@ env:
     nodePort: 8000
   
   args:
-    fps: 400
+    fps: 40
     seed: 1
     maxStepsWithoutFood: 1000
     gridWidth: 11
@@ -132,9 +132,9 @@ rabbitmq:
 
 # Logging Configuration
 logging:
-  level: "INFO"
+  level: "DEBUG"
   file: ""
-  enableConsoleLogs: false
+  enableConsoleLogs: true
 
 # Experiment Configuration
 experiment:
