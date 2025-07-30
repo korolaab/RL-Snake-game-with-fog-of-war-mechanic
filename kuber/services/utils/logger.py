@@ -2,7 +2,7 @@
 RL Logger Module - JSON-based logging for RL systems with multiple output handlers
 
 Features:
-- JSON-structured logging with nanosecond precision timestamps
+- JSON-structured logging with timestamp from logging.LogRecord (native)
 - Multiple output handlers: Console, File, RabbitMQ
 - Thread-safe operation for multi-threaded applications
 - Flask integration support
@@ -70,18 +70,6 @@ class LogMetadata:
         }
 
 
-class TimestampGenerator:
-    """Generates high-precision timestamps"""
-    
-    @staticmethod
-    def get_timestamp() -> str:
-        """Get ISO timestamp with nanosecond precision"""
-        now = datetime.now(timezone.utc)
-        nanoseconds = time.time_ns() % 1_000_000_000
-        timestamp_base = now.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
-        return f"{timestamp_base}{nanoseconds:03d}+00:00"
-
-
 class LogFormatter:
     """Formats log records into JSON structure"""
     
@@ -100,8 +88,9 @@ class LogFormatter:
         
         # Add metadata
         log_entry.update(self.metadata.to_dict())
+        dt = datetime.fromtimestamp(record.created).astimezone()
         log_entry.update({
-            "timestamp": TimestampGenerator.get_timestamp(),
+            "timestamp": dt.isoformat(timespec='microseconds'),
             "level": record.levelname,
             "logger_name": record.name,
             "module": record.module,
