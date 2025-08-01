@@ -1,0 +1,22 @@
+{{- range $service := list "training" "env" "inference" }}
+{{- $config := index $.Values $service }}
+{{- if $config.storage.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "snake-rl.fullname" $ }}-{{ $service }}-storage
+  labels:
+    {{- include "snake-rl.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $service }}
+spec:
+  accessModes:
+    - {{ $config.storage.accessMode }}
+  {{- if $config.storage.storageClass }}
+  storageClassName: {{ $config.storage.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $config.storage.size }}
+{{- end }}
+{{- end }}

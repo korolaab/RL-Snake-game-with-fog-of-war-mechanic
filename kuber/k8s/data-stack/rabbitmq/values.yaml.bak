@@ -1,0 +1,85 @@
+# RabbitMQ Helm Values Template
+# Copy to values.yaml and customize with your credentials
+
+auth:
+  username: admin
+  # TODO: Set password in values.yaml (not committed)
+  password: ""
+  # Or use existing secret:
+  # existingPasswordSecret: "rabbitmq-credentials"
+
+persistence:
+  enabled: true
+  storageClass: "local-path"
+  size: 8Gi
+  accessModes:
+    - ReadWriteOnce
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+  requests:
+    cpu: 250m
+    memory: 512Mi
+
+service:
+  type: ClusterIP
+  ports:
+    amqp: 5672
+    amqpTls: 5671
+    dist: 25672
+    manager: 15672
+    epmd: 4369
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false
+
+# Clustering (disable for single-node)
+clustering:
+  enabled: false
+  rebalance: false
+
+# Memory and disk limits
+memoryHighWatermark:
+  enabled: true
+  type: relative
+  value: 0.4
+
+diskFreeLimit:
+  enabled: true
+  absolute: 2GB
+
+# Plugins
+plugins: "rabbitmq_management rabbitmq_prometheus rabbitmq_shovel rabbitmq_shovel_management"
+
+# Extra configuration
+extraConfiguration: |
+  management.tcp.port = 15672
+  prometheus.tcp.port = 15692
+  management.tcp.ip = 0.0.0.0
+  loopback_users = none
+
+# Community plugins (optional)
+communityPlugins: ""
+
+# Load definitions (exchanges, queues, etc.)
+loadDefinition:
+  enabled: false
+  # secretName: "rabbitmq-load-definition"
+
+# Pod security context
+podSecurityContext:
+  fsGroup: 1001
+
+# Container security context
+containerSecurityContext:
+  runAsUser: 1001
+  runAsNonRoot: true
+
+# Node selector and tolerations
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -1,0 +1,37 @@
+extraDeploy:
+  - |
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: rabbitmq-create-queues
+      annotations:
+        "helm.sh/hook": post-install,post-upgrade
+        "helm.sh/hook-weight": "1"
+        "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: create-queues
+            image: rabbitmq:3-management-alpine
+            env:
+            - name: RABBITMQ_HOST
+              value: "rabbitmq.data-stack.svc.cluster.local"
+            - name: RABBITMQ_USER
+              value: "admin"
+            - name: RABBITMQ_PASS
+              value: "G7PDElSeOW4rGS5C"
+            command:
+            - /bin/sh
+            - -c
+            - |
+              # Wait for RabbitMQ
+              sleep 30
+              
+              # Create queue using rabbitmqadmin
+              rabbitmqadmin -H $RABBITMQ_HOST -u $RABBITMQ_USER -p $RABBITMQ_PASS \
+                declare queue name=rl_snake_logs durable=true \
+                arguments='{"x-max-length":1000000,"x-overflow":"drop-head","x-queue-mode":"lazy"}'
+              
+              echo "Done!"

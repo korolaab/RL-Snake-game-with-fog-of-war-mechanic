@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  # Mock enviroment. Use only for test!
+  env_mock:
+    build:
+      context: ./services/mock_env
+      dockerfile: Dockerfile
+    container_name: rl-env-mock
+    ports:
+      - "5000:5000"
+    command: ["python","app.py"]
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:5000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    networks:
+      - rl-network
+    restart: unless-stopped
+
+  # Inference Service - Random Agent
+  inference:
+    build:
+      context: ./services/Inference
+      dockerfile: Dockerfile
+    container_name: rl-inference
+    depends_on:
+      env_mock:
+        condition: service_healthy
+    command: [
+      "python", "main.py",
+      "--snake_id", "mock_test",
+      "--env_host", "env_mock:5000",
+      "--model_save_dir", "/output/models",
+      "--log_file", "/output/agent1.log"
+    ] 
+    environment:
+      - PYTHONUNBUFFERED=1
+      - ENV_HOST=env:5000
+    volumes:
+      - shared-output:/output
+      - ./shared/configs:/configs:ro
+    networks:
+      - rl-network
+    restart: "no"  # Run once and exit
+
+  # Training Service - Processes data after inference
+  training:
+    build:
+      context: ./services/Training
+      dockerfile: Dockerfile
+    container_name: rl-training
+    depends_on:
+      inference:
+        condition: service_completed_successfully
+    command: >
+      python training.py 
+      --folder /output/models
+      --snake_id mock_test 
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - shared-output:/output
+      - ./shared/configs:/configs:ro
+    networks:
+      - rl-network
+    restart: "no"  # Run once and exit
+
+volumes:
+  shared-output:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./shared/volumes
+
+networks:
+  rl-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

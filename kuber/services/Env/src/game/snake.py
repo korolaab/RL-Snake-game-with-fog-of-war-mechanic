@@ -1,0 +1,167 @@
+import random
+import logging
+import threading
+
+class SnakeGame:
+    def __init__(self, snake_id, game):
+        self.snake_id = snake_id
+        self.grid_width = game.GRID_WIDTH
+        self.grid_height = game.GRID_HEIGHT
+        self.foods = game.FOODS  # set
+        self.snakes = game.snakes  # dict of all snakes
+        self.vision_radius = game.VISION_RADIUS
+        self.vision_display_cols = game.VISION_DISPLAY_COLS
+        self.vision_display_rows = game.VISION_DISPLAY_ROWS
+        self.direction = (1, 0)
+        self.snake = []
+        self.ticks = 0
+        self.reward_config = game.reward_config
+        self.reward = 0
+        self.reset()
+        self.maxStepsWithoutApple = game.maxStepsWithoutApple
+        self.stepsSinceLastApple = 0
+
+        # Simple state management
+        self._last_known_state = {}
+        self._state_lock = threading.Lock()
+
+    def find_safe_spawn_location(self):
+        occupied = {pos for g in self.snakes.values() for pos in g.snake} | self.foods
+        for _ in range(1000):
+            head = (random.randrange(self.grid_width), random.randrange(self.grid_height))
+            for dx, dy in [(1,0),(-1,0),(0,1),(0,-1)]:
+                body = [(head[0] - i*dx, head[1] - i*dy) for i in range(3)]
+                if all(0 <= x < self.grid_width and 0 <= y < self.grid_height for x,y in body) and not any(pos in occupied for pos in body):
+                    return body, (dx, dy)
+        # fallback center spawn
+        fallback = [(self.grid_width//2 - i, self.grid_height//2) for i in range(3)]
+        return fallback, (1, 0)
+
+    def reset(self):
+        spawn_positions, spawn_direction = self.find_safe_spawn_location()
+        self.snake = spawn_positions
+        self.direction = spawn_direction
+        self.ticks = 0
+        logging.info({"event": "snake_spawned", "snake_id": self.snake_id, "position": self.snake[0], "direction": self.direction})
+
+    def relative_turn(self, cmd):
+        if cmd == 'left':
+            return (self.direction[1], -self.direction[0])
+        if cmd == 'right':
+            return (-self.direction[1], self.direction[0])
+        return self.direction
+
+    def turn(self, cmd):
+        self.direction = self.relative_turn(cmd)
+
+    def _update_visible_state(self):
+        """
+        Update the last known visible state
+        """
+        try:
+            # Calculate the new state
+            new_state = self._calc_visible_cells()
+
+            # Use a lock to safely update the last known state
+            with self._state_lock:
+                self._last_known_state = new_state
+        except Exception as e:
+            logging.error(f"Error updating visible state for snake {self.snake_id}: {e}")
+
+    def get_visible_cells(self):
+        """
+        Retrieve the last known visible state
+        """
+        try:
+            # Return a copy of the last known state
+                with self._state_lock:
+                    return self._last_known_state.copy()
+        except Exception as e:
+            logging.error({
+                "event": "error getting visible cells",
+                "snake_id": self.snake_id,
+                "exception": str(e)
+            })
+            return {}
+
+    def update(self, game_over):
+        """
+        Modified update method to ensure visible state is updated
+        """
+        self.reward = 0
+        if game_over:
+            self.reward += self.reward_config['game_over']
+            return ''
+        
+        if self.stepsSinceLastApple >= self.maxStepsWithoutApple:
+            return "starvation"
+
+        head = self.snake[0]
+        new_head = ((head[0] + self.direction[0]) % self.grid_width,
+                    (head[1] + self.direction[1]) % self.grid_height)
+        occupied = {pos for game in self.snakes.values() for pos in game.snake}
+
+        # Ensure visible state is updated
+        try:
+            self._update_visible_state()
+        except Exception as e:
+            logging.error(f"Failed to update visible state: {e}")
+
+        if new_head in occupied:
+            return 'collision'
+
+        self.snake.insert(0, new_head)
+        if new_head in self.foods:
+            self.foods.remove(new_head)
+            self.reward += self.reward_config['eat_food']
+            self.stepsSinceLastApple = 0
+        else:
+            self.snake.pop()
+            self.stepsSinceLastApple += 1
+
+        self.ticks += 1
+        self.reward += self.reward_config['alive']
+        return ''
+
+    def _calc_visible_cells(self):
+        """
+        Calculate visible cells based on snake's current state
+        No changes to the original implementation
+        """
+        head = self.snake[0]
+        rotate_map = {
+            (0, -1): lambda dx, dy: (dx, dy),
+            (1, 0):  lambda dx, dy: (dy, -dx),
+            (0, 1):  lambda dx, dy: (-dx, -dy),
+            (-1, 0): lambda dx, dy: (-dy, dx)
+        }
+        rotate = rotate_map.get(self.direction, rotate_map[(0, -1)])
+        other_heads = {g.snake[0] for sid, g in self.snakes.items() if sid != self.snake_id and g.snake}
+        other_bodies = {pos for sid, g in self.snakes.items() if sid != self.snake_id for pos in g.snake[1:]}
+        vis = {}
+        for dx in range(-self.vision_radius, self.vision_radius + 1):
+            for dy in range(-self.vision_radius, self.vision_radius + 1):
+                if abs(dx) + abs(dy) > self.vision_radius:
+                    continue
+                rx, ry = rotate(dx, dy)
+                cx = self.vision_display_cols // 2 + rx
+                cy = self.vision_display_rows // 2 + ry
+                if not (0 <= cx < self.vision_display_cols and 0 <= cy < self.vision_display_rows):
+                    continue
+                px = (head[0] + dx) % self.grid_width
+                py = (head[1] + dy) % self.grid_height
+                pos = (px, py)
+                if pos == head:
+                    obj = 'HEAD'
+                elif pos in self.snake[1:]:
+                    obj = 'BODY'
+                elif pos in other_heads:
+                    obj = 'OTHER_HEAD'
+                elif pos in other_bodies:
+                    obj = 'OTHER_BODY'
+                elif pos in self.foods:
+                    obj = 'FOOD'
+                else:
+                    obj = 'EMPTY'
+                vis[f"{cx},{cy}"] = obj
+        return vis

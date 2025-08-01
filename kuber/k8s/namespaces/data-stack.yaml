@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: data-stack
+  labels:
+    name: data-stack
+    purpose: data-services
+    environment: shared
+  annotations:
+    description: "Persistent data services (ClickHouse, RabbitMQ)"

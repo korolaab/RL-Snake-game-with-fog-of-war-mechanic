@@ -1,0 +1,8 @@
+# Core web framework
+Flask==3.1.0
+
+# CORS support for Flask
+flask-cors==6.0.0
+
+# Numerical computing
+numpy==2.2.3

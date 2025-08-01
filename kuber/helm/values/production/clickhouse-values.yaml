@@ -1,0 +1,34 @@
+# Production environment overrides
+persistence:
+  storageClass: "fast-ssd"
+  size: 500Gi
+
+resources:
+  limits:
+    cpu: 8000m
+    memory: 16Gi
+  requests:
+    cpu: 2000m
+    memory: 8Gi
+
+replicaCount: 3
+shards: 2
+
+service:
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+
+zookeeper:
+  replicaCount: 3
+  persistence:
+    storageClass: "fast-ssd"
+    size: 20Gi
+
+podAntiAffinity:
+  preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: clickhouse
+        topologyKey: kubernetes.io/hostname

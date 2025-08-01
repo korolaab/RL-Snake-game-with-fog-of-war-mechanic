@@ -1,0 +1,112 @@
+global:
+  imageRegistry: "localhost:5000"
+  imageTag: "latest"
+  imagePullPolicy: Always
+
+# Environment Service Configuration
+env:
+  enabled: true
+  image:
+    repository: "snake-rl/env"
+    tag: ""
+  
+  service:
+    type: NodePort
+    port: 5000
+    targetPort: 5000
+    nodePort: 8000
+  
+  args:
+    fps: 100
+    seed: 1
+    maxStepsWithoutFood: 1000
+    gridWidth: 11
+    gridHeight: 11
+    visionRadius: 5
+    visionDisplayCols: 11
+    visionDisplayRows: 11
+    maxSnakes: 1
+    rewardConfig: '{"alive": 0.1, "eat_food":0.5, "game_over":0 }'
+  
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "1000m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+
+  storage:
+    enabled: true
+    accessMode: "ReadWriteOnce"
+    storageClass: "local-path"
+    size: "5Gi"
+
+# Inference Service Configuration
+inference:
+  enabled: true
+  image:
+    repository: "snake-rl/inference"
+    tag: ""
+  
+  args:
+    snakeId: "adam"
+    envHost: "env:5000"
+    modelSaveDir: "/output/models"
+    logFile: "/output/agent1.log"
+    batchSize: 1
+    learningRate: 0.001
+    gamma: 0.9
+    beta: 0.05
+  
+  
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "2000m"
+    limits:
+      memory: "1Gi"
+      cpu: "2000m"
+
+  storage:
+    enabled: true
+    accessMode: "ReadWriteOnce"
+    storageClass: "local-path"
+    size: "5Gi"
+
+storage:
+  enabled: true
+  accessMode: "ReadWriteOnce"
+  storageClass: "local-path"
+  size: "10Gi"
+
+# RabbitMQ Configuration
+rabbitmq:
+  enabled: true
+  host: "rabbitmq.data-stack.svc.cluster.local"
+  port: 5672
+  username: "tech"
+  password: "tech"
+  vhost: "/"
+  exchange: ""
+  routingKey: "rabbitmq_rl_snake_logs"
+  exchangeType: "direct"
+  durable: true
+  async: false
+  connectionTimeout: 10
+  retryDelay: 5
+  maxRetries: 3
+
+# Logging Configuration
+logging:
+  level: "DEBUG"
+  file: ""
+  enableConsoleLogs: true
+
+# Experiment Configuration
+experiment:
+  name: "test_helm_setup"
+
+# Network Configuration
+networkPolicy:
+  enabled: false
