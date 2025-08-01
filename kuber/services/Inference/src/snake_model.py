@@ -17,13 +17,13 @@ class SnakeNet(nn.Module):
         super(SnakeNet, self).__init__()
         self.input_size = input_size  # Add this line
         self.network = nn.Sequential(
-            nn.Linear(input_size, 16),
+            nn.Linear(input_size, 32),
             nn.Tanh(),
             nn.Dropout(0.5),
-            nn.Linear(16, 8),
+            nn.Linear(32, 16),
             nn.Tanh(),
             nn.Dropout(0.5),
-            nn.Linear(8, 3),
+            nn.Linear(16, 3),
             nn.Softmax(dim=1)  # Fixed: added dim=1
         )
     
