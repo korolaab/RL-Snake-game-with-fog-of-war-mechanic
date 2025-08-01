@@ -20,4 +20,3 @@ RUN apt update && apt install -y curl
 RUN python generate_grpc.py
 
 COPY /utils/logger.py /app/
-COPY /utils/rabbitmq_handler.py /app/
