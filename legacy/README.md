@@ -23,6 +23,12 @@ snake-ai/
 - NumPy
 - torchsummary
 
+# Example
+
+![alt text](image.png) - avg score vs episode
+
+https://youtu.be/INKRgVGEHX0 Here is the example how trained agent plays the game
+
 ## Features
 
 - Snake game with wrapping boundaries
