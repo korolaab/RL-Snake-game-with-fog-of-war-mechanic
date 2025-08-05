@@ -8,7 +8,7 @@ This project is built for reinforcement learning (RL) research using a variant o
 
 1. **Monolithic Setup (legacy/):**  
    Initially, the environment and agent were combined into a single monolithic application. While this version allowed for the successful training of one agent, it was inflexible and made running experiments difficult.
-   Results in [./legacy/Readme.md](./legacy/Readme.md)
+   Results in [./legacy/Readme.md](./legacy/README.md)
 
 2. **Kubernetes-Based Modular Setup:**  
    The architecture was refactored to Kubernetes distributed architecture with separeted blocks. The current setup consists of 2 containers:
