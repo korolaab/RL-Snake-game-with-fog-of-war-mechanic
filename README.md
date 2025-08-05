@@ -1,6 +1,42 @@
+# Snake RL with fog of war
+
+## Abstract
+
+This project is built for reinforcement learning (RL) research using a variant of the classic Snake game. The key feature is the introduction of a **fog of war** mechanism. Unlike the standard Snake, the agent (the "snake") is only able to see within a configurable field of view (FOV), a certain radius around its head. This setup is aimed at exploring partial observability in RL.
+
+## Progress
+
+1. **Monolithic Setup (legacy/):**  
+   Initially, the environment and agent were combined into a single monolithic application. While this version allowed for the successful training of one agent, it was inflexible and made running experiments difficult.
+   Results in [./legacy/Readme.md](./legacy/Readme.md)
+
+2. **Kubernetes-Based Modular Setup:**  
+   The architecture was refactored to Kubernetes distributed architecture with separeted blocks. The current setup consists of 2 containers:
+   - **env:** The Snake game environment.
+   - **inf:** The inference (agent) service + inside a training.  
+
+
+3. **Next Steps:**  
+   - Debug current setup
+   - Expand to 3 containers: environment, inference, and training.
+   - Add support for two agents in the same environment.
+   - Research how agents can collaborate and communicate.
+
+## How to Run
+
+- **From Scratch:**  
+  Follow the setup steps provided earlier in this README.
+
+- **Using Existing Data Stack:**  
+  If you already have a data stack available (RabbitMQ, PVC for logs), you can use it by updating the configuration:
+    - Edit the `rabbitmq` hostname in `k8s/snake-rl/values.yaml` to point to your RabbitMQ instance.
+    - Alternatively, configure log dumping to a file in your persistent volume claim (PVC) if preferred.
+
+Please refer to the instructions in `/k8s/snake-rl/values.yaml` for further customization.
+
 ## Cold Setup
 
-Starting from scratch? Here's how to get your ClickHouse data stack running:
+To get your RabbitMQ + ClickHouse data-stack running:
 
 ### Prerequisites
 
