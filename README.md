@@ -4,6 +4,13 @@
 
 This project is built for reinforcement learning (RL) research using a variant of the classic Snake game. The key feature is the introduction of a **fog of war** mechanism. Unlike the standard Snake, the agent (the "snake") is only able to see within a configurable field of view (FOV), a certain radius around its head. This setup is aimed at exploring partial observability in RL.
 
+
+![Example how it looks Snake with Fog of War mechanic](./figures/image.png)
+
+The full game area is not provided to the model.
+
+Model have only the local observation as shown in the FOV.
+
 ## Progress
 
 1. **Monolithic Setup (legacy/):**  
