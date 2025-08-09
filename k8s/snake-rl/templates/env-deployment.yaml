@@ -2,7 +2,7 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: env
+  name: {{ include "snake-rl.fullname" . }}-env
   labels:
     {{- include "snake-rl.labels" . | nindent 4 }}
     app.kubernetes.io/component: env

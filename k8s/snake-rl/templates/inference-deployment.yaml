@@ -2,7 +2,7 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: inference
+  name: {{ include "snake-rl.fullname" . }}-inf
   labels:
     {{- include "snake-rl.labels" . | nindent 4 }}
     app.kubernetes.io/component: inference
@@ -24,11 +24,16 @@ spec:
       # Wait for env service to be ready
       - name: wait-for-env
         image: busybox:1.28
+        env:
+        - name: ENV_HOST
+          value: {{ include "snake-rl.envHost" . }}
+        - name: ENV_PORT
+          value: "{{ .Values.env.service.port }}"
         command: ['sh', '-c']
         args:
           - |
-            echo "Waiting for env service..."
-            until nc -z env 5000; do
+            echo "Waiting for $ENV_HOST:$ENV_PORT ..."
+            until nc -z $ENV_HOST $ENV_PORT; do
               echo "Env service not ready, waiting..."
               sleep 1
             done
@@ -42,7 +47,7 @@ spec:
           - "--snake-id"
           - {{ .Values.inference.args.snakeId | quote }}
           - "--env-host"
-          - {{ .Values.inference.args.envHost | quote }}
+          - {{ printf "%s:%v" (include "snake-rl.envHost" .) .Values.env.service.port | quote }}
           - "--model-dir"
           - {{ .Values.inference.args.modelSaveDir | quote }}
           - "--log-file"

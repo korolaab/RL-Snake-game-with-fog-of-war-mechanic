@@ -1,3 +1,4 @@
+createNamespace: false
 global:
   imageRegistry: "localhost:5000"
   imageTag: "latest"
@@ -11,17 +12,16 @@ env:
     tag: ""
   
   service:
-    type: NodePort
+    type: ClusterIP
     port: 5000
     targetPort: 5000
-    nodePort: 8000
   
   args:
     fps: 100
     seed: 1
     maxStepsWithoutFood: 1000
-    gridWidth: 11
-    gridHeight: 11
+    gridWidth: 22
+    gridHeight: 22
     visionRadius: 5
     visionDisplayCols: 11
     visionDisplayRows: 11
@@ -51,7 +51,6 @@ inference:
   
   args:
     snakeId: "adam"
-    envHost: "env:5000"
     modelSaveDir: "/output/models"
     logFile: "/output/agent1.log"
     batchSize: 1
@@ -105,7 +104,7 @@ logging:
 
 # Experiment Configuration
 experiment:
-  name: "test_helm_setup"
+  name: "observation_study_31_07_2025_grid_size_22x22"
 
 # Network Configuration
 networkPolicy:

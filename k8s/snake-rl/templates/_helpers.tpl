@@ -8,6 +8,8 @@ Expand the name of the chart.
 {{/*
 Create a default fully qualified app name.
 */}}
+
+
 {{- define "snake-rl.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
@@ -58,6 +60,10 @@ Generate ISO datetime - use from values if provided, otherwise generate dynamica
 {{- now | date "2006-01-02T15:04:05Z07:00" }}
 {{- end }}
 {{- end }}
+
+{{- define "snake-rl.envHost" -}}
+{{- printf "%s-env" (include "snake-rl.fullname" .) -}}
+{{- end -}}
 
 {{/*
 Environment variables for RabbitMQ

@@ -1,5 +1,5 @@
 # 🐍 Snake RL: Observation Plan for Neural Network Performance
-
+Ticket from 31/07/2025
 ## 1. Context of the Problem
 
 We are analyzing the training dynamics of different neural network architectures in a reinforcement learning (RL) setup using the classic Snake game environment. The RL agent is trained using the Adam optimizer and evaluated by the average snake length across episodes.
@@ -15,7 +15,7 @@ Initial findings show that while the large network learns faster and peaks earli
 
 ## 2. Observation & Experimentation Plan
 
-### ✅ Step 1: Vary Grid Size
+### Step 1: Vary Grid Size
 **Goal**: Observe how different environment complexities affect learning dynamics and overfitting behavior.
 
 - Try multiple grid sizes: 5×5, 10×10, 15×15, 20×20
@@ -27,7 +27,7 @@ Initial findings show that while the large network learns faster and peaks earli
 
 ---
 
-### 🎨 Step 2: Create Unusual Conditions in the Environment (Creative Step)
+### Step 2: Create Unusual Conditions in the Environment (Creative Step)
 **Goal**: Stress-test generalization and adaptability.
 
 Measure:
