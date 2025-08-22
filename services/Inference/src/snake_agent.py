@@ -198,7 +198,7 @@ class SnakeAgent:
             log_probs = m.log_prob(actions_tensor)
             entropy = m.entropy().mean()
             policy_loss = -(log_probs * returns_tensor).mean()
-            total_loss = policy_loss - self.beta * entropy
+            total_loss = policy_loss + self.beta * entropy
             if torch.isnan(total_loss):
                 logging.critical({"event": "training_loss_nan_abort"})
                 return False
