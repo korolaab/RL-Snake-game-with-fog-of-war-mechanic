@@ -4,6 +4,8 @@ import threading
 import random
 import logging
 from utils.seed import set_seed  
+import os
+import sys
 
 from .snake import SnakeGame
 
@@ -37,6 +39,8 @@ class GameManager:
         self.frame_number = 0    # New: frame counter
         set_seed(self.seed)
         self.game_over_raised = False
+        # Add N_EPISODES from env
+        self.max_episodes = int(os.environ.get("N_EPISODES", 10000000))
         threading.Thread(target=self.game_loop, daemon=True).start()
 
     def state(self):
@@ -101,6 +105,10 @@ class GameManager:
                       "action": "all_snakes_removed_food_respawned", 
                       "episode": self.episode_number, 
                       "frame": self.frame_number})
+        # Exit logic:
+        if self.episode_number >= self.max_episodes:
+            logging.info({"event": "env_max_episodes_completed", "total_episodes": self.episode_number})
+            sys.exit(0)
 
     def add_snake(self, snake_id):
         if len(self.snakes) >= self.MAX_SNAKES:
@@ -160,3 +168,4 @@ class GameManager:
                     
             if len(self.FOODS) == 0:
                 self.spawn_food()
+

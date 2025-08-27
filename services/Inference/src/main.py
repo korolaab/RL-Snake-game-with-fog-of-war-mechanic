@@ -103,7 +103,8 @@ def send_move(move_url, move: str):
 
 def neural_agent_local(snake_id: str, log_file: str, env_host: str,
                            model_save_dir: str = "models", learning_rate: float = 0.001,
-                           batch_size: int = 5, gamma: float = 0.99, beta: float = 0.1):
+                           batch_size: int = 5, gamma: float = 0.99, beta: float = 0.1,
+                           max_episodes: int = None):
     """
     Neural agent with LOCAL REINFORCE training only.
     batch_size = number of episodes before training batch
@@ -115,6 +116,14 @@ def neural_agent_local(snake_id: str, log_file: str, env_host: str,
     logging.info({"event": "starting_neural_agent_local", "snake_id": snake_id})
     logging.info({"event": "batch_size_configured", "batch_size": batch_size, "unit": "episodes"})
     logging.info({"event": "mode_configured", "mode": "collect_episodes_then_batch_train"})
+
+    # Read N_EPISODES from param, env var, or default
+    if max_episodes is None:
+        env_n_episodes = os.environ.get('N_EPISODES')
+        if env_n_episodes:
+            max_episodes = int(env_n_episodes)
+        else:
+            max_episodes = 10000000
 
     # Create agent
     agent = SnakeAgent(
@@ -129,9 +138,8 @@ def neural_agent_local(snake_id: str, log_file: str, env_host: str,
     # Output model info
     model_info = agent.get_model_info()
     logging.info({"event": "agent_initialized", "model_info": model_info})
-
     try:
-        episode_count = 0
+        episode_counter = 0  # Number of agent-handled episodes
         while True:
             #logging.info({"event": "starting_episode", "episode": episode_count})
             previous_action = "forward"
@@ -153,10 +161,10 @@ def neural_agent_local(snake_id: str, log_file: str, env_host: str,
                     reward = data.get("reward", 'null')  # Removed trailing comma
                     game_over = data.get("game_over",'null')
 
-                    if (visible_cells == 'null' or 
-                        episode_count == 'null' or 
-                        frame_count == 'null' or 
-                        reward == 'null' or 
+                    if (visible_cells == 'null' or
+                        episode_count == 'null' or
+                        frame_count == 'null' or
+                        reward == 'null' or
                         game_over == 'null'):
                         logging.error({"event": "state_received",
                                     "visible_cells": visible_cells,
@@ -185,7 +193,11 @@ def neural_agent_local(snake_id: str, log_file: str, env_host: str,
                         done=game_over
                     )
                     if game_over == True:
-                        logging.info({"event": "episode_ended", "episode": episode_count})
+                        episode_counter += 1
+                        logging.info({"event": "episode_ended", "episode": episode_count, "total_agent_episodes": episode_counter})
+                        if max_episodes is not None and episode_counter >= max_episodes:
+                            logging.info({"event": "inference_max_episodes_completed", "max_episodes": max_episodes})
+                            sys.exit(0)
                         if should_send_batch:
                             logging.info({"event": "sending_batch", "episodes_completed": agent.batch_size})
                             success =  agent.send_training_batch_and_wait()
@@ -238,6 +250,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch-size", type=int, default=5, help="Episodes per batch")
     parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor (gamma) for RL")
     parser.add_argument("--beta", type=float, default=0.1, help="Entropy bonus (beta)")
+    parser.add_argument("--max-episodes", type=int, default=None, help="Number of episodes before exit (overrides env N_EPISODES)")
 
     args = parser.parse_args()
 
@@ -253,5 +266,7 @@ if __name__ == "__main__":
             learning_rate=args.learning_rate,
             batch_size=args.batch_size,
             gamma=args.gamma,
-            beta=args.beta
+            beta=args.beta,
+            max_episodes=args.max_episodes
         )
+
