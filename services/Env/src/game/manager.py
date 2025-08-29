@@ -133,6 +133,8 @@ class GameManager:
     def game_loop(self):
         import time
         self.reset_game()
+        while not self.snakes:
+            time.sleep(0.1)
         while True:
             time.sleep(1.0 / self.FPS)
             self.frame_number += 1

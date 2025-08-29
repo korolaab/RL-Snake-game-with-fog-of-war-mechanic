@@ -21,6 +21,8 @@ class StreamReader:
         self.lock = threading.Lock()
         self.new_state_event = threading.Event()
         self.last_seen_frame = None  # (episode, frame) tuple to prevent duplicates
+        self.stream_failed = False  # Add stream failure state
+        self.stream_exception = None
 
     def start(self):
         """Start reading stream in background"""
@@ -62,34 +64,29 @@ class StreamReader:
 
     def _read_stream(self):
         """Background thread that continuously reads stream"""
-        try:
-            response = requests.get(self.base_url, stream=True)
-            
-            for line in response.iter_lines():
-                if not self.running:
-                    break
-                    
-                if line:
-                    try:
-                        decoded = line.decode()
-                        data = json.loads(decoded)
-                        
-                        with self.lock:
-                            self.latest_state = data
-                            self.latest_timestamp = time.time()
-                            
-                        
-                        self.new_state_event.set()
-
-                            
-                    except json.JSONDecodeError:
-                        logging.warning({"event": "failed_to_parse_json", "data": decoded})
-
-        except Exception as e:
-            logging.error({"event": "stream_reading_error", "exception": e})
-        finally:
-            self.running = False
-
+        while self.running:
+            try:
+                response = requests.get(self.base_url, stream=True, timeout=10)
+                for line in response.iter_lines():
+                    if not self.running:
+                        break
+                    if line:
+                        try:
+                            decoded = line.decode()
+                            data = json.loads(decoded)
+                            with self.lock:
+                                self.latest_state = data
+                                self.latest_timestamp = time.time()
+                            self.new_state_event.set()
+                        except json.JSONDecodeError:
+                            logging.warning({"event": "failed_to_parse_json", "data": str(decoded)})
+            except Exception as e:
+                logging.error({"event": "stream_reading_error", "exception": str(e)})
+                with self.lock:
+                    self.stream_failed = True
+                    self.stream_exception = e
+                self.new_state_event.set()
+                time.sleep(1)
 def send_move(move_url, move: str):
     """Send control action."""
     payload = {"move": move}
@@ -99,7 +96,7 @@ def send_move(move_url, move: str):
         response.raise_for_status()
         logging.info({"event": "sent_move", "move": move})
     except requests.RequestException as e:
-        logging.error({"event": "error_sending_move", "exception": e})
+        logging.error({"event": "error_sending_move", "exception": str(e)})
 
 def neural_agent_local(snake_id: str, log_file: str, env_host: str,
                            model_save_dir: str = "models", learning_rate: float = 0.001,

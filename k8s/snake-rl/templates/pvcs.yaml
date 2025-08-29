@@ -1,6 +1,6 @@
 {{- range $service := list "training" "env" "inference" }}
 {{- $config := index $.Values $service }}
-{{- if $config.storage.enabled }}
+{{- if and $config $config.storage $config.storage.enabled }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -20,3 +20,4 @@ spec:
       storage: {{ $config.storage.size }}
 {{- end }}
 {{- end }}
+

@@ -1,4 +1,4 @@
-{{- if and .Values.run .Values.run.maxEpisodes }}
+{{- if and .Values.inference.enabled .Values.inference.runAsJob }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -7,47 +7,14 @@ metadata:
     {{- include "snake-rl.labels" . | nindent 4 }}
 spec:
   backoffLimit: 0
-  ttlSecondsAfterFinished: {{ .Values.run.ttlSecondsAfterFinished | default 3600 }}
+  ttlSecondsAfterFinished: {{ .Values.inference.ttlSecondsAfterFinished | default 3600 }}
   template:
     metadata:
       labels:
         {{- include "snake-rl.selectorLabels" . | nindent 8 }}
     spec:
-      restartPolicy: Never
+      restartPolicy: OnFailure
       containers:
-      - name: env
-        image: "{{ .Values.global.imageRegistry }}/{{ .Values.env.image.repository }}:{{ .Values.env.image.tag | default .Values.global.imageTag }}"
-        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
-        command: ["python", "app.py"]
-        args:
-          - "--fps"
-          - {{ .Values.env.args.fps | quote }}
-          - "--seed"
-          - {{ .Values.env.args.seed | quote }}
-          - "--max-steps-without-food"
-          - {{ .Values.env.args.maxStepsWithoutFood | quote }}
-          - "--grid_width"
-          - {{ .Values.env.args.gridWidth | quote }}
-          - "--grid_height"
-          - {{ .Values.env.args.gridHeight | quote }}
-          - "--vision_radius"
-          - {{ .Values.env.args.visionRadius | quote }}
-          - "--vision_display_cols"
-          - {{ .Values.env.args.visionDisplayCols | quote }}
-          - "--vision_display_rows"
-          - {{ .Values.env.args.visionDisplayRows | quote }}
-          - "--max_snakes"
-          - {{ .Values.env.args.maxSnakes | quote }}
-          - "--reward-config"
-          - {{ .Values.env.args.rewardConfig | quote }}
-        env:
-        - name: N_EPISODES
-          value: {{ .Values.run.maxEpisodes | quote }}
-        {{- include "snake-rl.commonEnvVars" . | nindent 8 }}
-        {{- include "snake-rl.rabbitmqEnvVars" . | nindent 8 }}
-        resources:
-          {{- toYaml .Values.env.resources | nindent 10 }}
-
       - name: inference
         image: "{{ .Values.global.imageRegistry }}/{{ .Values.inference.image.repository }}:{{ .Values.inference.image.tag | default .Values.global.imageTag }}"
         imagePullPolicy: {{ .Values.global.imagePullPolicy }}
@@ -56,7 +23,7 @@ spec:
           - "--snake-id"
           - {{ .Values.inference.args.snakeId | quote }}
           - "--env-host"
-          - "localhost:5000"
+          - {{ printf "%s-env:%v" (include "snake-rl.fullname" .) .Values.env.service.port | quote }}
           - "--model-dir"
           - {{ .Values.inference.args.modelSaveDir | quote }}
           - "--log-file"
@@ -71,7 +38,7 @@ spec:
           - {{ .Values.inference.args.beta | quote }}
         env:
         - name: N_EPISODES
-          value: {{ .Values.run.maxEpisodes | quote }}
+          value: {{ .Values.inference.args.maxEpisodes | quote }}
         {{- include "snake-rl.commonEnvVars" . | nindent 8 }}
         {{- include "snake-rl.rabbitmqEnvVars" . | nindent 8 }}
         resources:

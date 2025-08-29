@@ -1,4 +1,84 @@
-{{- if .Values.inference.enabled }}
+{{- if and .Values.inference.enabled (not .Values.inference.runAsJob) }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "snake-rl.fullname" . }}-inf
+  labels:
+    {{- include "snake-rl.labels" . | nindent 4 }}
+    app.kubernetes.io/component: inference
+  annotations:
+     "helm.sh/hook-weight": "3"
+spec:
+  replicas: {{.Values.inference.replicaCount | default 1}}
+  selector:
+    matchLabels:
+      {{- include "snake-rl.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: inference
+  template:
+    metadata:
+      labels:
+        {{- include "snake-rl.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: inference
+    spec:
+      initContainers:
+      # Wait for env service to be ready
+      - name: wait-for-env
+        image: busybox:1.28
+        env:
+        - name: ENV_HOST
+          value: {{ include "snake-rl.envHost" . }}
+        - name: ENV_PORT
+          value: "{{ .Values.env.service.port }}"
+        command: ['sh', '-c']
+        args:
+          - |
+            echo "Waiting for $ENV_HOST:$ENV_PORT ..."
+            until nc -z $ENV_HOST $ENV_PORT; do
+              echo "Env service not ready, waiting..."
+              sleep 1
+            done
+            echo "Env service is ready!"
+      containers:
+      - name: inference
+        image: "{{ .Values.global.imageRegistry }}/{{ .Values.inference.image.repository }}:{{ .Values.inference.image.tag | default .Values.global.imageTag }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        command: ["python", "main.py"]
+        args:
+          - "--snake-id"
+          - {{ .Values.inference.args.snakeId | quote }}
+          - "--env-host"
+          - {{ printf "%s:%v" (include "snake-rl.envHost" .) .Values.env.service.port | quote }}
+          - "--model-dir"
+          - {{ .Values.inference.args.modelSaveDir | quote }}
+          - "--log-file"
+          - {{ .Values.inference.args.logFile | quote }}
+          - "--batch-size"
+          - {{ .Values.inference.args.batchSize | quote }}
+          - "--learning-rate"
+          - {{ .Values.inference.args.learningRate | quote }}
+          - "--gamma"
+          - {{ .Values.inference.args.gamma | quote }}
+          - "--beta"
+          - {{ .Values.inference.args.beta | quote }}
+        env:
+        {{- include "snake-rl.commonEnvVars" . | nindent 8 }}
+        {{- include "snake-rl.rabbitmqEnvVars" . | nindent 8 }}
+        resources:
+          {{- toYaml .Values.inference.resources | nindent 10 }}
+        {{- if .Values.storage.enabled }}
+        volumeMounts:
+        - name: shared-storage
+          mountPath: /output
+        {{- end }}
+      {{- if .Values.storage.enabled }}
+      volumes:
+      - name: shared-storage
+        persistentVolumeClaim:
+          claimName: {{ include "snake-rl.fullname" . }}-inference-storage
+      {{- end }}
+{{- end }}
+
+{{- if and .Values.inference.enabled (not .Values.inference.runAsJob) }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:

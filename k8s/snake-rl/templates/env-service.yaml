@@ -13,9 +13,10 @@ spec:
     targetPort: {{ .Values.env.service.targetPort }}
     protocol: TCP
     {{- if and (eq .Values.env.service.type "NodePort") .Values.env.service.nodePort }}
-    nodePort: {{ .Values.env.service.nodePort }}
+      nodePort: {{ .Values.env.service.nodePort }}
     {{- end }}
   selector:
     {{- include "snake-rl.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: env
 {{- end }}
+

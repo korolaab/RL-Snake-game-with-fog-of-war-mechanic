@@ -4,19 +4,16 @@ global:
   imageTag: "latest"
   imagePullPolicy: Always
 
-
-# Environment Service Configuration
+# ==== ENVIRONMENT SERVER CONFIGURATION ====
 env:
-  enabled: false   # for Job, disable separate deployment
+  enabled: true       # Set to true to run the always-on Environment service
   image:
     repository: "snake-rl/env"
     tag: ""
-
   service:
     type: ClusterIP
     port: 5000
     targetPort: 5000
-
   args:
     fps: 100
     seed: 1
@@ -28,15 +25,45 @@ env:
     visionDisplayRows: 11
     maxSnakes: 1
     rewardConfig: '{"alive": 0.1, "eat_food":0.5, "game_over":0 }'
-
   resources:
     requests:
-      memory: "256Mi"
+      memory: "1Gi"
       cpu: "1000m"
     limits:
-      memory: "512Mi"
-      cpu: "2000m"
+      memory: "1Gi"
+      cpu: "1000m"
+  replicaCount: 1
+  storage:
+    enabled: true
+    accessMode: "ReadWriteOnce"
+    storageClass: "local-path"
+    size: "5Gi"
 
+# ==== INFERENCE/AGENT EXPERIMENT JOB CONFIGURATION ====
+inference:
+  enabled: true      # Set to true for inference, false if only running env
+  runAsJob: true      # Switch between Job and StatefulSet/Deployment
+  image:
+    repository: "snake-rl/inference"
+    tag: ""
+  args:
+    snakeId: "adam"
+    envHost: "snake-rl-env:5000" # Use env service DNS name (host:port)
+    modelSaveDir: "/output/models"
+    logFile: "/output/agent1.log"
+    batchSize: 1
+    maxEpisodes: 10
+    learningRate: 0.001
+    gamma: 0.9
+    beta: 0.05
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "2000m"
+    limits:
+      memory: "1Gi"
+      cpu: "2000m"
+  ttlSecondsAfterFinished: 1200
   storage:
     enabled: true
     accessMode: "ReadWriteOnce"
@@ -47,37 +74,6 @@ envContainer:
   command: []
   args: []
 
-# Inference Service Configuration
-inference:
-  enabled: false  # for Job, disable separate deployment
-  image:
-    repository: "snake-rl/inference"
-    tag: ""
-
-  args:
-    snakeId: "adam"
-    modelSaveDir: "/output/models"
-    logFile: "/output/agent1.log"
-    batchSize: 1
-    learningRate: 0.001
-    gamma: 0.9
-    beta: 0.05
-
-
-  resources:
-    requests:
-      memory: "256Mi"
-      cpu: "200m"
-    limits:
-      memory: "512Mi"
-      cpu: "400m"
-
-  storage:
-    enabled: true
-    accessMode: "ReadWriteOnce"
-    storageClass: "local-path"
-    size: "5Gi"
-
 inferenceContainer:
   command: []
   args: []
@@ -86,13 +82,14 @@ run:
   maxEpisodes: 10
   ttlSecondsAfterFinished: 10
 
+# ==== STORAGE SHARED AMONG COMPONENTS ====
 storage:
   enabled: true
   accessMode: "ReadWriteOnce"
   storageClass: "local-path"
   size: "10Gi"
 
-# RabbitMQ Configuration
+# ==== RABBITMQ CONFIGURATION ====
 rabbitmq:
   enabled: true
   host: "rabbitmq.data-stack.svc.cluster.local"
@@ -109,18 +106,16 @@ rabbitmq:
   retryDelay: 5
   maxRetries: 3
 
-# Logging Configuration
+# ==== LOGGING ====
 logging:
   level: "DEBUG"
   enableConsoleLogs: true
+  file: ""
 
-# Experiment Configuration
+# ==== EXPERIMENT TAGGING ====
 experiment:
-  name: "test_job"
-
-# Network Configuration
+  name: "test_job_inference"
+# ==== NETWORK POLICY ====
 networkPolicy:
   enabled: false
-
-
 
