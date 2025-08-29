@@ -4,37 +4,38 @@ global:
   imageTag: "latest"
   imagePullPolicy: Always
 
+
 # Environment Service Configuration
 env:
-  enabled: true
+  enabled: false   # for Job, disable separate deployment
   image:
     repository: "snake-rl/env"
     tag: ""
-  
+
   service:
     type: ClusterIP
     port: 5000
     targetPort: 5000
-  
+
   args:
     fps: 100
     seed: 1
     maxStepsWithoutFood: 1000
-    gridWidth: 22
-    gridHeight: 22
+    gridWidth: 11
+    gridHeight: 11
     visionRadius: 5
     visionDisplayCols: 11
     visionDisplayRows: 11
     maxSnakes: 1
     rewardConfig: '{"alive": 0.1, "eat_food":0.5, "game_over":0 }'
-  
+
   resources:
     requests:
-      memory: "1Gi"
+      memory: "256Mi"
       cpu: "1000m"
     limits:
-      memory: "1Gi"
-      cpu: "1000m"
+      memory: "512Mi"
+      cpu: "2000m"
 
   storage:
     enabled: true
@@ -42,13 +43,17 @@ env:
     storageClass: "local-path"
     size: "5Gi"
 
+envContainer:
+  command: []
+  args: []
+
 # Inference Service Configuration
 inference:
-  enabled: true
+  enabled: false  # for Job, disable separate deployment
   image:
     repository: "snake-rl/inference"
     tag: ""
-  
+
   args:
     snakeId: "adam"
     modelSaveDir: "/output/models"
@@ -57,21 +62,29 @@ inference:
     learningRate: 0.001
     gamma: 0.9
     beta: 0.05
-  
-  
+
+
   resources:
     requests:
-      memory: "1Gi"
-      cpu: "2000m"
+      memory: "256Mi"
+      cpu: "200m"
     limits:
-      memory: "1Gi"
-      cpu: "2000m"
+      memory: "512Mi"
+      cpu: "400m"
 
   storage:
     enabled: true
     accessMode: "ReadWriteOnce"
     storageClass: "local-path"
     size: "5Gi"
+
+inferenceContainer:
+  command: []
+  args: []
+
+run:
+  maxEpisodes: 10
+  ttlSecondsAfterFinished: 10
 
 storage:
   enabled: true
@@ -99,13 +112,15 @@ rabbitmq:
 # Logging Configuration
 logging:
   level: "DEBUG"
-  file: ""
   enableConsoleLogs: true
 
 # Experiment Configuration
 experiment:
-  name: "observation_study_31_07_2025_grid_size_22x22"
+  name: "test_job"
 
 # Network Configuration
 networkPolicy:
   enabled: false
+
+
+

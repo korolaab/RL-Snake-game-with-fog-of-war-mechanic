@@ -38,7 +38,7 @@ game_manager = GameManager(
 app = Flask(__name__)
 
 import sys
-logger.setup_as_default(flask_app=app)
+logger.setup_as_default(flask_app=app, container="env")
 
 
 # Manual test right after setup

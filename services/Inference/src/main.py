@@ -256,7 +256,8 @@ if __name__ == "__main__":
 
     # Configure logging
     logging.getLogger("urllib3").propagate = False
-    logger.setup_as_default()
+    logger.setup_as_default(container="inference")
+
     
     neural_agent_local(
             snake_id=args.snake_id,
