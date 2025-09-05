@@ -54,8 +54,8 @@ inference:
     batchSize: 1
     maxEpisodes: 10
     learningRate: 0.001
-    gamma: 0.9
-    beta: 0.05
+    gamma: 0.6
+    beta: 0.16
   resources:
     requests:
       memory: "1Gi"

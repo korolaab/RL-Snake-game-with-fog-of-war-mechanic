@@ -13,18 +13,20 @@ from datetime import datetime
 class SnakeNet(nn.Module):
     """Нейронная сеть для змейки."""
     
-    def __init__(self, input_size):
+    def __init__(self, input_size, hidden_units_1=15, hidden_units_2=15, dropout_rate=0.6):
         super(SnakeNet, self).__init__()
-        self.input_size = input_size  # Add this line
+        self.input_size = input_size
+        self.hidden_units_1 = hidden_units_1
+        self.hidden_units_2 = hidden_units_2
         self.network = nn.Sequential(
-            nn.Linear(input_size, 16),
+            nn.Linear(input_size, hidden_units_1),
             nn.Tanh(),
-            nn.Dropout(0.5),
-            nn.Linear(16, 8),
+            nn.Dropout(dropout_rate),
+            nn.Linear(hidden_units_1, hidden_units_2),
             nn.Tanh(),
-            nn.Dropout(0.5),
-            nn.Linear(8, 3),
-            nn.Softmax(dim=1)  # Fixed: added dim=1
+            nn.Dropout(dropout_rate),
+            nn.Linear(hidden_units_2, 3),
+            nn.Softmax(dim=1)
         )
     
     def forward(self, x):
@@ -38,11 +40,11 @@ class ModelManager:
         self.input_size = None  # Initialize input_size
         os.makedirs(model_save_dir, exist_ok=True)
     
-    def create_new_model(self, input_size: int, learning_rate: float = 0.001):
+    def create_new_model(self, input_size: int, learning_rate: float = 0.001, hidden_units_1=15, hidden_units_2=15, dropout_rate=0.6):
         """Создание новой модели с нуля."""
         self.input_size = input_size
-        model = SnakeNet(self.input_size)
-        logging.info({"event": "created_new_model", "input_size": input_size})
+        model = SnakeNet(self.input_size, hidden_units_1, hidden_units_2, dropout_rate)
+        logging.info({"event": "created_new_model", "input_size": input_size, "hidden_units_1": hidden_units_1, "hidden_units_2": hidden_units_2, "dropout_rate": dropout_rate})
         return model
     
     def find_latest_model(self, snake_id: str = None):
