@@ -235,8 +235,14 @@ class ModelManager:
     
     def validate_input_size(self, model, expected_size: int):
         """
-        Ensure that the model's input size matches the expected dimension.
-        Raises a ValueError if there is a mismatch or if the input size cannot be determined.
+        Check if the model's input size matches the expected dimension.
+        
+        Args:
+            model: PyTorch model to check
+            expected_size: Expected input dimension
+            
+        Returns:
+            bool: True if sizes match, False if they don't match or can't be determined
         """
         actual_size = self.get_model_input_size(model)
         logging.debug({
@@ -244,8 +250,9 @@ class ModelManager:
             "actual_size": actual_size,
             "expected_size": expected_size
         })
-        if actual_size != expected_size:
-            raise ValueError(
-                f"Input size mismatch: expected {expected_size}, got {actual_size}. "
-                "Verify that the model's architecture and input specification are correct."
-            )
+        
+        if actual_size is None:
+            logging.warning({"event": "could_not_determine_model_input_size"})
+            return False
+            
+        return actual_size == expected_size

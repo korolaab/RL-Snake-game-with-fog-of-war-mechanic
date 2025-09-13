@@ -37,6 +37,7 @@ class GameManager:
         self.maxStepsWithoutApple = maxStepsWithoutApple
         self.episode_number = 0  # New: episode counter
         self.frame_number = 0    # New: frame counter
+        self.pending_turns = {}  # One turn command per snake per frame
         set_seed(self.seed)
         self.game_over_raised = False
         # Add N_EPISODES from env
@@ -118,17 +119,49 @@ class GameManager:
         self.snake_locks[snake_id] = threading.Lock()
         return True
 
+    def set_turn_command(self, snake_id, cmd):
+        """Set turn command for snake - overwrites if called multiple times per frame"""
+        self.pending_turns[snake_id] = cmd
+
     def remove_snake(self, snake_id):
         if snake_id in self.snakes:
             del self.snakes[snake_id]
         if snake_id in self.snake_locks:
             del self.snake_locks[snake_id]
+        if snake_id in self.pending_turns:
+            del self.pending_turns[snake_id]
 
     def get_snake(self, snake_id):
         return self.snakes.get(snake_id)
 
     def get_lock(self, snake_id):
         return self.snake_locks.get(snake_id)
+    
+    def update_frame(self):
+        """
+        Frame-based atomic update: apply turns, then movement, then vision
+        """
+        # Phase 1: Movement updates (with pending turns)
+        for sid, game in list(self.snakes.items()):
+            with self.snake_locks[sid]:
+                # Apply turn if one was sent this frame
+                if sid in self.pending_turns:
+                    game.turn(self.pending_turns[sid])
+                    
+                # Then move
+                status = game.move(self.GAME_OVER)
+                if status in ['collision', 'starvation']:
+                    self.GAME_OVER = True
+                    logging.info({"event": "game_over", "reason": status, "snake_id": sid})
+        
+        # Phase 2: Vision updates (after all movements)
+        for sid, game in self.snakes.items():
+            with self.snake_locks[sid]:
+                if not self.GAME_OVER:  # Only update vision if game continues
+                    game.update_vision()
+        
+        # Clear all turn commands for next frame
+        self.pending_turns.clear()
 
     def game_loop(self):
         import time
@@ -138,12 +171,7 @@ class GameManager:
         while True:
             time.sleep(1.0 / self.FPS)
             self.frame_number += 1
-            for sid, game in list(self.snakes.items()):
-                with self.snake_locks[sid]:
-                    status = game.update(self.GAME_OVER)
-                    if status == 'collision' or status == 'starvation':
-                        self.GAME_OVER = True
-                        logging.info({"event": "game_over", "reason": status, "snake_id": sid})
+            self.update_frame()
 
             if self.GAME_OVER != True:
                 grid, visions, statuses, game_over = self.state()

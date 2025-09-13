@@ -21,9 +21,8 @@ class SnakeGame:
         self.maxStepsWithoutApple = game.maxStepsWithoutApple
         self.stepsSinceLastApple = 0
 
-        # Simple state management
+        # Simple state management - no internal locking, use external snake_locks
         self._last_known_state = {}
-        self._state_lock = threading.Lock()
 
     def find_safe_spawn_location(self):
         occupied = {pos for g in self.snakes.values() for pos in g.snake} | self.foods
@@ -54,39 +53,25 @@ class SnakeGame:
     def turn(self, cmd):
         self.direction = self.relative_turn(cmd)
 
-    def _update_visible_state(self):
+    def update_vision(self):
         """
-        Update the last known visible state
+        Update visible state - caller must hold snake_locks[sid]
         """
         try:
-            # Calculate the new state
-            new_state = self._calc_visible_cells()
-
-            # Use a lock to safely update the last known state
-            with self._state_lock:
-                self._last_known_state = new_state
+            self._last_known_state = self._calc_visible_cells()
         except Exception as e:
             logging.error(f"Error updating visible state for snake {self.snake_id}: {e}")
+            self._last_known_state = {}
 
     def get_visible_cells(self):
         """
-        Retrieve the last known visible state
+        Retrieve the last known visible state - caller must hold snake_locks[sid]
         """
-        try:
-            # Return a copy of the last known state
-                with self._state_lock:
-                    return self._last_known_state.copy()
-        except Exception as e:
-            logging.error({
-                "event": "error getting visible cells",
-                "snake_id": self.snake_id,
-                "exception": str(e)
-            })
-            return {}
+        return self._last_known_state.copy()
 
-    def update(self, game_over):
+    def move(self, game_over):
         """
-        Modified update method to ensure visible state is updated
+        Handle only movement updates - no vision calculation
         """
         self.reward = 0
         if game_over:
@@ -100,12 +85,6 @@ class SnakeGame:
         new_head = ((head[0] + self.direction[0]) % self.grid_width,
                     (head[1] + self.direction[1]) % self.grid_height)
         occupied = {pos for game in self.snakes.values() for pos in game.snake}
-
-        # Ensure visible state is updated
-        try:
-            self._update_visible_state()
-        except Exception as e:
-            logging.error(f"Failed to update visible state: {e}")
 
         if new_head in occupied:
             return 'collision'
@@ -122,6 +101,15 @@ class SnakeGame:
         self.ticks += 1
         self.reward += self.reward_config['alive']
         return ''
+
+    def update(self, game_over):
+        """
+        Backward compatibility - calls move() then update_vision()
+        """
+        status = self.move(game_over)
+        if status == '':  # Only update vision if move was successful
+            self.update_vision()
+        return status
 
     def _calc_visible_cells(self):
         """
@@ -163,5 +151,6 @@ class SnakeGame:
                     obj = 'FOOD'
                 else:
                     obj = 'EMPTY'
-                vis[f"{cx},{cy}"] = obj
+                flipped_cx = self.vision_display_cols - cx - 1
+                vis[f"{flipped_cx},{cy}"] = obj
         return vis

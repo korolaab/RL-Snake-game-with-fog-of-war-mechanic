@@ -51,6 +51,6 @@ def move_snake(sid):
     cmd = data.get('move')
     if cmd not in ('left', 'right'):
         return jsonify({'error': 'Invalid move'}), 400
-    with game_manager.snake_locks[sid]:
-        game_manager.snakes[sid].turn(cmd)
+    # Set turn command for this frame (overwrites if called multiple times)
+    game_manager.set_turn_command(sid, cmd)
     return jsonify({'snake_id': sid, 'game_over': False})

@@ -5,70 +5,70 @@ import logging
 class StateProcessor:
     """Класс для обработки состояния игры в тензор для нейронной сети."""
     
-    def __init__(self):
-        #TODO saving cell encoding to model file
+    def __init__(self, vision_size=11):
+        self.vision_size = vision_size  # 11x11 vision grid
+        # One-hot encoding for all cell types (4 channels)
         self.cell_encoding = {
-            'FOOD': [0, 0, 1],
-            'BODY': [0, 1, 0],
-            'OTHER_BODY': [1, 0, 0],
-            'EMPTY': [0, 0, 0]  # пустые ячейки кодируем нулями
+            'EMPTY': [1, 0, 0, 0],       # Channel 0: Empty space
+            'BODY': [0, 1, 0, 0],        # Channel 1: Own body
+            'FOOD': [0, 0, 1, 0],        # Channel 2: Food
+            'OTHER_HEAD': [0, 0, 0, 1],  # Channel 3: Enemy head
+            'OTHER_BODY': [0, 0, 0, 1],  # Channel 3: Enemy body (same as head)
+            'NOT_VISIBLE': [0, 0, 0, 0]  # Outside vision (all zeros)
         }
     
     def process_state(self, state):
         """
-        Обработка состояния в тензор для нейронной сети.
+        Convert game state to fixed-size grid tensor preserving spatial relationships.
         
         Args:
-            state (dict): Состояние игры содержащее visible_cells
+            state (dict): Game state containing visible_cells
             
         Returns:
-            torch.Tensor: Тензор размером [N, 3] где N - количество видимых ячеек
+            torch.Tensor: Fixed tensor shape [vision_size, vision_size, 4] = [11, 11, 4]
         """
         
         visible_cells = state.get('visible_cells', {})
         episode = state.get('episode', 'null')
         frame = state.get('frame', 'null')
-        logging.debug({'event':'debug_visible_cells_in_process_state',
+        
+        logging.debug({'event': 'debug_visible_cells_in_process_state',
                        'episode': episode,
                        'frame': frame,
-                       'type':f'{type(visible_cells)}',
-                       'visible_cells': str(visible_cells)
-                       })
-        # Исключаем HEAD из обработки
-        filtered_cells = {k: v for k, v in visible_cells.items() if v != 'HEAD'}
+                       'visible_cells_count': len(visible_cells)})
         
-        if not filtered_cells:
-            logging.error({"event": "no_visible_cells_found", "exclusion": "HEAD"})
-            return torch.zeros(3, 60)  # если нет видимых ячеек
+        # Initialize grid with NOT_VISIBLE everywhere
+        grid = torch.zeros(self.vision_size, self.vision_size, 4, dtype=torch.float32)
         
-        # Сортируем ячейки по координатам (x, y)
-        sorted_cells = []
-        for coord_str, cell_type in filtered_cells.items():
+        # Fill grid with visible cells (including HEAD for spatial context)
+        for coord_str, cell_type in visible_cells.items():
             try:
                 x, y = map(int, coord_str.split(','))
-                sorted_cells.append((x, y, cell_type))
-            except ValueError:
-                logging.warning({"event": "invalid_coordinate_format", "coordinate": coord_str})
+                
+                # Validate coordinates are within vision grid
+                if 0 <= x < self.vision_size and 0 <= y < self.vision_size:
+                    # Get encoding for cell type
+                    if cell_type == 'HEAD':
+                        # HEAD gets same encoding as BODY for neural network
+                        # (agent shouldn't distinguish its own head position)
+                        encoding = self.cell_encoding['BODY']
+                    else:
+                        encoding = self.cell_encoding.get(cell_type, self.cell_encoding['EMPTY'])
+                    
+                    # Place encoding in grid at (y, x) - note coordinate swap for tensor indexing
+                    grid[y, x] = torch.tensor(encoding, dtype=torch.float32)
+                    
+            except (ValueError, IndexError) as e:
+                logging.warning({"event": "invalid_coordinate", "coordinate": coord_str, "error": str(e)})
                 continue
         
-        if not sorted_cells:
-            logging.warning({"event": "no_valid_coordinates_found"})
-            return torch.zeros(3, 60)
+        # Flatten grid for neural network: [11, 11, 4] -> [484]
+        result = grid.flatten()
         
-        # Сортируем по x, затем по y
-        sorted_cells.sort(key=lambda item: (item[0], item[1]))
-        
-        # Создаем тензор
-        tensor_data = []
-        for x, y, cell_type in sorted_cells:
-            encoding = self.cell_encoding.get(cell_type, [0, 0, 0])
-            tensor_data.append(encoding)
-        
-        if not tensor_data:
-            return torch.zeros(3,60)
-        
-        result = torch.tensor(tensor_data, dtype=torch.float32).flatten()
-        logging.debug({"event": "processed_state", "cell_count": len(sorted_cells), "tensor_shape": result.shape})
+        logging.debug({"event": "processed_state_grid", 
+                       "visible_cells_count": len(visible_cells),
+                       "tensor_shape": result.shape,
+                       "expected_shape": [self.vision_size * self.vision_size * 4]})
         
         return result
     

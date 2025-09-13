@@ -22,8 +22,11 @@ class SnakeAgent:
         
         # Initialize components
         self.model_manager = ModelManager(model_save_dir)
-        self.state_processor = StateProcessor()
+        self.state_processor = StateProcessor(vision_size=11)  # Fixed 11x11 vision
         self.data_manager = DataManager(model_save_dir)
+        
+        # Fixed input size for consistent neural network
+        self.fixed_input_size = 11 * 11 * 4  # 484 elements
         
         # Model and optimizer
         self.model = None
@@ -92,19 +95,32 @@ class SnakeAgent:
     def predict_action(self, state):
         """Predict action based on state.""" 
         state_tensor = self.state_processor.process_state(state)
-        flat_tensor = state_tensor.flatten().unsqueeze(0)
-        input_size = flat_tensor.shape[1]
-        self.ensure_model_initialized(input_size)
+        # Tensor is already flattened, just add batch dimension
+        input_tensor = state_tensor.unsqueeze(0)  # Shape: [1, 484]
+        
+        # Initialize model with fixed size if not already done
+        self.ensure_model_initialized(self.fixed_input_size)
+        
+        # Validate tensor shape
+        if input_tensor.shape[1] != self.fixed_input_size:
+            logging.error({"event": "tensor_shape_mismatch", 
+                          "expected": self.fixed_input_size,
+                          "got": input_tensor.shape[1]})
+            # Return random action as fallback
+            return self.actions[torch.randint(0, len(self.actions), (1,)).item()]
+        
         with torch.no_grad():
             self.model.eval()
-            action_probs = self.model(flat_tensor)
+            action_probs = self.model(input_tensor)
             m = torch.distributions.Categorical(action_probs)
             action_idx = m.sample()
             self.model.train()
+            
         predicted_action = self.actions[action_idx]
         logging.info({"event": "predicted_action",
                         "action": predicted_action,
                         "probabilities": action_probs.numpy().tolist(),
+                        "tensor_shape": input_tensor.shape,
                         "frame": state.get('frame'),
                         "episode": state.get('episode')})
         return predicted_action
@@ -149,67 +165,127 @@ class SnakeAgent:
         return should_send_batch
     
     def send_training_batch_and_wait(self):
-        """Train model on accumulated batch of completed episodes."""
+        """
+        REINFORCE Training: Train neural network on batch of completed episodes.
+        
+        Process:
+        1. Collect experiences from all completed episodes in batch
+        2. Calculate discounted returns (credit assignment)
+        3. Normalize returns to reduce variance
+        4. Compute policy gradients using REINFORCE algorithm
+        5. Update neural network weights with gradient descent
+        
+        Returns:
+            bool: True if training succeeded, False otherwise
+        """
+        # Validate batch is ready for training
         if len(self.completed_episodes) == 0:
             logging.warning({"event": "no_completed_episodes_to_send"})
             return False
         if not self.model_initialized:
             logging.warning({"event": "model_not_initialized", "action": "cannot_train_batch"})
             return False
+            
         try:
+            # Log training batch statistics
             total_episodes = len(self.completed_episodes)
             total_experiences = sum(len(ep['experiences']) for ep in self.completed_episodes)
-            logging.info({"event": "local_training_start", "total_episodes": total_episodes, "total_experiences": total_experiences, "gamma": self.gamma, "beta": self.beta, "learning_rate": self.learning_rate})
+            logging.info({"event": "local_training_start", "total_episodes": total_episodes, 
+                         "total_experiences": total_experiences, "gamma": self.gamma, 
+                         "beta": self.beta, "learning_rate": self.learning_rate})
+            
+            # Extract episode experiences for processing
             episodes = [ep['experiences'] for ep in self.completed_episodes]
             all_states, all_actions, all_returns = [], [], []
+            
+            # Process each episode in the batch
             for ep_idx, episode in enumerate(episodes):
                 episode_states, episode_actions, episode_rewards = [], [], []
+                
+                # Extract state, action, reward from each step in episode
                 for exp in episode:
+                    # Convert game state to fixed-size tensor (11x11x4 = 484 elements)
                     state_tensor = self.state_processor.process_state(exp['state']).flatten()
+                    # Convert action name to index: 'left'→2, 'right'→1, 'forward'→0
                     action_encoding = self.actions
                     action_idx = action_encoding.index(exp['action'])
                     episode_states.append(state_tensor)
                     episode_actions.append(action_idx)
                     episode_rewards.append(exp['reward'])
+                
+                # Skip empty episodes
                 if not episode_states:
                     continue
+                
+                # REINFORCE: Calculate discounted returns for credit assignment
+                # Work backwards through episode to propagate future rewards
                 episode_returns = []
                 discounted_return = 0
                 for reward in reversed(episode_rewards):
                     discounted_return = reward + self.gamma * discounted_return
                     episode_returns.insert(0, discounted_return)
+                
+                # Convert to tensor and normalize returns to reduce variance
                 episode_returns = torch.tensor(episode_returns, dtype=torch.float32)
                 if len(episode_returns) > 1:
+                    # Normalize: (returns - mean) / std to stabilize learning
                     episode_returns = (episode_returns - episode_returns.mean()) / (episode_returns.std() + 1e-8)
+                
+                # Accumulate all episode data for batch training
                 all_states.extend(episode_states)
                 all_actions.extend(episode_actions)
                 all_returns.extend(episode_returns.tolist())
+            
+            # Validate we have training data
             if not all_states:
                 logging.error({"event": "no_states_to_train"})
                 return False
-            max_length = max(len(s) for s in all_states)
-            padded_states = [torch.cat([s, torch.zeros(max_length - len(s))]) if len(s) < max_length else s for s in all_states]
-            states_tensor = torch.stack(padded_states)
-            actions_tensor = torch.tensor(all_actions, dtype=torch.long)
-            returns_tensor = torch.tensor(all_returns, dtype=torch.float32)
+            
+            # Verify all states have consistent size (should be 484 with fixed grid)
+            # This catches state processor bugs that would corrupt training
+            state_sizes = [len(s) for s in all_states]
+            if len(set(state_sizes)) > 1:
+                logging.error({"event": "inconsistent_state_sizes", "sizes": set(state_sizes)})
+                return False
+            
+            # Create training tensors (no padding needed with fixed grid)
+            states_tensor = torch.stack(all_states)        # [batch_size, 484]
+            actions_tensor = torch.tensor(all_actions, dtype=torch.long)    # [batch_size]
+            returns_tensor = torch.tensor(all_returns, dtype=torch.float32) # [batch_size]
+            
+            # Neural network forward pass
             self.model.train()
-            action_probs = self.model(states_tensor)
+            action_probs = self.model(states_tensor)  # [batch_size, 3] action probabilities
+            
+            # REINFORCE policy gradient calculation
             m = torch.distributions.Categorical(action_probs)
-            log_probs = m.log_prob(actions_tensor)
-            entropy = m.entropy().mean()
+            log_probs = m.log_prob(actions_tensor)    # Log probability of taken actions
+            entropy = m.entropy().mean()             # Exploration bonus
+            
+            # Policy loss: maximize log_prob * return (gradient ascent)
+            # Negative because optimizer does gradient descent
             policy_loss = -(log_probs * returns_tensor).mean()
+            
+            # Total loss: policy loss + entropy bonus for exploration
             total_loss = policy_loss + self.beta * entropy
+            
+            # Check for numerical instability
             if torch.isnan(total_loss):
                 logging.critical({"event": "training_loss_nan_abort"})
                 return False
-            self.optimizer.zero_grad()
-            total_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.5)
-            self.optimizer.step()
+            
+            # Gradient descent update
+            self.optimizer.zero_grad()                # Clear previous gradients
+            total_loss.backward()                     # Compute gradients
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.5)  # Prevent exploding gradients
+            self.optimizer.step()                     # Update neural network weights
+            
+            # Calculate training metrics for monitoring
             avg_return = returns_tensor.mean().item()
             max_action_prob = action_probs.max(dim=-1)[0].mean().item()
             action_counts = torch.bincount(actions_tensor, minlength=3)
             action_distribution = action_counts.float() / len(actions_tensor)
+            
             metrics = {
                 'loss': total_loss.item(),
                 'policy_loss': policy_loss.item(),
@@ -223,6 +299,8 @@ class SnakeAgent:
                 'action_dist_right': action_distribution[1].item(),
                 'action_dist_forward': action_distribution[0].item(),
             }
+            
+            # Log training results
             logging.info({
                 'event': 'local_training_step_summary',
                 'step': self.batch_number + 1,
@@ -233,12 +311,17 @@ class SnakeAgent:
                     'forward': f"{action_distribution[0]:.2f}"
                 }
             })
-            self.completed_episodes = []
-            self.batch_number += 1
+            
+            # Clean up after training
+            self.completed_episodes = []  # Clear processed episodes
+            self.batch_number += 1        # Increment batch counter
+            
             if self.is_cold_start:
                 self.is_cold_start = False
                 logging.info({"event": "cold_start_completed"})
+            
             return True
+            
         except Exception as e:
             logging.error({"event": "local_training_error", "exception": str(e)})
             return False
