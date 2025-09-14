@@ -197,6 +197,7 @@ class SnakeAgent:
             # Extract episode experiences for processing
             episodes = [ep['experiences'] for ep in self.completed_episodes]
             all_states, all_actions, all_returns = [], [], []
+            all_episode_rewards = []  # Track raw rewards per episode
             
             # Process each episode in the batch
             for ep_idx, episode in enumerate(episodes):
@@ -235,6 +236,7 @@ class SnakeAgent:
                 all_states.extend(episode_states)
                 all_actions.extend(episode_actions)
                 all_returns.extend(episode_returns.tolist())
+                all_episode_rewards.append(episode_rewards)  # Store raw rewards for this episode
             
             # Validate we have training data
             if not all_states:
@@ -268,6 +270,21 @@ class SnakeAgent:
             
             # Total loss: policy loss + entropy bonus for exploration
             total_loss = policy_loss + self.beta * entropy
+            
+            # Log detailed training data for analysis
+            episode_total_rewards = [sum(ep_rewards) for ep_rewards in all_episode_rewards]
+            policy_loss_per_step = (-(log_probs * returns_tensor)).tolist()
+            
+            logging.info({
+                "event": "training_batch_details",
+                "episode_raw_rewards": episode_total_rewards,
+                "policy_loss_per_step": policy_loss_per_step,
+                "returns_normalized": returns_tensor.tolist(),
+                "log_probs": log_probs.tolist(),
+                "actions_taken": actions_tensor.tolist(),
+                "num_episodes": len(all_episode_rewards),
+                "steps_per_episode": [len(ep_rewards) for ep_rewards in all_episode_rewards]
+            })
             
             # Check for numerical instability
             if torch.isnan(total_loss):
