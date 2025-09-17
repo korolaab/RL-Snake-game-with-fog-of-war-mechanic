@@ -17,14 +17,14 @@ env:
   args:
     fps: 100
     seed: 1
-    maxStepsWithoutFood: 1000
+    maxStepsWithoutFood: 50
     gridWidth: 11
     gridHeight: 11
     visionRadius: 5
     visionDisplayCols: 11
     visionDisplayRows: 11
     maxSnakes: 1
-    rewardConfig: '{"alive": 0.1, "eat_food":0.5, "game_over":0 }'
+    rewardConfig: '{"alive":0, "eat_food":1, "game_over":-1}'
   resources:
     requests:
       memory: "1Gi"
@@ -52,10 +52,10 @@ inference:
     modelSaveDir: "/output/models"
     logFile: "/output/agent1.log"
     batchSize: 1
-    maxEpisodes: 10
+    maxEpisodes: 1000
     learningRate: 0.001
-    gamma: 0.6
-    beta: 0.16
+    gamma: 0.95
+    beta: 0.1
   resources:
     requests:
       memory: "1Gi"
@@ -79,7 +79,7 @@ inferenceContainer:
   args: []
 
 run:
-  maxEpisodes: 10
+  maxEpisodes: 1000
   ttlSecondsAfterFinished: 10
 
 # ==== STORAGE SHARED AMONG COMPONENTS ====
@@ -114,7 +114,7 @@ logging:
 
 # ==== EXPERIMENT TAGGING ====
 experiment:
-  name: "test_job_inference"
+  name: "test_reward"
 # ==== NETWORK POLICY ====
 networkPolicy:
   enabled: false

@@ -228,9 +228,10 @@ class SnakeAgent:
                 
                 # Convert to tensor and normalize returns to reduce variance
                 episode_returns = torch.tensor(episode_returns, dtype=torch.float32)
-                if len(episode_returns) > 1:
-                    # Normalize: (returns - mean) / std to stabilize learning
-                    episode_returns = (episode_returns - episode_returns.mean()) / (episode_returns.std() + 1e-8)
+                # DISABLED: Normalization reduces food reward signal strength
+                # if len(episode_returns) > 1:
+                #     # Normalize: (returns - mean) / std to stabilize learning
+                #     episode_returns = (episode_returns - episode_returns.mean()) / (episode_returns.std() + 1e-8)
                 
                 # Accumulate all episode data for batch training
                 all_states.extend(episode_states)
@@ -275,15 +276,52 @@ class SnakeAgent:
             episode_total_rewards = [sum(ep_rewards) for ep_rewards in all_episode_rewards]
             policy_loss_per_step = (-(log_probs * returns_tensor)).tolist()
             
+            # Count food encounters per episode
+            food_encounters = []
+            for ep_rewards in all_episode_rewards:
+                food_count = sum(1 for r in ep_rewards if r > 0)  # Count positive rewards (food)
+                food_encounters.append(food_count)
+            
+            # Analyze action distribution
+            action_counts = torch.bincount(actions_tensor, minlength=3)
+            total_actions = len(actions_tensor)
+            
+            # Check gradient magnitudes before update
+            grad_norms = []
+            for param in self.model.parameters():
+                if param.grad is not None:
+                    grad_norms.append(param.grad.data.norm(2).item())
+            
+            # Debug analysis flags
+            no_food_found = sum(food_encounters) == 0
+            zero_gradients = sum(grad_norms)/len(grad_norms) if grad_norms else 0 < 1e-6
+            random_policy = abs(action_counts[0]/total_actions - 0.333) < 0.1 and abs(action_counts[1]/total_actions - 0.333) < 0.1
+            
             logging.info({
                 "event": "training_batch_details",
                 "episode_raw_rewards": episode_total_rewards,
+                "food_encounters_per_episode": food_encounters,
+                "total_food_found": sum(food_encounters),
                 "policy_loss_per_step": policy_loss_per_step,
-                "returns_normalized": returns_tensor.tolist(),
+                "returns_raw": returns_tensor.tolist(),
                 "log_probs": log_probs.tolist(),
                 "actions_taken": actions_tensor.tolist(),
+                "action_distribution": {
+                    "forward": f"{action_counts[0]/total_actions:.3f}",
+                    "right": f"{action_counts[1]/total_actions:.3f}", 
+                    "left": f"{action_counts[2]/total_actions:.3f}"
+                },
+                "gradient_norms": grad_norms,
+                "avg_gradient_norm": sum(grad_norms)/len(grad_norms) if grad_norms else 0,
+                "max_return": returns_tensor.max().item() if len(returns_tensor) > 0 else 0,
+                "min_return": returns_tensor.min().item() if len(returns_tensor) > 0 else 0,
                 "num_episodes": len(all_episode_rewards),
-                "steps_per_episode": [len(ep_rewards) for ep_rewards in all_episode_rewards]
+                "steps_per_episode": [len(ep_rewards) for ep_rewards in all_episode_rewards],
+                # DEBUG FLAGS
+                "DEBUG_no_food_found": no_food_found,
+                "DEBUG_zero_gradients": zero_gradients, 
+                "DEBUG_random_policy": random_policy,
+                "DEBUG_avg_episode_reward": sum(episode_total_rewards)/len(episode_total_rewards) if episode_total_rewards else 0
             })
             
             # Check for numerical instability
@@ -292,10 +330,29 @@ class SnakeAgent:
                 return False
             
             # Gradient descent update
+            # Store weights before update for comparison
+            old_weights = []
+            for param in self.model.parameters():
+                old_weights.append(param.data.clone())
+            
             self.optimizer.zero_grad()                # Clear previous gradients
             total_loss.backward()                     # Compute gradients
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.5)  # Prevent exploding gradients
             self.optimizer.step()                     # Update neural network weights
+            
+            # Check if weights actually changed
+            weight_changes = []
+            for old_weight, param in zip(old_weights, self.model.parameters()):
+                change = (param.data - old_weight).norm(2).item()
+                weight_changes.append(change)
+            
+            logging.info({
+                "event": "weight_update_debug",
+                "total_weight_change": sum(weight_changes),
+                "avg_weight_change": sum(weight_changes)/len(weight_changes) if weight_changes else 0,
+                "max_weight_change": max(weight_changes) if weight_changes else 0,
+                "learning_rate": self.learning_rate
+            })
             
             # Calculate training metrics for monitoring
             avg_return = returns_tensor.mean().item()
