@@ -24,7 +24,7 @@ env:
     visionDisplayCols: 11
     visionDisplayRows: 11
     maxSnakes: 1
-    rewardConfig: '{"alive":0, "eat_food":1, "game_over":-1}'
+    rewardConfig: '{"alive":1, "eat_food":0, "game_over":-1}'
   resources:
     requests:
       memory: "1Gi"

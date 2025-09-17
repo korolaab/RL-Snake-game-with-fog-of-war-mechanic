@@ -228,10 +228,10 @@ class SnakeAgent:
                 
                 # Convert to tensor and normalize returns to reduce variance
                 episode_returns = torch.tensor(episode_returns, dtype=torch.float32)
-                # DISABLED: Normalization reduces food reward signal strength
-                # if len(episode_returns) > 1:
-                #     # Normalize: (returns - mean) / std to stabilize learning
-                #     episode_returns = (episode_returns - episode_returns.mean()) / (episode_returns.std() + 1e-8)
+                # LEGACY APPROACH: Normalize returns as in original implementation
+                if len(episode_returns) > 1:
+                    # Normalize: (returns - mean) / std to stabilize learning
+                    episode_returns = (episode_returns - episode_returns.mean()) / (episode_returns.std() + 1e-8)
                 
                 # Accumulate all episode data for batch training
                 all_states.extend(episode_states)

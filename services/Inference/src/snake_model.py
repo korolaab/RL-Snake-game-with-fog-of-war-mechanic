@@ -13,19 +13,23 @@ from datetime import datetime
 class SnakeNet(nn.Module):
     """Нейронная сеть для змейки."""
     
-    def __init__(self, input_size, hidden_units_1=15, hidden_units_2=15, dropout_rate=0.6):
+    def __init__(self, input_size, hidden_units_1=8, hidden_units_2=16, dropout_rate=0.5):
         super(SnakeNet, self).__init__()
         self.input_size = input_size
         self.hidden_units_1 = hidden_units_1
         self.hidden_units_2 = hidden_units_2
+        # LEGACY ARCHITECTURE: LayerNorm + smaller network like original
         self.network = nn.Sequential(
             nn.Linear(input_size, hidden_units_1),
+            nn.LayerNorm(hidden_units_1),
             nn.Tanh(),
             nn.Dropout(dropout_rate),
             nn.Linear(hidden_units_1, hidden_units_2),
+            nn.LayerNorm(hidden_units_2),
             nn.Tanh(),
             nn.Dropout(dropout_rate),
             nn.Linear(hidden_units_2, 3),
+            nn.LayerNorm(3),
             nn.Softmax(dim=1)
         )
     
