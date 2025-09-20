@@ -13,12 +13,13 @@ from datetime import datetime
 class SnakeNet(nn.Module):
     """Нейронная сеть для змейки."""
     
-    def __init__(self, input_size, hidden_units_1=512, hidden_units_2=256, dropout_rate=0.5):
+    def __init__(self, input_size, hidden_units_1=14, hidden_units_2=8, dropout_rate=0.6):
         super(SnakeNet, self).__init__()
         self.input_size = input_size
         self.hidden_units_1 = hidden_units_1
         self.hidden_units_2 = hidden_units_2
-        # SUCCESSFUL ARCHITECTURE: Large network that achieved snake length 76
+        # HYPEROPT-OPTIMIZED ARCHITECTURE: Best configuration from hyperopt tuning
+        # {"hidden_units_1": 14, "activation_1": "Tanh", "hidden_units_2": 8, "activation_2": "Tanh", "dropout_rate": 0.6}
         self.network = nn.Sequential(
             nn.Linear(input_size, hidden_units_1),
             nn.Tanh(),

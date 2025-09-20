@@ -1,0 +1,25 @@
+env:
+  enabled: true
+  args:
+    gridWidth: 11
+    gridHeight: 11
+    fps: 100
+    seed: 25
+    maxStepsWithoutFood: 757
+    visionRadius: 5
+    rewardConfig: '{"alive": 0.1, "eat_food": 1.0, "game_over": -1.0}'
+
+inference:
+  enabled: true
+  runAsJob: true
+  args:
+    snakeId: "adam"
+    envHost: "go-ms757-b0-25-env:5000"
+    maxEpisodes: 1000
+    learningRate: 0.001
+    beta: 0
+    batchSize: 1
+    gamma: 0.95
+
+experiment:
+  name: "game_over_maxsteps757_beta0_lr0_001"

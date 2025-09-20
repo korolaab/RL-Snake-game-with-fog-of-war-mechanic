@@ -17,7 +17,7 @@ env:
   args:
     fps: 100
     seed: 1
-    maxStepsWithoutFood: 50
+    maxStepsWithoutFood: 1000
     gridWidth: 11
     gridHeight: 11
     visionRadius: 5
@@ -53,9 +53,9 @@ inference:
     logFile: "/output/agent1.log"
     batchSize: 1
     maxEpisodes: 1000
-    learningRate: 0.005
-    gamma: 0.5
-    beta: 0.1
+    learningRate: 0.009
+    gamma: 0.6
+    beta: 0.16
   resources:
     requests:
       memory: "1Gi"

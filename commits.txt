@@ -1,0 +1,75 @@
+fa4c785 Reproduce legacy reward structure and network architecture
+a68e593 Implement comprehensive training debugging and sparse rewards
+8736fa5 Add detailed training batch logging for debugging
+400ce24 Fix critical bugs in snake RL system
+dc2d739 Align K8s RL parameters with legacy hyperopt setup
+e229917 Add comprehensive documentation and analysis queries
+881ace6 Add reliable experiment runner and project documentation
+b51c949 Job was fixed. Now you can run env as service and inference as a job. After N_episodes achived. inference stopped
+30f9e5e JOB works, but not completes. flask server cannot be stopped with sys.exit() normaly
+eb462e9 changed Statefulset to Job
+f083abf fixed sign of the entropy part in loss
+960f041 do experiments
+dde79ba added fog of war mechanics demonstration
+59d34cc fix link to the image
+df5b6c4 updates link to readme
+005f097 removed unnessesary files
+41a5a68 updated readme
+5dcf5d7 added backlog
+dd6712d fix: missing files
+61c992c moved from kuber to the root
+e36f441 moved old files
+e65e6c7 Moved folder from kuber_arhitecture folder
+afccacf Merge branch 'refactor/move_old_files_to_legacy'
+b85d80a move old files to legacy folder
+99727bb fixed score calculation
+e00ac05 add snake facing direction indicator * in FOV window
+6f74197 add title under FOV of snake
+691c887 rendering snakes FOV
+92129ce fixed nan values
+27a6ee3 2 snakes pochti rabotaut. est bag s loss
+047b10e 2 snakes checked
+7f25643 fixed bugs
+3602759 game field save each step
+9afeedc minor changes
+ad5217c minor changes. Added snake class
+747d086 removed tail
+e839f54 hyperopt random search
+b0a5fb0 added mlflow
+1715709 grad calculation after episode complete
+c6c5c65 add Completed Episodes
+2ba1219 added cProfiler
+5eba810 minor changes to hyperopt
+dd95d5e changed avg_score calculation to 100 best episodes
+71bb047 added some parameters to argparse
+1c27994 implemented episode teminatig if ther is no improvement in score
+45ef11a Task 1 AB & spark parralel
+5d06198 fixed torch device
+a0c7224 fixed torch download. you need to download it manualy
+12521a0 added requirements.txt
+b1281e4 changed episodes to 1000
+7963aab no_render mode added
+9837ebc Fixed score hyperopt score parsing
+dda221c added hyperopt tunning
+016ad16 updated config comments
+1762bd6 refactored
+7db88c6 added vim temp files
+ebb24c6 moved legacy to folder
+78a50a6 added gitignore
+10550dc avg 25
+0763596 best score is 49 with deaf if snake head inside tail
+23bc769 76 score without deaf if head inside tail
+de27094 neural_net_init
+048002c last pure qlearn model
+d3f8cd9 best_avg_score_5
+38ac26f avg_3.0 score
+0e005fa fixed bugs in qlearning
+e265d71 added fpv from snake
+09aadbf fixed and parralel version
+2de6ebf romb of 5 radius. L1-distance view of snake
+81d45b6 3 actions right, left, straight from snake View.
+b678350 first_qlearn
+bd2556c refactor
+218e13d FPV snake
+40ece65 added game over on the border
+e3e7a7a init snakes_games

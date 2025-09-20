@@ -25,8 +25,8 @@ class SnakeAgent:
         self.state_processor = StateProcessor(vision_size=11)  # Fixed 11x11 vision
         self.data_manager = DataManager(model_save_dir)
         
-        # Fixed input size for consistent neural network
-        self.fixed_input_size = 11 * 11 * 4  # 484 elements
+        # Variable input size like legacy (will be calculated dynamically)
+        self.fixed_input_size = None  # Will be set when first state is processed
         
         # Model and optimizer
         self.model = None
@@ -45,6 +45,7 @@ class SnakeAgent:
         
         # Actions
         self.actions = ["left", "right", "forward"]
+        self.last_action = "forward"  # Track last action for state processing
         
         # Load existing model
         self.load_existing_model()
@@ -94,11 +95,15 @@ class SnakeAgent:
     
     def predict_action(self, state):
         """Predict action based on state.""" 
-        state_tensor = self.state_processor.process_state(state)
+        # Pass last action to state processor for legacy compatibility
+        state_tensor = self.state_processor.process_state(state, self.last_action)
         # Tensor is already flattened, just add batch dimension
-        input_tensor = state_tensor.unsqueeze(0)  # Shape: [1, 484]
+        input_tensor = state_tensor.unsqueeze(0)  # Shape: [1, variable_length]
         
-        # Initialize model with fixed size if not already done
+        # Initialize model with current tensor size if not already done
+        current_input_size = input_tensor.shape[1]
+        if self.fixed_input_size is None:
+            self.fixed_input_size = current_input_size
         self.ensure_model_initialized(self.fixed_input_size)
         
         # Validate tensor shape
@@ -117,6 +122,10 @@ class SnakeAgent:
             self.model.train()
             
         predicted_action = self.actions[action_idx]
+        
+        # Update last action for next state processing
+        self.last_action = predicted_action
+        
         logging.info({"event": "predicted_action",
                         "action": predicted_action,
                         "probabilities": action_probs.numpy().tolist(),
@@ -205,8 +214,8 @@ class SnakeAgent:
                 
                 # Extract state, action, reward from each step in episode
                 for exp in episode:
-                    # Convert game state to fixed-size tensor (11x11x4 = 484 elements)
-                    state_tensor = self.state_processor.process_state(exp['state']).flatten()
+                    # Convert game state to variable-length tensor (like legacy)
+                    state_tensor = self.state_processor.process_state(exp['state'], exp['action']).flatten()
                     # Convert action name to index: 'left'→2, 'right'→1, 'forward'→0
                     action_encoding = self.actions
                     action_idx = action_encoding.index(exp['action'])
@@ -230,8 +239,8 @@ class SnakeAgent:
                 episode_returns = torch.tensor(episode_returns, dtype=torch.float32)
                 # LEGACY APPROACH: Normalize returns as in original implementation
                 if len(episode_returns) > 1:
-                    # Normalize: (returns - mean) / std to stabilize learning
-                    episode_returns = (episode_returns - episode_returns.mean()) / (episode_returns.std() + 1e-8)
+                    # Normalize: (returns - mean) / std to stabilize learning (legacy epsilon)
+                    episode_returns = (episode_returns - episode_returns.mean()) / (episode_returns.std() + 1e-5)
                 
                 # Accumulate all episode data for batch training
                 all_states.extend(episode_states)
@@ -244,7 +253,7 @@ class SnakeAgent:
                 logging.error({"event": "no_states_to_train"})
                 return False
             
-            # Verify all states have consistent size (should be 484 with fixed grid)
+            # Verify all states have consistent size (should be 242 with fixed grid)
             # This catches state processor bugs that would corrupt training
             state_sizes = [len(s) for s in all_states]
             if len(set(state_sizes)) > 1:
@@ -252,7 +261,7 @@ class SnakeAgent:
                 return False
             
             # Create training tensors (no padding needed with fixed grid)
-            states_tensor = torch.stack(all_states)        # [batch_size, 484]
+            states_tensor = torch.stack(all_states)        # [batch_size, 242]
             actions_tensor = torch.tensor(all_actions, dtype=torch.long)    # [batch_size]
             returns_tensor = torch.tensor(all_returns, dtype=torch.float32) # [batch_size]
             
@@ -263,14 +272,12 @@ class SnakeAgent:
             # REINFORCE policy gradient calculation
             m = torch.distributions.Categorical(action_probs)
             log_probs = m.log_prob(actions_tensor)    # Log probability of taken actions
-            entropy = m.entropy().mean()             # Exploration bonus
+            entropy = m.entropy()             # Exploration bonus (no mean yet)
             
+            # Legacy loss calculation: exactly like commit e839f54
             # Policy loss: maximize log_prob * return (gradient ascent)
-            # Negative because optimizer does gradient descent
-            policy_loss = -(log_probs * returns_tensor).mean()
-            
-            # Total loss: policy loss + entropy bonus for exploration
-            total_loss = policy_loss + self.beta * entropy
+            # Use .sum() and subtract entropy like legacy
+            total_loss = -(log_probs * returns_tensor).sum() - self.beta * entropy.sum()
             
             # Log detailed training data for analysis
             episode_total_rewards = [sum(ep_rewards) for ep_rewards in all_episode_rewards]
@@ -362,8 +369,8 @@ class SnakeAgent:
             
             metrics = {
                 'loss': total_loss.item(),
-                'policy_loss': policy_loss.item(),
-                'entropy_mean': entropy.item(),
+                'policy_loss': (-(log_probs * returns_tensor).sum()).item(),
+                'entropy_sum': entropy.sum().item(),
                 'avg_return': avg_return,
                 'max_action_prob': max_action_prob,
                 'num_samples': len(states_tensor),

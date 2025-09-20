@@ -1,5 +1,6 @@
 import torch
 import logging
+import numpy as np
 
 
 class StateProcessor:
@@ -7,68 +8,97 @@ class StateProcessor:
     
     def __init__(self, vision_size=11):
         self.vision_size = vision_size  # 11x11 vision grid
-        # One-hot encoding for all cell types (4 channels)
+        # Simplified 2-channel encoding like legacy
         self.cell_encoding = {
-            'EMPTY': [1, 0, 0, 0],       # Channel 0: Empty space
-            'BODY': [0, 1, 0, 0],        # Channel 1: Own body
-            'FOOD': [0, 0, 1, 0],        # Channel 2: Food
-            'OTHER_HEAD': [0, 0, 0, 1],  # Channel 3: Enemy head
-            'OTHER_BODY': [0, 0, 0, 1],  # Channel 3: Enemy body (same as head)
-            'NOT_VISIBLE': [0, 0, 0, 0]  # Outside vision (all zeros)
+            'EMPTY': [0, 0],             # Empty space
+            'BODY': [1, 0],              # Own body (like legacy snake)
+            'FOOD': [0, 1],              # Food
+            'NOT_VISIBLE': [0, 0]        # Outside vision (all zeros)
         }
+        # Action encoding for last action feature (legacy compatibility)
+        self.action_encoding = {
+            'forward': [1, 0],
+            'left': [0, 1], 
+            'right': [0, 1]  # right and left both encoded as [0, 1] vs forward [1, 0]
+        }
+        self.last_action = 'forward'  # Track last action
     
-    def process_state(self, state):
+    def process_state(self, state, action=None):
         """
-        Convert game state to fixed-size grid tensor preserving spatial relationships.
+        Convert game state to variable-length sequence like legacy.
+        ONLY encode non-empty visible cells, skip empty cells entirely.
+        Add snake length and last action features like legacy.
         
         Args:
             state (dict): Game state containing visible_cells
+            action (str): Current action for tracking last action
             
         Returns:
-            torch.Tensor: Fixed tensor shape [vision_size, vision_size, 4] = [11, 11, 4]
+            torch.Tensor: Variable length tensor [num_features, 2]
         """
         
         visible_cells = state.get('visible_cells', {})
         episode = state.get('episode', 'null')
         frame = state.get('frame', 'null')
         
+        # Get actual snake length from environment (not just visible segments)
+        snake_length = state.get('snake_length', 3)  # Default to 3 if not provided
+        
+        # Update last action if provided
+        if action is not None:
+            self.last_action = action
+        
         logging.debug({'event': 'debug_visible_cells_in_process_state',
                        'episode': episode,
                        'frame': frame,
-                       'visible_cells_count': len(visible_cells)})
+                       'visible_cells_count': len(visible_cells),
+                       'actual_snake_length': snake_length})
         
-        # Initialize grid with NOT_VISIBLE everywhere
-        grid = torch.zeros(self.vision_size, self.vision_size, 4, dtype=torch.float32)
+        # Legacy-style: only encode non-empty cells, skip empty cells
+        matrix = []
         
-        # Fill grid with visible cells (including HEAD for spatial context)
         for coord_str, cell_type in visible_cells.items():
             try:
-                x, y = map(int, coord_str.split(','))
+                # Skip HEAD encoding - ignore head position like legacy
+                if cell_type == 'HEAD':
+                    continue  # Skip head, don't encode it
                 
-                # Validate coordinates are within vision grid
-                if 0 <= x < self.vision_size and 0 <= y < self.vision_size:
-                    # Get encoding for cell type
-                    if cell_type == 'HEAD':
-                        # HEAD gets same encoding as BODY for neural network
-                        # (agent shouldn't distinguish its own head position)
-                        encoding = self.cell_encoding['BODY']
-                    else:
-                        encoding = self.cell_encoding.get(cell_type, self.cell_encoding['EMPTY'])
-                    
-                    # Place encoding in grid at (y, x) - note coordinate swap for tensor indexing
-                    grid[y, x] = torch.tensor(encoding, dtype=torch.float32)
+                # Skip EMPTY cells - only encode visible objects like legacy
+                if cell_type == 'EMPTY':
+                    continue  # Skip empty cells entirely
+                
+                # Encode only BODY and FOOD cells like legacy
+                if cell_type == 'BODY':
+                    matrix.append([1, 0])  # Snake present, food absent
+                elif cell_type == 'FOOD':
+                    matrix.append([0, 1])  # Snake absent, food present
                     
             except (ValueError, IndexError) as e:
                 logging.warning({"event": "invalid_coordinate", "coordinate": coord_str, "error": str(e)})
                 continue
         
-        # Flatten grid for neural network: [11, 11, 4] -> [484]
-        result = grid.flatten()
+        # Add snake length feature like legacy (exponential decay encoding)
+        is_alive = np.exp(-np.abs(snake_length))
+        snake_length_feature = [is_alive, 1 - is_alive]
+        matrix.append(snake_length_feature)
         
-        logging.debug({"event": "processed_state_grid", 
+        # Add last action feature like legacy
+        action_feature = self.action_encoding.get(self.last_action, [1, 0])  # Default to forward
+        matrix.append(action_feature)
+        
+        # Convert to tensor (variable length like legacy)
+        if matrix:
+            result = torch.tensor(matrix, dtype=torch.float32)
+        else:
+            # If no visible objects, return minimal tensor with just snake length and action
+            result = torch.tensor([snake_length_feature, action_feature], dtype=torch.float32)
+        
+        logging.debug({"event": "processed_state_legacy_style", 
                        "visible_cells_count": len(visible_cells),
-                       "tensor_shape": result.shape,
-                       "expected_shape": [self.vision_size * self.vision_size * 4]})
+                       "non_empty_cells": len([x for x in matrix if x not in [snake_length_feature, action_feature]]),
+                       "actual_snake_length": snake_length,
+                       "last_action": self.last_action,
+                       "tensor_shape": result.shape})
         
         return result
     

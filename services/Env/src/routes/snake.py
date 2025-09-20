@@ -24,10 +24,12 @@ def stream_vision(sid):
             with game_manager.snake_locks[sid]:
                 vis = game_manager.snakes[sid].get_visible_cells()
                 reward = game_manager.snakes[sid].reward
+                snake_length = len(game_manager.snakes[sid].snake)  # Get actual snake length
             # Add episode and frame counters from game_manager
             payload = {'snake_id': sid,
                               'visible_cells': vis,
                               'reward': reward, 
+                              'snake_length': snake_length,  # Add actual snake length
                               'game_over': is_game_over,
                               'episode': game_manager.episode_number,   # Added
                               'frame': game_manager.frame_number,       # Added
