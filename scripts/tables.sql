@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS raw.rl_snake_logs
     `_ingested_at` DateTime64(9, 'UTC') DEFAULT now64(9)
 )
 ENGINE = MergeTree
-PARTITION BY toYYYYMM(dt)
+PARTITION BY experiment_name
 ORDER BY dt
 SETTINGS index_granularity = 8192;
 

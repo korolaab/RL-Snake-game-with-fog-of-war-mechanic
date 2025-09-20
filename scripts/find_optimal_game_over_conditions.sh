@@ -11,7 +11,7 @@ NAMESPACE="experiments"
 # max_steps_without_food: 30 -> 1000 with 50% increments
 # Starting at 30, each step = previous * 1.5, final step set to 1000
 max_steps_values=(30 45 67 100 150 225 337 505 757 1000)
-beta_values=(0 0.0001)
+beta_values=(0 0.0001 0.16)
 learning_rates=(0.001)  # Fixed learning rate
 TARGET_EPISODES=1000    # Long runs to find optimal conditions
 JOB_TIMEOUT=7200       # 2 hours per experiment (1000 episodes)

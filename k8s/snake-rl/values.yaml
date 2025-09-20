@@ -24,7 +24,7 @@ env:
     visionDisplayCols: 11
     visionDisplayRows: 11
     maxSnakes: 1
-    rewardConfig: '{"alive":1, "eat_food":0, "game_over":-1}'
+    rewardConfig: '{"alive":0, "eat_food":1, "game_over":-1}'
   resources:
     requests:
       memory: "1Gi"
@@ -53,8 +53,8 @@ inference:
     logFile: "/output/agent1.log"
     batchSize: 1
     maxEpisodes: 1000
-    learningRate: 0.001
-    gamma: 0.95
+    learningRate: 0.005
+    gamma: 0.5
     beta: 0.1
   resources:
     requests:
