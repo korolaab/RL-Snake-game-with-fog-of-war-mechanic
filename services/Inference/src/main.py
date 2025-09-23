@@ -6,87 +6,29 @@ import sys
 import os
 from snake_agent import SnakeAgent
 from datetime import datetime
-import threading
 import logging
 import logger
 
 
-class StreamReader:
-    def __init__(self, base_url):
-        self.base_url = base_url
-        self.latest_state = None
-        self.latest_timestamp = None
-        self.running = False
-        self.thread = None
-        self.lock = threading.Lock()
-        self.new_state_event = threading.Event()
-        self.last_seen_frame = None  # (episode, frame) tuple to prevent duplicates
-        self.stream_failed = False  # Add stream failure state
-        self.stream_exception = None
-
-    def start(self):
-        """Start reading stream in background"""
-        self.running = True
-        self.thread = threading.Thread(target=self._read_stream, daemon=True)
-        self.thread.start()
+def get_new_state(base_url, last_seen_frame):
+    """Get state - synchronous HTTP request (minimal duplicate checking)"""
+    try:
+        response = requests.get(base_url, timeout=5)
+        response.raise_for_status()
+        state = response.json()
         
-    def stop(self):
-        """Stop reading stream"""
-        self.running = False
-        if self.thread:
-            self.thread.join()
-            
-    def get_latest_state(self, timeout=None):
-        """Block until new state is available, ignore duplicate (episode, frame) states"""
-        while True:
-            if self.new_state_event.wait(timeout):
-                with self.lock:
-                    if self.latest_state is not None:
-                        state = self.latest_state
-                        timestamp = self.latest_timestamp
-                        episode = state.get('episode')
-                        frame = state.get('frame')
-                        key = (episode, frame)
-                        # Only yield if this (episode, frame) is not duplicate
-                        if key != self.last_seen_frame:
-                          #  logging.info({"event": "agent_new_state", "episode": episode, "frame": frame, "state": state})
-                            self.last_seen_frame = key
-                            self.latest_state = None
-                            self.new_state_event.clear()
-                            return state, timestamp
-                        else:
-                            logging.info({"event": "agent_duplicate_state_skipped", "episode": episode, "frame": frame})
-                            # Skip duplicate state, clear flag, and wait for next
-                            self.latest_state = None
-                            self.new_state_event.clear()
-            else:
-                return None, None
-
-    def _read_stream(self):
-        """Background thread that continuously reads stream"""
-        while self.running:
-            try:
-                response = requests.get(self.base_url, stream=True, timeout=10)
-                for line in response.iter_lines():
-                    if not self.running:
-                        break
-                    if line:
-                        try:
-                            decoded = line.decode()
-                            data = json.loads(decoded)
-                            with self.lock:
-                                self.latest_state = data
-                                self.latest_timestamp = time.time()
-                            self.new_state_event.set()
-                        except json.JSONDecodeError:
-                            logging.warning({"event": "failed_to_parse_json", "data": str(decoded)})
-            except Exception as e:
-                logging.error({"event": "stream_reading_error", "exception": str(e)})
-                with self.lock:
-                    self.stream_failed = True
-                    self.stream_exception = e
-                self.new_state_event.set()
-                time.sleep(1)
+        episode = state.get('episode')
+        frame = state.get('frame')
+        current_frame = (episode, frame)
+        
+        # In synchronous mode, always process the state since frames advance only on moves
+        # Duplicate detection is less critical since agent controls timing
+        logging.debug({"event": "received_state", "episode": episode, "frame": frame})
+        return state, current_frame
+        
+    except requests.RequestException as e:
+        logging.error({"event": "failed_to_get_state", "error": str(e)})
+        return None, last_seen_frame
 def send_move(move_url, move: str):
     """Send control action."""
     payload = {"move": move}
@@ -136,68 +78,63 @@ def neural_agent_local(snake_id: str, log_file: str, env_host: str,
     model_info = agent.get_model_info()
     logging.info({"event": "agent_initialized", "model_info": model_info})
     try:
-        episode_counter = 0  # Number of agent-handled episodes
+        episode_counter = 0
+        last_seen_frame = None
+        
+        logging.info({"event": "starting_synchronous_agent", "snake_id": snake_id})
+        
         while True:
-            #logging.info({"event": "starting_episode", "episode": episode_count})
+            logging.info({"event": "starting_episode", "episode": episode_counter})
             previous_action = "forward"
-            stream_reader = StreamReader(base_url)
-            stream_reader.start()
+            
             try:
                 while True:
-                    data, tech_timestamp = stream_reader.get_latest_state()
-                    if data is None or tech_timestamp is None:
-                        logging.warning({"event": "no_data_received_from_stream"})
+                    # 1. Get current state (synchronous)
+                    state, last_seen_frame = get_new_state(base_url, last_seen_frame)
+                    
+                    if state is None:
+                        # No new state, brief wait before retry
+                        time.sleep(0.01)
                         continue
-                    send_datetime_str = data.get("datetime")
-                    send_timestamp = datetime.fromisoformat(send_datetime_str).timestamp()
-                    delay = tech_timestamp - send_timestamp
-
-                    episode_count = data.get("episode",'null')
-                    frame_count = data.get("frame",'null')
-                    visible_cells = data.get("visible_cells",'null')
-                    reward = data.get("reward", 'null')  # Removed trailing comma
-                    game_over = data.get("game_over",'null')
-
-                    if (visible_cells == 'null' or
-                        episode_count == 'null' or
-                        frame_count == 'null' or
-                        reward == 'null' or
-                        game_over == 'null'):
-                        logging.error({"event": "state_received",
-                                    "visible_cells": visible_cells,
-                                    "episode": episode_count,
-                                    "frame": frame_count,
-                                    "reward": reward, 
-                                    "game_over": game_over,
-                                    "delay_s": f"{delay}",
-                                    "skiped": True})
+                    
+                    # 2. Extract and validate state data
+                    episode_count = state.get("episode", 'null')
+                    frame_count = state.get("frame", 'null')
+                    visible_cells = state.get("visible_cells", 'null')
+                    reward = state.get("reward", 'null')
+                    game_over = state.get("game_over", 'null')
+                    
+                    if any(x == 'null' for x in [visible_cells, episode_count, frame_count, reward, game_over]):
+                        logging.error({"event": "invalid_state_received", "state": state})
                         continue
-                    else:
-                        logging.info({"event": "state_received",
-                                    "visible_cells": visible_cells,
-                                    "episode": episode_count,
-                                    "frame": frame_count,
-                                    "reward": reward, 
-                                    "game_over": game_over,
-                                    "delay_s": f"{delay}"
-                                    })
-                    #game_over = (game_over == 'true')
-                        
+                    
+                    logging.info({"event": "state_received",
+                                "visible_cells": visible_cells,
+                                "episode": episode_count,
+                                "frame": frame_count,
+                                "reward": reward,
+                                "game_over": game_over})
+                    
+                    # 3. Add experience to agent
                     should_send_batch = agent.add_experience(
-                        state=data,
+                        state=state,
                         action=previous_action,
                         reward=reward,
                         done=game_over
                     )
+                    
+                    # 4. Check game over
                     if game_over == True:
                         episode_counter += 1
                         logging.info({"event": "episode_ended", "episode": episode_count, "total_agent_episodes": episode_counter})
+                        
                         if max_episodes is not None and episode_counter >= max_episodes:
                             logging.info({"event": "inference_max_episodes_completed", "max_episodes": max_episodes})
                             sys.exit(0)
+                            
                         if should_send_batch:
                             logging.info({"event": "sending_batch", "episodes_completed": agent.batch_size})
-                            success =  agent.send_training_batch_and_wait()
+                            success = agent.send_training_batch_and_wait()
                             if success:
                                 logging.info({"event": "received_improved_model", "source": "batch_training"})
                             else:
@@ -207,6 +144,8 @@ def neural_agent_local(snake_id: str, log_file: str, env_host: str,
                             remaining = agent.batch_size - completed_episodes
                             logging.info(f"📊 Episode added to batch ({completed_episodes}/{agent.batch_size}). "
                                        f"Need {remaining} more episodes before training.")
+                        
+                        # Reset environment
                         try:
                             reset_response = requests.post(reset_url, timeout=5)
                             if reset_response.status_code == 200:
@@ -215,13 +154,25 @@ def neural_agent_local(snake_id: str, log_file: str, env_host: str,
                                 logging.warning({"event": "reset_failed", "status_code": reset_response.status_code})
                         except Exception as reset_error:
                             logging.error({"event": "error_resetting_environment", "exception": str(reset_error)})
+                        
+                        last_seen_frame = None  # Reset frame tracking
                         break
-                    action = agent.predict_action(data)
-                    if action != "forward":
-                        send_move(move_url, action)
+                    
+                    # 5. Predict action
+                    action = agent.predict_action(state)
+                    
+                    # 6. Send move (this advances the game) - ALL actions in synchronous mode
+                    try:
+                        move_response = requests.post(move_url, json={"move": action}, timeout=5)
+                        move_response.raise_for_status()
+                        logging.info({"event": "sent_move", "move": action})
+                    except requests.RequestException as e:
+                        logging.error({"event": "error_sending_move", "exception": str(e)})
+                    
                     previous_action = action
+                    
             except Exception as game_error:
-                logging.error({"event": "error_during_episode", "episode_count": episode_count, "exception": str(game_error)})
+                logging.error({"event": "error_during_episode", "episode_count": episode_counter, "exception": str(game_error)})
                 try:
                     if len(agent.completed_episodes) > 0:
                         logging.info({"event": "sending_partial_batch_due_to_error", "episode_count": len(agent.completed_episodes)})
@@ -230,8 +181,7 @@ def neural_agent_local(snake_id: str, log_file: str, env_host: str,
                     logging.info({"event": "data_saved_after_episode_error", "saved_files": saved_files})
                 except Exception as save_error:
                     logging.error({"event": "error_saving_data_after_episode_error", "exception": str(save_error)})
-            finally:
-                stream_reader.stop()
+                    
     except KeyboardInterrupt:
         logging.info({"event": "keyboard_interrupt", "action": "shutting_down"})
     finally:

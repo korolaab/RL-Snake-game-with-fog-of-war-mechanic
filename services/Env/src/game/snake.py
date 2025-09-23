@@ -91,7 +91,11 @@ class SnakeGame:
 
         self.snake.insert(0, new_head)
         if new_head in self.foods:
+            foods_before = self.foods.copy()
             self.foods.remove(new_head)
+            logging.info({"event": "food_consumed", "snake_id": self.snake_id, 
+                         "consumed_pos": new_head, "foods_before": list(foods_before), 
+                         "foods_after": list(self.foods)})
             self.reward += self.reward_config['eat_food']
             self.stepsSinceLastApple = 0
         else:

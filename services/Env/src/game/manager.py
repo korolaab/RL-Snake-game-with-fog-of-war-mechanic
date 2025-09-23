@@ -42,7 +42,10 @@ class GameManager:
         self.game_over_raised = False
         # Add N_EPISODES from env
         self.max_episodes = int(os.environ.get("N_EPISODES", 10000000))
-        threading.Thread(target=self.game_loop, daemon=True).start()
+        # Disable autonomous game loop for synchronous control via /move endpoint
+        # Initialize game state but don't start continuous loop
+        self.reset_game()
+        # threading.Thread(target=self.game_loop, daemon=True).start()
 
     def state(self):
         grid = {f"{x},{y}": [] for x in range(self.GRID_WIDTH) for y in range(self.GRID_HEIGHT)}
@@ -65,11 +68,15 @@ class GameManager:
         return grid, visions, statuses, self.GAME_OVER
 
     def spawn_food(self):
+        foods_before = self.FOODS.copy()
         occupied = {pos for game in self.snakes.values() for pos in game.snake} | self.FOODS
         while True:
             pos = (random.randint(0, self.GRID_WIDTH - 1), random.randint(0, self.GRID_HEIGHT - 1))
             if pos not in occupied:
                 self.FOODS.add(pos)
+                logging.info({"event": "food_spawned", "foods_before": list(foods_before), 
+                             "new_food_pos": pos, "foods_after": list(self.FOODS), 
+                             "frame": self.frame_number})
                 break
 
     def find_safe_spawn_location(self):
@@ -117,6 +124,9 @@ class GameManager:
         snake = SnakeGame(snake_id, self)
         self.snakes[snake_id] = snake
         self.snake_locks[snake_id] = threading.Lock()
+        # Initialize vision for the new snake so it has visible_cells immediately
+        with self.snake_locks[snake_id]:
+            snake.update_vision()
         return True
 
     def set_turn_command(self, snake_id, cmd):
@@ -162,6 +172,53 @@ class GameManager:
         
         # Clear all turn commands for next frame
         self.pending_turns.clear()
+
+    def step_game_once(self):
+        """Advance game exactly one step - called by /move endpoint for synchronous control"""
+        if self.GAME_OVER:
+            return
+            
+        # Increment frame counter (like original)
+        self.frame_number += 1
+        
+        # Update frame (movement, collision, food consumption, vision)
+        self.update_frame()
+        
+        # Simple food spawning logic - EXACTLY like original game loop
+        foods_count = len(self.FOODS)
+        logging.info({"event": "checking_food_spawn", "foods_count": foods_count, 
+                     "foods_positions": list(self.FOODS), "frame": self.frame_number})
+        
+        if foods_count == 0:
+            logging.info({"event": "triggering_food_spawn", "frame": self.frame_number})
+            self.spawn_food()
+        
+        # Log frame info (moved from game_loop)
+        if self.GAME_OVER != True:
+            grid, visions, statuses, game_over = self.state()
+            logging.info({"event":"frame",
+                         "grid": grid, 
+                         "visions": visions,
+                         "statuses": statuses,
+                         "game_over": game_over,
+                         "episode": self.episode_number,
+                         "frame": self.frame_number})
+        elif self.game_over_raised == False:
+            # Log game over results (moved from game_loop)
+            snake_lens = {}
+            for sid, game in list(self.snakes.items()):
+                with self.snake_locks[sid]:
+                    snake_len = len(game.snake)
+                snake_lens[sid] = snake_len
+
+            logging.info({"event": "game_over_results", 
+                    "snakes_lengths": snake_lens,
+                    "episode": self.episode_number,
+                    "frames": self.frame_number
+                    })
+            self.game_over_raised = True
+            
+        logging.debug({"event": "game_stepped", "frame": self.frame_number, "episode": self.episode_number, "foods_count": len(self.FOODS)})
 
     def game_loop(self):
         import time

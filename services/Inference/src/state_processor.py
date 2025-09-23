@@ -54,24 +54,24 @@ class StateProcessor:
                        'visible_cells_count': len(visible_cells),
                        'actual_snake_length': snake_length})
         
-        # Legacy-style: only encode non-empty cells, skip empty cells
+        # Legacy-style: encode ALL visible cells including empty cells
         matrix = []
         
         for coord_str, cell_type in visible_cells.items():
             try:
-                # Skip HEAD encoding - ignore head position like legacy
+                # Encode ALL cells like legacy
                 if cell_type == 'HEAD':
-                    continue  # Skip head, don't encode it
-                
-                # Skip EMPTY cells - only encode visible objects like legacy
-                if cell_type == 'EMPTY':
-                    continue  # Skip empty cells entirely
-                
-                # Encode only BODY and FOOD cells like legacy
-                if cell_type == 'BODY':
-                    matrix.append([1, 0])  # Snake present, food absent
+                    # Skip HEAD encoding - ignore head position like legacy
+                    continue
+                elif cell_type == 'EMPTY':
+                    matrix.append([0, 0])  # EMPTY: [0, 0]
+                elif cell_type == 'BODY':
+                    matrix.append([1, 0])  # BODY: [1, 0]
                 elif cell_type == 'FOOD':
-                    matrix.append([0, 1])  # Snake absent, food present
+                    matrix.append([0, 1])  # FOOD: [0, 1]
+                else:
+                    # Unknown cell types default to empty
+                    matrix.append([0, 0])
                     
             except (ValueError, IndexError) as e:
                 logging.warning({"event": "invalid_coordinate", "coordinate": coord_str, "error": str(e)})
@@ -92,6 +92,9 @@ class StateProcessor:
         else:
             # If no visible objects, return minimal tensor with just snake length and action
             result = torch.tensor([snake_length_feature, action_feature], dtype=torch.float32)
+        
+        # Flatten the tensor for neural network input (convert [N, 2] to [N*2])
+        result = result.flatten()
         
         logging.debug({"event": "processed_state_legacy_style", 
                        "visible_cells_count": len(visible_cells),

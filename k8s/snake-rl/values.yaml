@@ -15,16 +15,16 @@ env:
     port: 5000
     targetPort: 5000
   args:
-    fps: 100
+    fps: 100000
     seed: 1
     maxStepsWithoutFood: 1000
-    gridWidth: 11
-    gridHeight: 11
+    gridWidth: 15
+    gridHeight: 15
     visionRadius: 5
     visionDisplayCols: 11
     visionDisplayRows: 11
     maxSnakes: 1
-    rewardConfig: '{"alive":0, "eat_food":1, "game_over":-1}'
+    rewardConfig: '{"alive":1, "eat_food":1, "game_over":0}'
   resources:
     requests:
       memory: "1Gi"
