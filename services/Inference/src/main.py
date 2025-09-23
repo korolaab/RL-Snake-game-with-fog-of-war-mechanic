@@ -81,11 +81,21 @@ def neural_agent_local(snake_id: str, log_file: str, env_host: str,
         episode_counter = 0
         last_seen_frame = None
         
+        # Legacy early stopping based on snake length improvement
+        steps_without_improvement = 0
+        max_snake_len = 0
+        STEPS_WITHOUT_IMPROVEMENT_LIMIT = 10000
+        
         logging.info({"event": "starting_synchronous_agent", "snake_id": snake_id})
+        logging.info({"event": "early_stopping_config", "steps_limit": STEPS_WITHOUT_IMPROVEMENT_LIMIT})
         
         while True:
             logging.info({"event": "starting_episode", "episode": episode_counter})
             previous_action = "forward"
+            
+            # Reset early stopping variables for new episode
+            steps_without_improvement = 0
+            max_snake_len = 0
             
             try:
                 while True:
@@ -114,6 +124,21 @@ def neural_agent_local(snake_id: str, log_file: str, env_host: str,
                                 "frame": frame_count,
                                 "reward": reward,
                                 "game_over": game_over})
+                    
+                    # Legacy early stopping: track snake length improvement
+                    current_snake_length = state.get("snake_length", 3)
+                    if max_snake_len < current_snake_length:
+                        max_snake_len = current_snake_length
+                        steps_without_improvement = 0
+                        logging.debug({"event": "snake_length_improved", "new_max": max_snake_len})
+                    else:
+                        steps_without_improvement += 1
+                    
+                    if steps_without_improvement > STEPS_WITHOUT_IMPROVEMENT_LIMIT:
+                        logging.info({"event": "early_stopping_triggered", 
+                                    "steps_without_improvement": steps_without_improvement,
+                                    "max_snake_length": max_snake_len})
+                        game_over = True  # Force episode end
                     
                     # 3. Add experience to agent
                     should_send_batch = agent.add_experience(

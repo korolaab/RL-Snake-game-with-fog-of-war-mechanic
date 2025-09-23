@@ -34,6 +34,7 @@ def get_snake_state(sid):
         'game_over': is_game_over,
         'episode': game_manager.episode_number,
         'frame': game_manager.frame_number,
+        'ticks': game_manager.ticks,  # Legacy ticks for debugging
         'datetime': datetime.datetime.now().isoformat()
     }
     

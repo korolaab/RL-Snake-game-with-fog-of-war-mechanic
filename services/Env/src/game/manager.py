@@ -37,6 +37,7 @@ class GameManager:
         self.maxStepsWithoutApple = maxStepsWithoutApple
         self.episode_number = 0  # New: episode counter
         self.frame_number = 0    # New: frame counter
+        self.ticks = 0          # Legacy: tick counter for tail removal logic
         self.pending_turns = {}  # One turn command per snake per frame
         set_seed(self.seed)
         self.game_over_raised = False
@@ -109,6 +110,7 @@ class GameManager:
         self.game_over_raised = False
         self.episode_number += 1
         self.frame_number = 0
+        self.ticks = 0  # Reset ticks counter for new episode
         logging.info({"event": "game_reset", 
                       "action": "all_snakes_removed_food_respawned", 
                       "episode": self.episode_number, 
@@ -158,8 +160,8 @@ class GameManager:
                 if sid in self.pending_turns:
                     game.turn(self.pending_turns[sid])
                     
-                # Then move
-                status = game.move(self.GAME_OVER)
+                # Then move with legacy ticks
+                status = game.move(self.GAME_OVER, self.ticks)
                 if status in ['collision', 'starvation']:
                     self.GAME_OVER = True
                     logging.info({"event": "game_over", "reason": status, "snake_id": sid})
@@ -180,6 +182,12 @@ class GameManager:
             
         # Increment frame counter (like original)
         self.frame_number += 1
+        
+        # Legacy: Increment ticks and reset every 50 steps
+        self.ticks += 1
+        if self.ticks >= 50:
+            self.ticks = 0
+            logging.debug({"event": "ticks_reset", "frame": self.frame_number})
         
         # Update frame (movement, collision, food consumption, vision)
         self.update_frame()

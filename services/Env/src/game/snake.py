@@ -69,7 +69,7 @@ class SnakeGame:
         """
         return self._last_known_state.copy()
 
-    def move(self, game_over):
+    def move(self, game_over, ticks=0):
         """
         Handle only movement updates - no vision calculation
         """
@@ -78,15 +78,13 @@ class SnakeGame:
             self.reward += self.reward_config['game_over']
             return ''
         
-        if self.stepsSinceLastApple >= self.maxStepsWithoutApple:
-            return "starvation"
-
         head = self.snake[0]
         new_head = ((head[0] + self.direction[0]) % self.grid_width,
                     (head[1] + self.direction[1]) % self.grid_height)
         occupied = {pos for game in self.snakes.values() for pos in game.snake}
 
-        if new_head in occupied:
+        # Legacy collision check: include length=1 condition
+        if new_head in occupied or len(self.snake) == 1:
             return 'collision'
 
         self.snake.insert(0, new_head)
@@ -98,9 +96,15 @@ class SnakeGame:
                          "foods_after": list(self.foods)})
             self.reward += self.reward_config['eat_food']
             self.stepsSinceLastApple = 0
+            # Legacy: no tail removal when eating food (snake grows)
         else:
-            self.snake.pop()
+            # Legacy tick-based tail removal logic
+            if ticks == 50:
+                self.snake.pop()  # Extra removal every 50 ticks
+                logging.debug({"event": "extra_tail_removal", "snake_id": self.snake_id, "ticks": ticks})
+            self.snake.pop()  # Always remove tail when no food
             self.stepsSinceLastApple += 1
+            logging.debug({"event": "normal_tail_removal", "snake_id": self.snake_id, "snake_length": len(self.snake)})
 
         self.ticks += 1
         self.reward += self.reward_config['alive']
