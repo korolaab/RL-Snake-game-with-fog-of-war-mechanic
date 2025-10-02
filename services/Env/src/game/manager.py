@@ -228,39 +228,4 @@ class GameManager:
             
         logging.debug({"event": "game_stepped", "frame": self.frame_number, "episode": self.episode_number, "foods_count": len(self.FOODS)})
 
-    def game_loop(self):
-        import time
-        self.reset_game()
-        while not self.snakes:
-            time.sleep(0.1)
-        while True:
-            time.sleep(1.0 / self.FPS)
-            self.frame_number += 1
-            self.update_frame()
-
-            if self.GAME_OVER != True:
-                grid, visions, statuses, game_over = self.state()
-                logging.info({"event":"frame",
-                             "grid": grid, 
-                             "visions": visions,
-                             "statuses": statuses,
-                             "game_over": game_over,
-                             "episode": self.episode_number,
-                             "frame": self.frame_number})
-            elif self.game_over_raised == False:
-                snake_lens = {}
-                for sid, game in list(self.snakes.items()):
-                    with self.snake_locks[sid]:
-                        snake_len = len(game.snake)
-                    snake_lens[sid] = snake_len
-
-                logging.info({"event": "game_over_results", 
-                        "snakes_lengths": snake_lens,
-                        "episode": self.episode_number,
-                        "frames": self.frame_number
-                        })
-                self.game_over_raised = True
-                    
-            if len(self.FOODS) == 0:
-                self.spawn_food()
 
