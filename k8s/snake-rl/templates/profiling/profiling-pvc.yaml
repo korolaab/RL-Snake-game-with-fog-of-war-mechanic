@@ -1,0 +1,19 @@
+{{- if .Values.profiling.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "snake-rl.fullname" . }}-profiling-pvc
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "snake-rl.labels" . | nindent 4 }}
+    component: profiling-storage
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: {{ .Values.profiling.storage.size | default "10Gi" }}
+  {{- if .Values.profiling.storage.storageClass }}
+  storageClassName: {{ .Values.profiling.storage.storageClass }}
+  {{- end }}
+{{- end }}

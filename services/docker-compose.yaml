@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  env:
+    image: localhost:5000/snake-rl/env:latest
+    container_name: snake-env
+    volumes:
+      - ./shared-volume:/output
+    environment:
+      - LOG_LEVEL=DEBUG
+      - ENABLE_CONSOLE_LOGS=true
+      - RABBITMQ_ENABLED=false
+      - EXPERIMENT_NAME=docker_compose_test
+    command: [
+      "python", "-m", "cProfile", "-o", "/output/env_profile.prof", "app.py",
+      "--fps", "100000",
+      "--seed", "1", 
+      "--max-steps-without-food", "1000",
+      "--grid_width", "15",
+      "--grid_height", "15", 
+      "--vision_radius", "5",
+      "--vision_display_cols", "11",
+      "--vision_display_rows", "11",
+      "--max_snakes", "1",
+      "--reward-config", "{\"alive\":1, \"eat_food\":1, \"game_over\":0}"
+    ]
+    networks:
+      - snake-network
+
+  inference:
+    image: localhost:5000/snake-rl/inference:latest
+    container_name: snake-inference
+    depends_on:
+      - env
+    volumes:
+      - ./shared-volume:/output
+    environment:
+      - LOG_LEVEL=DEBUG
+      - ENABLE_CONSOLE_LOGS=true
+      - RABBITMQ_ENABLED=false
+      - EXPERIMENT_NAME=docker_compose_test
+    command: [
+      "python", "-m", "cProfile", "-o", "/output/inference_profile.prof", "main.py",
+      "--snake-id", "adam",
+      "--env-host", "env:5000",
+      "--model-dir", "/output/models",
+      "--log-file", "/output/agent1.log",
+      "--batch-size", "1",
+      "--max-episodes", "10",
+      "--learning-rate", "0.009",
+      "--gamma", "0.6",
+      "--beta", "0.16"
+    ]
+    networks:
+      - snake-network
+
+volumes:
+  shared-volume:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./shared-volume
+
+networks:
+  snake-network:
+    driver: bridge
