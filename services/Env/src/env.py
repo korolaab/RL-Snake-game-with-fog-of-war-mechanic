@@ -93,6 +93,7 @@ if __name__ == "__main__":
         mapfile[header_size:header_size+vision.nbytes] = vision.tobytes()
         print("[ENV] wrote state")
 
+
         # сигналим Clock, что данные готовы
         sem_env_done.release()
 

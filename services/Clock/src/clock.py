@@ -2,6 +2,7 @@ import time
 import posix_ipc
 import argparse
 import struct
+import mmap
 # Parse command line arguments
 parser = argparse.ArgumentParser(description="Clock service for Snake RL")
 parser.add_argument("--vision-size", type=int, default=5, help="Vision area size in bytes")
@@ -35,6 +36,10 @@ sem_inf_done = posix_ipc.Semaphore("/sem_inf_done", posix_ipc.O_CREX, initial_va
 
 print("[Clock] started")
 
+mapfile = mmap.mmap(shm.fd, shm.size)
+
+episode = 0
+frame = 0
 while True:
     if args.fps != 0:
         time.sleep(sleep_interval)
@@ -42,8 +47,13 @@ while True:
     sem_env_tick.release()   # разрешаем ENV работать
     sem_env_done.acquire()   # ждем, пока ENV скажет "готово"
     print("[Clock] ENV done")
+
+    reward, game_over, action = struct.unpack_from(header_fmt, mapfile, 0)
+    print(f"[Clock] {frame=} {reward=},{game_over=},{action=}")
     print("[Clock] tick → INF")
     sem_inf_tick.release()   # разрешаем INF работать
     sem_inf_done.acquire()   # ждем, пока INF закончит
 
     print("[Clock] step Done")
+    frame +=1
+shm.close_fd()
