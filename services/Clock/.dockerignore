@@ -1,0 +1,22 @@
+# Ignore unnecessary files for Docker build
+.git
+.gitignore
+*.md
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache
+htmlcov
+.coverage
+.tox
+.cache
+.vscode
+.idea
+*.swp
+*.swo
+*~

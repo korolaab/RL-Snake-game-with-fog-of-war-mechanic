@@ -1,6 +1,7 @@
 import random
 import logging
 import threading
+import numpy as np
 
 class SnakeGame:
     def __init__(self, snake_id, game):
@@ -162,3 +163,57 @@ class SnakeGame:
                 flipped_cx = self.vision_display_cols - cx - 1
                 vis[f"{flipped_cx},{cy}"] = obj
         return vis
+    
+    def getVision(self) -> np.ndarray:
+        """
+        Returns the visible state as a vector (N, 2) of visible cells (excluding head).
+        Each cell is represented as:
+        [0, 0] — EMPTY
+        [1, 0] — BODY
+        [0, 1] — FOOD
+        """
+        head = self.snake[0]
+
+        rotate_map = {
+            (0, -1): lambda dx, dy: (dx, dy),
+            (1, 0):  lambda dx, dy: (dy, -dx),
+            (0, 1):  lambda dx, dy: (-dx, -dy),
+            (-1, 0): lambda dx, dy: (-dy, dx)
+        }
+        rotate = rotate_map.get(self.direction, rotate_map[(0, -1)])
+
+        other_heads = {g.snake[0] for sid, g in self.snakes.items()
+                    if sid != self.snake_id and g.snake}
+        other_bodies = {pos for sid, g in self.snakes.items()
+                        if sid != self.snake_id for pos in g.snake[1:]}
+
+        visible_cells = []
+
+        for dx in range(-self.vision_radius, self.vision_radius + 1):
+            for dy in range(-self.vision_radius, self.vision_radius + 1):
+                if abs(dx) + abs(dy) > self.vision_radius:
+                    continue
+
+                # Центр — это голова. Пропускаем её.
+                if dx == 0 and dy == 0:
+                    continue
+
+                # Повернуть относительно направления змеи (если нужно — можно убрать)
+                rx, ry = rotate(dx, dy)
+
+                # Глобальные координаты с wrap-around
+                px = (head[0] + dx) % self.grid_width
+                py = (head[1] + dy) % self.grid_height
+                pos = (px, py)
+
+                # Кодировка
+                if pos in self.foods:
+                    cell = [0, 1]
+                elif pos in self.snake[1:] or pos in other_bodies:
+                    cell = [1, 0]
+                else:
+                    cell = [0, 0]
+
+                visible_cells.append(cell)
+
+        return np.array(visible_cells, dtype=np.int8)

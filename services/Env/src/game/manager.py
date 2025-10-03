@@ -19,14 +19,14 @@ class GameManager:
                        seed,
                        maxStepsWithoutApple,
                        reward_config,
-                       max_snakes=10):
+                       n_snakes=1):
         self.GRID_WIDTH = grid_width
         self.GRID_HEIGHT = grid_height
         self.VISION_RADIUS = vision_radius
         self.VISION_DISPLAY_COLS = vision_display_cols
         self.VISION_DISPLAY_ROWS = vision_display_rows
         self.FPS = fps
-        self.MAX_SNAKES = max_snakes
+        self.MAX_SNAKES = n_snakes
         self.FOODS = set()
         self.snakes = {}
         self.snake_locks = {}
@@ -46,6 +46,10 @@ class GameManager:
         # Disable autonomous game loop for synchronous control via /move endpoint
         # Initialize game state but don't start continuous loop
         self.reset_game()
+
+        for i in range(n_snakes):
+            self.add_snake(i)
+
         # threading.Thread(target=self.game_loop, daemon=True).start()
 
     def state(self):
@@ -123,6 +127,7 @@ class GameManager:
     def add_snake(self, snake_id):
         if len(self.snakes) >= self.MAX_SNAKES:
             return False
+        print(f"[ENV] Added snake with id={snake_id}")
         snake = SnakeGame(snake_id, self)
         self.snakes[snake_id] = snake
         self.snake_locks[snake_id] = threading.Lock()

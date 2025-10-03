@@ -9,8 +9,7 @@ GRID_HEIGHT = 15
 VISION_RADIUS = 5
 VISION_DISPLAY_COLS = 11
 VISION_DISPLAY_ROWS = 11
-FPS = 10
-MAX_SNAKES = 10
+N_SNAKES = 1
 SEED = 1 
 
 def parse_args():
@@ -20,8 +19,7 @@ def parse_args():
     parser.add_argument("--vision_radius", type=int, default=VISION_RADIUS)
     parser.add_argument("--vision_display_cols", type=int, default=VISION_DISPLAY_COLS)
     parser.add_argument("--vision_display_rows", type=int, default=VISION_DISPLAY_ROWS)
-    parser.add_argument("--fps", type=int, default=FPS)
-    parser.add_argument("--max_snakes", type=int, default=MAX_SNAKES)
+    parser.add_argument("--N_snakes", type=int, default=N_SNAKES)
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument('--reward-config', type=str, default='{"alive": 1}', help='Reward configuration as JSON string. Example: \'{"alive": 1, "food": 10, "death": -10}\'')
     parser.add_argument('--max-steps-without-food', type=int, default=50, help='Maximum steps before game over if no food eaten')
