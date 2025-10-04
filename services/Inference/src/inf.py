@@ -75,7 +75,7 @@ if __name__ == "__main__":
             time.sleep(0.1)
 
 
-    header_fmt = "d?q"
+    header_fmt = "<d?q"
     header_size = struct.calcsize(header_fmt)
     vision_size = 60 #TODO unhardcode
     total_size = header_size + vision_size * 2
@@ -95,7 +95,7 @@ if __name__ == "__main__":
                        count=vision_size, offset=header_size)
         
 
-        action_offset = struct.calcsize("d?") 
+        action_offset = struct.calcsize("<d?") 
 
         import random
 

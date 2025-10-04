@@ -71,7 +71,7 @@ if __name__ == "__main__":
         n_snakes=args.N_snakes
     )
 
-    header_fmt = "d?q"
+    header_fmt = "<d?q"
     header_size = struct.calcsize(header_fmt)
     vision_size = manhattan_cells_without_center(args.vision_radius)
     total_size = header_size + vision_size * 2
