@@ -44,8 +44,7 @@ sem_inf_training = posix_ipc.Semaphore("/sem_inf_training", posix_ipc.O_CREX, in
 # 1 = train
 ctrl_fmt_inf = "=i"
 sem_inf_control = posix_ipc.SharedMemory("/inf_control", posix_ipc.O_CREX, size=64)
-
-
+mapfile_inf_ctrl = mmap.mmap(sem_inf_control.fd, sem_inf_control.size)
 
 print("[Clock] started")
 
@@ -58,18 +57,23 @@ while True:
         time.sleep(1.0 / args.fps)
     
     reward, game_over, action = struct.unpack_from(header_fmt, mapfile, 0)
-    print(f"[Clock] {frame=} {reward=},{game_over=},{action=}")
-    print("[Clock] tick → ENV")
-    sem_env_tick.release()   # разрешаем ENV работать
     if game_over == 1:
         episode += 1
         print(f"[Clock] Episode {episode} done")
         # reset header
-        struct.pack_into(ctrl_fmt_inf, mapfile_env_ctrl, 0, 1)
+        struct.pack_into(ctrl_fmt_env, mapfile_env_ctrl, 0, 1)
+        struct.pack_into(ctrl_fmt_inf, mapfile_inf_ctrl, 0, 1)
         frame = 0
         print("[Clock] Env reset")
+
+
+    print(f"[Clock] {frame=} {reward=},{game_over=},{action=}")
+    print("[Clock] tick → ENV")
+    sem_env_tick.release()   # разрешаем ENV работать
+
     sem_env_done.acquire()   # ждем, пока ENV скажет "готово"
-    struct.pack_into(ctrl_fmt_inf, mapfile_env_ctrl, 0, 0)
+    struct.pack_into(ctrl_fmt_env, mapfile_env_ctrl, 0, 0)
+    struct.pack_into(ctrl_fmt_inf, mapfile_inf_ctrl, 0, 0)
     print("[Clock] ENV done")
 
 

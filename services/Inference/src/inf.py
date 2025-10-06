@@ -73,6 +73,14 @@ if __name__ == "__main__":
         except posix_ipc.ExistentialError:
             print("[INF] waiting for /sem_inf_done semaphore...")
             time.sleep(0.1)
+    
+    while True:
+        try:
+            shm_ctrl = posix_ipc.SharedMemory("/inf_control")   
+            break
+        except posix_ipc.ExistentialError:
+            print("[ENV] waiting for /inf_control shm...")
+            time.sleep(0.1)
 
 
     header_fmt = "<d?q"
@@ -80,33 +88,41 @@ if __name__ == "__main__":
     vision_size = 60 #TODO unhardcode
     total_size = header_size + vision_size*2
 
+    mapfile_ctrl = mmap.mmap(shm_ctrl.fd, shm_ctrl.size)
+    ctrl_fmt = "=i"
 
     mapfile = mmap.mmap(shm.fd, total_size)
     while True:
 
         sem_inf_tick.acquire()
         print("[INF] got signal")
-
         
-        reward, game_over, action = struct.unpack_from(header_fmt, mapfile, 0)
-        print(f"[INF]{reward=},{game_over=},{action=}")
-        # читаем vision как np.int8
-        vision = np.frombuffer(mapfile, dtype=np.int8,
-                       count=vision_size*2, offset=header_size).reshape(vision_size,2)
+                    # Check if this is a reset request
+        (do_train,) = struct.unpack_from(ctrl_fmt, mapfile_ctrl, 0)
         
+        if do_train == 1:  
+            print("[ENV] Train flag recieved")
+            #TODO: Train
+        else:
+            reward, game_over, action = struct.unpack_from(header_fmt, mapfile, 0)
+            print(f"[INF]{reward=},{game_over=},{action=}")
+            # читаем vision как np.int8
+            vision = np.frombuffer(mapfile, dtype=np.int8,
+                        count=vision_size*2, offset=header_size).reshape(vision_size,2)
+            
 
-        action_offset = struct.calcsize("<d?") 
+            action_offset = struct.calcsize("<d?") 
 
-        import random
+            import random
 
-        print(vision)
+            print(vision)
 
-        #TODO: Add NN action predict, experience storage, training
-        action = random.choice([0,1,2])
+            #TODO: Add NN action predict, experience storage, training
+            action = random.choice([0,1,2])
 
-        struct.pack_into("q", mapfile, action_offset, action)
-        print("[INF] wrote action")
-        # сигналим Clock, что данные готовы
+            struct.pack_into("q", mapfile, action_offset, action)
+            print("[INF] wrote action")
+            # сигналим Clock, что данные готовы
         sem_inf_done.release()
 
     shm.close_fd()
