@@ -78,7 +78,7 @@ if __name__ == "__main__":
     header_fmt = "<d?q"
     header_size = struct.calcsize(header_fmt)
     vision_size = 60 #TODO unhardcode
-    total_size = header_size + vision_size * 2
+    total_size = header_size + vision_size*2
 
 
     mapfile = mmap.mmap(shm.fd, total_size)
@@ -89,16 +89,19 @@ if __name__ == "__main__":
 
         
         reward, game_over, action = struct.unpack_from(header_fmt, mapfile, 0)
-        print(f"[Clock]{reward=},{game_over=},{action=}")
+        print(f"[INF]{reward=},{game_over=},{action=}")
         # читаем vision как np.int8
         vision = np.frombuffer(mapfile, dtype=np.int8,
-                       count=vision_size, offset=header_size)
+                       count=vision_size*2, offset=header_size).reshape(vision_size,2)
         
 
         action_offset = struct.calcsize("<d?") 
 
         import random
 
+        print(vision)
+
+        #TODO: Add NN action predict, experience storage, training
         action = random.choice([0,1,2])
 
         struct.pack_into("q", mapfile, action_offset, action)
