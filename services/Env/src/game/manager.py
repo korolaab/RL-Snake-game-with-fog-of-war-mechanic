@@ -47,9 +47,6 @@ class GameManager:
         # Initialize game state but don't start continuous loop
         self.reset_game()
 
-        for i in range(n_snakes):
-            self.add_snake(i)
-
         # threading.Thread(target=self.game_loop, daemon=True).start()
 
     def state(self):
@@ -119,6 +116,8 @@ class GameManager:
                       "action": "all_snakes_removed_food_respawned", 
                       "episode": self.episode_number, 
                       "frame": self.frame_number})
+        for i in range(self.MAX_SNAKES):
+            self.add_snake(i)
         # Exit logic:
         if self.episode_number >= self.max_episodes:
             logging.info({"event": "env_max_episodes_completed", "total_episodes": self.episode_number})

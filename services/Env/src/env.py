@@ -54,6 +54,13 @@ if __name__ == "__main__":
         except posix_ipc.ExistentialError:
             print("[ENV] waiting for /sem_env semaphore...")
             time.sleep(0.1)
+    while True:
+        try:
+            shm_ctrl = posix_ipc.SharedMemory("/env_control")   
+            break
+        except posix_ipc.ExistentialError:
+            print("[ENV] waiting for /env_control shm...")
+            time.sleep(0.1)
 
     regular_dict = json.loads(args.reward_config)
     reward_config = defaultdict(int, regular_dict)  # int() returns 0
@@ -75,23 +82,34 @@ if __name__ == "__main__":
     header_size = struct.calcsize(header_fmt)
     vision_size = manhattan_cells_without_center(args.vision_radius)
     total_size = header_size + vision_size * 2
-
-
     mapfile = mmap.mmap(shm.fd, total_size)
+
+    mapfile_ctrl = mmap.mmap(shm_ctrl.fd, shm_ctrl.size)
+    ctrl_fmt = "=i"
+
+
     while True:
         # ждем семафор от Env
         sem_env_tick.acquire()
         print("[ENV] got signal")
 
+            # Check if this is a reset request
+        (reset,) = struct.unpack_from(ctrl_fmt, mapfile_ctrl, 0)
+        
+        if reset == 1:  
+            print("[ENV] Reset requested, resetting environment...")
+            game_manager.reset_game()
+            # Write reset state to shared memory
+        else:
+            game_manager.step_game_once()
 
-        game_manager.step_game_once()
-
-        # пишем данные
-        vision = game_manager.snakes[0].getVision()
-        reward = game_manager.snakes[0].reward
-        struct.pack_into(header_fmt, mapfile,0, reward,False,0)
-        mapfile[header_size:header_size+vision.nbytes] = vision.tobytes()
-        print("[ENV] wrote state")
+            # пишем данные
+            vision = game_manager.snakes[0].getVision()
+            print(vision)
+            reward = game_manager.snakes[0].reward
+            struct.pack_into(header_fmt, mapfile,0, reward,False,0)
+            mapfile[header_size:header_size+vision.nbytes] = vision.tobytes()
+            print("[ENV] wrote state")
 
 
         # сигналим Clock, что данные готовы
