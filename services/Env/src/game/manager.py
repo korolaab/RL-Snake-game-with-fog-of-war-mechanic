@@ -98,12 +98,7 @@ class GameManager:
             self.GAME_OVER = True
 
     def reset_game(self):
-        with self.game_over_lock:
-            self.GAME_OVER = True
-        import time
-        time.sleep(0.1)
-        with self.game_over_lock:
-            self.GAME_OVER = False
+        self.GAME_OVER = False
         self.snakes.clear()
         self.snake_locks.clear()
         self.FOODS.clear()

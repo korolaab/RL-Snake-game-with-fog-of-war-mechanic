@@ -99,18 +99,28 @@ if __name__ == "__main__":
         if reset == 1:  
             print("[ENV] Reset requested, resetting environment...")
             game_manager.reset_game()
-            # Write reset state to shared memory
-        else:
-            game_manager.step_game_once()
-
             # пишем данные
             vision = game_manager.snakes[0].getVision()
             print(vision)
             reward = game_manager.snakes[0].reward
-            struct.pack_into(header_fmt, mapfile,0, reward,False,0)
+            game_over = game_manager.GAME_OVER
+            struct.pack_into(header_fmt, mapfile,0, reward,game_over,0)
             mapfile[header_size:header_size+vision.nbytes] = vision.tobytes()
             print("[ENV] wrote state")
-
+        else:
+            
+            reward, game_over, action = struct.unpack_from(header_fmt, mapfile, 0)
+            # пишем данные
+            vision = game_manager.snakes[0].getVision()
+            print(vision)
+            reward = game_manager.snakes[0].reward
+            game_over = game_manager.GAME_OVER
+            struct.pack_into(header_fmt, mapfile,0, reward,game_over,0)
+            mapfile[header_size:header_size+vision.nbytes] = vision.tobytes()
+            print("[ENV] wrote state")
+            game_manager.snakes[0].turn(action)
+            game_manager.step_game_once()
+            
 
         # сигналим Clock, что данные готовы
         sem_env_done.release()

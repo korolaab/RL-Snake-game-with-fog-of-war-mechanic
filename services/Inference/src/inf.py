@@ -4,7 +4,7 @@ import json
 import argparse
 import sys
 import os
-# from snake_agent import SnakeAgent
+
 from datetime import datetime
 import logging
 
@@ -12,10 +12,106 @@ import posix_ipc
 import mmap
 import struct
 
-
+import torch
+import torch.nn as nn
+import torch.optim as optim
 
 from collections import defaultdict
 import numpy as np
+
+
+
+class SnakeNet(nn.Module):
+    """Нейронная сеть для змейки."""
+    
+    def __init__(self, input_size, hidden_units_1=14, hidden_units_2=8, dropout_rate=0.6):
+        super(SnakeNet, self).__init__()
+        self.input_size = input_size
+        self.hidden_units_1 = hidden_units_1
+        self.hidden_units_2 = hidden_units_2
+        # HYPEROPT-OPTIMIZED ARCHITECTURE: Best configuration from hyperopt tuning
+        # {"hidden_units_1": 14, "activation_1": "Tanh", "hidden_units_2": 8, "activation_2": "Tanh", "dropout_rate": 0.6}
+        self.network = nn.Sequential(
+            nn.Linear(input_size, hidden_units_1),
+            nn.Tanh(),
+            nn.Dropout(dropout_rate),
+            nn.Linear(hidden_units_1, hidden_units_2),
+            nn.Tanh(),
+            nn.Dropout(dropout_rate),
+            nn.Linear(hidden_units_2, 3),
+            nn.Softmax()
+        )
+    
+    def forward(self, x):
+        return self.network(x)
+    
+def train_model():
+    model
+    # Extract episodes
+    episodes = [replay_buffer]#TODO: several episodes
+    all_states, all_actions, all_returns = [], [], []
+
+    # Process each episode
+    for episode in episodes:
+        if not episode:
+            continue
+        
+        # Extract (state, action, reward) from each experience
+        states = []
+        actions = []
+        rewards = []
+        
+        for exp in episode:
+            # Process state
+
+            states.append(exp[0])
+            
+            # Convert action name to index
+            action_idx = exp[1]
+            actions.append(action_idx)
+            
+            # Store reward
+            rewards.append(exp[2])
+        
+        # Calculate discounted returns (backward through episode)
+        returns = []
+        G = 0
+        for r in reversed(rewards):
+            G = r + args.gamma * G
+            returns.insert(0, G)
+        
+        # Normalize returns
+        returns = torch.tensor(returns, dtype=torch.float32)
+        if len(returns) > 1:
+            returns = (returns - returns.mean()) / (returns.std() + 1e-5)
+        
+        # Add to batch
+        all_states.extend(states)
+        all_actions.extend(actions)
+        all_returns.extend(returns.tolist())
+
+    # Skip if no data
+    if not all_states:
+        return False
+
+    # Create tensors
+    states_tensor = torch.stack(all_states)
+    actions_tensor = torch.tensor(all_actions, dtype=torch.long)
+    returns_tensor = torch.tensor(all_returns, dtype=torch.float32)
+
+    # Forward pass and loss
+    model.train()
+    action_probs = model(states_tensor)
+    m = torch.distributions.Categorical(action_probs)
+    log_probs = m.log_prob(actions_tensor)
+    entropy = m.entropy()
+        # REINFORCE loss
+    loss = -(log_probs * returns_tensor).sum() - args.beta * entropy.sum()
+    optimizer.zero_grad()                
+    loss.backward()                     
+    optimizer.step()   
+
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run neural network agent local training only (no gRPC)")
@@ -30,24 +126,7 @@ if __name__ == "__main__":
     parser.add_argument("--max-episodes", type=int, default=None, help="Number of episodes before exit (overrides env N_EPISODES)")
 
     args = parser.parse_args()
-
-    
-
-    
-    # neural_agent_local(
-    #         snake_id=args.snake_id,
-    #         log_file=args.log_file,
-    #         env_host=args.env_host,
-    #         model_save_dir=args.model_dir,
-    #         learning_rate=args.learning_rate,
-    #         batch_size=args.batch_size,
-    #         gamma=args.gamma,
-    #         beta=args.beta,
-    #         max_episodes=args.max_episodes
-    #     )
   
-    
-    
     # открываем shared memory (создано Clock)
     while True:
         try:
@@ -92,37 +171,61 @@ if __name__ == "__main__":
     ctrl_fmt = "=i"
 
     mapfile = mmap.mmap(shm.fd, total_size)
+
+    
+    model = SnakeNet( input_size = vision_size * 2)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+    print("[INF] Created Model")
+
+    # Store as list of tuples
+    replay_buffer = []
+
+
+
+
+    prev_reward = 0
     while True:
 
         sem_inf_tick.acquire()
         print("[INF] got signal")
         
-                    # Check if this is a reset request
+        # Check if this is a do_train request
         (do_train,) = struct.unpack_from(ctrl_fmt, mapfile_ctrl, 0)
         
         if do_train == 1:  
             print("[ENV] Train flag recieved")
-            #TODO: Train
+            train_model()
         else:
             reward, game_over, action = struct.unpack_from(header_fmt, mapfile, 0)
-            print(f"[INF]{reward=},{game_over=},{action=}")
+
             # читаем vision как np.int8
             vision = np.frombuffer(mapfile, dtype=np.int8,
-                        count=vision_size*2, offset=header_size).reshape(vision_size,2)
-            
+                        count=vision_size*2, offset=header_size)
+            vision_tensor = torch.from_numpy(vision.astype(np.float32))
+
 
             action_offset = struct.calcsize("<d?") 
+           
+            
+            with torch.no_grad():
+                model.eval()
+                action_probs = model(vision_tensor)
+                m = torch.distributions.Categorical(action_probs)
+                action = m.sample()
 
-            import random
+            # Each experience: (state, action, reward, next_state, done)
+            experience = (
+                vision_tensor,      # torch.Tensor
+                action,     # torch.Tensor or int
+                prev_reward            # float
+            )
+            prev_reward = reward
+            replay_buffer.append(experience)
 
-            print(vision)
-
-            #TODO: Add NN action predict, experience storage, training
-            action = random.choice([0,1,2])
-
+            
             struct.pack_into("q", mapfile, action_offset, action)
-            print("[INF] wrote action")
-            # сигналим Clock, что данные готовы
+            print(f"[INF] wrote action {action}")
+        # сигналим Clock, что данные готовы
         sem_inf_done.release()
 
     shm.close_fd()

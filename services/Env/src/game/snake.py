@@ -45,10 +45,11 @@ class SnakeGame:
         logging.info({"event": "snake_spawned", "snake_id": self.snake_id, "position": self.snake[0], "direction": self.direction})
 
     def relative_turn(self, cmd):
-        if cmd == 'left':
+        if cmd == 0: ## left
             return (self.direction[1], -self.direction[0])
-        if cmd == 'right':
+        if cmd == 1 : ## right
             return (-self.direction[1], self.direction[0])
+        ## if 2 is forfward
         return self.direction
 
     def turn(self, cmd):

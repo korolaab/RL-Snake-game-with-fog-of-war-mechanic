@@ -66,24 +66,36 @@ while True:
         frame = 0
         print("[Clock] Env reset")
 
+        sem_env_tick.release()   # разрешаем ENV работать
 
-    print(f"[Clock] {frame=} {reward=},{game_over=},{action=}")
-    print("[Clock] tick → ENV")
-    sem_env_tick.release()   # разрешаем ENV работать
+        sem_env_done.acquire()   # ждем, пока ENV скажет "готово"
 
-    sem_env_done.acquire()   # ждем, пока ENV скажет "готово"
+        print("[Clock] ENV done")
+
+        print("[Clock] INF train")
+        sem_inf_tick.release()   # разрешаем INF работать
+        sem_inf_done.acquire()   # ждем, пока INF закончит
+        print("[Clock] INF train done")
+
+    else:
+        print(f"[Clock] {episode=} {frame=} {reward=} {game_over=} {action=}")
+        print("[Clock] tick → ENV")
+        sem_env_tick.release()   # разрешаем ENV работать
+
+        sem_env_done.acquire()   # ждем, пока ENV скажет "готово"
+
+        print("[Clock] ENV done")
+
+
+
+
+        print("[Clock] tick → INF")
+        sem_inf_tick.release()   # разрешаем INF работать
+        sem_inf_done.acquire()   # ждем, пока INF закончит
+        
+        frame +=1
+        print("[Clock] step Done")
     struct.pack_into(ctrl_fmt_env, mapfile_env_ctrl, 0, 0)
     struct.pack_into(ctrl_fmt_inf, mapfile_inf_ctrl, 0, 0)
-    print("[Clock] ENV done")
-
-
-
-
-    print("[Clock] tick → INF")
-    sem_inf_tick.release()   # разрешаем INF работать
-    sem_inf_done.acquire()   # ждем, пока INF закончит
     
-
-    print("[Clock] step Done")
-    frame +=1
 shm.close_fd()
