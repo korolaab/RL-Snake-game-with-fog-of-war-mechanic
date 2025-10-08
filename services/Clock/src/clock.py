@@ -15,7 +15,7 @@ def manhattan_cells_without_center(R: int) -> int:
 
 header_fmt = "<d?q"
 header_size = struct.calcsize(header_fmt)
-vision_size = manhattan_cells_without_center(args.vision_size)
+vision_size = manhattan_cells_without_center(args.vision_size) + 2
 total_size = header_size + vision_size * 2
 
 

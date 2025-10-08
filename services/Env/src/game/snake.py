@@ -24,6 +24,12 @@ class SnakeGame:
 
         # Simple state management - no internal locking, use external snake_locks
         self._last_known_state = {}
+        self.last_action = 0  # 0=left, 1=right, 2=forward
+        self.action_encoding = {
+             0: [0, 0],
+             1: [0, 1], 
+             2: [1, 0] 
+        }
 
     def find_safe_spawn_location(self):
         occupied = {pos for g in self.snakes.values() for pos in g.snake} | self.foods
@@ -53,6 +59,7 @@ class SnakeGame:
         return self.direction
 
     def turn(self, cmd):
+        self.last_action = cmd
         self.direction = self.relative_turn(cmd)
 
     def update_vision(self):
@@ -166,6 +173,7 @@ class SnakeGame:
         return vis
     
     def getVision(self) -> np.ndarray:
+        #TODO: rename to state
         """
         Returns the visible state as a vector (N, 2) of visible cells (excluding head).
         Each cell is represented as:
@@ -216,5 +224,16 @@ class SnakeGame:
                     cell = [0, 0]
 
                 visible_cells.append(cell)
+        
+       
+        is_alive = np.exp(-np.abs(len(self.snake)))
+        snake_length_feature = [is_alive, 1 - is_alive]
+        visible_cells.append(snake_length_feature)
+        
+
+
+        # Add last action feature like legacy
+        action_feature = self.last_action
+        visible_cells.append(self.action_encoding[self.last_action])
 
         return np.array(visible_cells, dtype=np.int8)

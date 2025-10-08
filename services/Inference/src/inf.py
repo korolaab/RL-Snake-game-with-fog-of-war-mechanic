@@ -24,7 +24,7 @@ import numpy as np
 class SnakeNet(nn.Module):
     """Нейронная сеть для змейки."""
     
-    def __init__(self, input_size, hidden_units_1=14, hidden_units_2=8, dropout_rate=0.6):
+    def __init__(self, input_size, hidden_units_1=128, hidden_units_2=64, dropout_rate=0.6):
         super(SnakeNet, self).__init__()
         self.input_size = input_size
         self.hidden_units_1 = hidden_units_1
@@ -33,13 +33,16 @@ class SnakeNet(nn.Module):
         # {"hidden_units_1": 14, "activation_1": "Tanh", "hidden_units_2": 8, "activation_2": "Tanh", "dropout_rate": 0.6}
         self.network = nn.Sequential(
             nn.Linear(input_size, hidden_units_1),
-            nn.Tanh(),
+            nn.LayerNorm(hidden_units_1),
+            nn.Tanh(),           
             nn.Dropout(dropout_rate),
             nn.Linear(hidden_units_1, hidden_units_2),
+            nn.LayerNorm(hidden_units_2),
             nn.Tanh(),
             nn.Dropout(dropout_rate),
             nn.Linear(hidden_units_2, 3),
-            nn.Softmax()
+            nn.LayerNorm(3),
+            nn.Softmax(dim=-1)
         )
     
     def forward(self, x):
@@ -106,11 +109,14 @@ def train_model():
     log_probs = m.log_prob(actions_tensor)
     entropy = m.entropy()
     # REINFORCE loss
-    loss = -(log_probs * returns_tensor).sum() - args.beta * entropy.sum()
+    ent = entropy.sum()
+    loss = -(log_probs * returns_tensor).sum() - args.beta * ent
     optimizer.zero_grad()                
-    loss.backward()                     
+    loss.backward()  
+    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.5)                   
     optimizer.step()
-    print(f"[INF] loss = {loss.item()}")
+    
+    print(f"[INF] loss = {loss.item()} entropy={entropy.mean()} rewards_sum={sum(rewards)}")
 
 
 if __name__ == "__main__":

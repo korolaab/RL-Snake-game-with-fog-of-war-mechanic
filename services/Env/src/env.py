@@ -26,8 +26,9 @@ if __name__ == "__main__":
     args = parse_args()
     
    
-    out_log_file = open("history.csv",'w')
-
+ 
+    with open("history.csv",'w') as f:
+        print("length", file=f)
     
     # открываем shared memory (создано Clock)
     while True:
@@ -80,7 +81,7 @@ if __name__ == "__main__":
 
     header_fmt = "<d?q"
     header_size = struct.calcsize(header_fmt)
-    vision_size = manhattan_cells_without_center(args.vision_radius)
+    vision_size = manhattan_cells_without_center(args.vision_radius) + 2
     total_size = header_size + vision_size * 2
     mapfile = mmap.mmap(shm.fd, total_size)
 
@@ -99,8 +100,8 @@ if __name__ == "__main__":
         if reset == 1:  
             #print("[ENV] Reset requested, resetting environment...")
             print(f"[ENV] snake_len = {len(game_manager.snakes[0].snake)}")
-
-            print(f"{len(game_manager.snakes[0].snake)}", file=out_log_file)
+            with open("history.csv",'a') as f:
+                print(f"{len(game_manager.snakes[0].snake)}", file=f)
             game_manager.reset_game()
             # пишем данные
             vision = game_manager.snakes[0].getVision()

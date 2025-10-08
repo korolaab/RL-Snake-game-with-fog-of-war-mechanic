@@ -149,6 +149,7 @@ def neural_agent_local(snake_id: str, log_file: str, env_host: str,
                     )
                     
                     # 4. Check game over
+                    
                     if game_over == True:
                         episode_counter += 1
                         logging.info({"event": "episode_ended", "episode": episode_count, "total_agent_episodes": episode_counter})
