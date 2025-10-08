@@ -15,7 +15,6 @@ import mmap
 import json
 from collections import defaultdict
 
-
 def manhattan_cells_without_center(R: int) -> int:
     return 2 * R * (R + 1)
 
@@ -27,7 +26,8 @@ if __name__ == "__main__":
     args = parse_args()
     
    
-    
+    out_log_file = open("history.csv",'w')
+
     
     # открываем shared memory (создано Clock)
     while True:
@@ -99,6 +99,8 @@ if __name__ == "__main__":
         if reset == 1:  
             #print("[ENV] Reset requested, resetting environment...")
             print(f"[ENV] snake_len = {len(game_manager.snakes[0].snake)}")
+
+            print(f"{len(game_manager.snakes[0].snake)}", file=out_log_file)
             game_manager.reset_game()
             # пишем данные
             vision = game_manager.snakes[0].getVision()
