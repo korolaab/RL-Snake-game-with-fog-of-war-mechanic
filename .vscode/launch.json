@@ -1,0 +1,42 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+  
+
+    {
+      "name": "Clock",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/services/Clock/src/clock.py",
+      "console": "integratedTerminal",
+      "postDebugTask": "clean-shm",
+      "args": ["--fps", "0"]
+    },
+    {
+      "name": "Env",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/services/Env/src/env.py",
+      "console": "integratedTerminal",
+      "args": ["--reward-config", "{\"alive\":1, \"eat_food\":1}"]
+    },
+    {
+      "name": "Inf",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/services/Inference/src/inf.py",
+      "console": "integratedTerminal",
+      "args": ["--snake-id", "1", 
+               "--gamma", "0.6", 
+               "--beta", "0.1",
+              "--learning-rate", "0.009"]
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Run All (Clock + Env + Inf)",
+      "configurations": ["Clock", "Env","Inf"],
+      "stopAll": true
+    }
+  ]
+}
