@@ -91,33 +91,33 @@ if __name__ == "__main__":
     while True:
         # ждем семафор от Env
         sem_env_tick.acquire()
-        print("[ENV] got signal")
+        #print("[ENV] got signal")
 
             # Check if this is a reset request
         (reset,) = struct.unpack_from(ctrl_fmt, mapfile_ctrl, 0)
         
         if reset == 1:  
-            print("[ENV] Reset requested, resetting environment...")
+            #print("[ENV] Reset requested, resetting environment...")
+            print(f"[ENV] snake_len = {len(game_manager.snakes[0].snake)}")
             game_manager.reset_game()
             # пишем данные
             vision = game_manager.snakes[0].getVision()
-            print(vision)
             reward = game_manager.snakes[0].reward
             game_over = game_manager.GAME_OVER
             struct.pack_into(header_fmt, mapfile,0, reward,game_over,0)
             mapfile[header_size:header_size+vision.nbytes] = vision.tobytes()
-            print("[ENV] wrote state")
+           # print("[ENV] wrote state")
         else:
             
             reward, game_over, action = struct.unpack_from(header_fmt, mapfile, 0)
             # пишем данные
             vision = game_manager.snakes[0].getVision()
-            print(vision)
+            #print(vision)
             reward = game_manager.snakes[0].reward
             game_over = game_manager.GAME_OVER
             struct.pack_into(header_fmt, mapfile,0, reward,game_over,0)
             mapfile[header_size:header_size+vision.nbytes] = vision.tobytes()
-            print("[ENV] wrote state")
+           # print("[ENV] wrote state")
             game_manager.snakes[0].turn(action)
             game_manager.step_game_once()
             

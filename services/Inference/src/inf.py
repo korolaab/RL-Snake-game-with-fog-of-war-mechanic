@@ -61,7 +61,7 @@ def train_model():
         actions = []
         rewards = []
         
-        for exp in episode:
+        for exp in episode[1:]:
             # Process state
 
             states.append(exp[0])
@@ -82,8 +82,8 @@ def train_model():
         
         # Normalize returns
         returns = torch.tensor(returns, dtype=torch.float32)
-        if len(returns) > 1:
-            returns = (returns - returns.mean()) / (returns.std() + 1e-5)
+        
+        returns = (returns - returns.mean()) / (returns.std() + 1e-8)
         
         # Add to batch
         all_states.extend(states)
@@ -105,12 +105,12 @@ def train_model():
     m = torch.distributions.Categorical(action_probs)
     log_probs = m.log_prob(actions_tensor)
     entropy = m.entropy()
-        # REINFORCE loss
+    # REINFORCE loss
     loss = -(log_probs * returns_tensor).sum() - args.beta * entropy.sum()
     optimizer.zero_grad()                
     loss.backward()                     
-    optimizer.step()   
-
+    optimizer.step()
+    print(f"[INF] loss = {loss.item()}")
 
 
 if __name__ == "__main__":
@@ -175,26 +175,48 @@ if __name__ == "__main__":
     
     model = SnakeNet( input_size = vision_size * 2)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
-    print("[INF] Created Model")
+    #print("[INF] Created Model")
 
     # Store as list of tuples
     replay_buffer = []
 
 
-
-
-    prev_reward = 0
+    prev_vision_tensor = torch.zeros(60*2)
+    prev_action = 0
     while True:
 
         sem_inf_tick.acquire()
-        print("[INF] got signal")
+       # print("[INF] got signal")
         
         # Check if this is a do_train request
         (do_train,) = struct.unpack_from(ctrl_fmt, mapfile_ctrl, 0)
         
         if do_train == 1:  
-            print("[ENV] Train flag recieved")
+            #print("[ENV] Train flag recieved")
+
+
+            # читаем vision как np.int8
+            vision = np.frombuffer(mapfile, dtype=np.int8,
+                        count=vision_size*2, offset=header_size)
+            vision_tensor = torch.from_numpy(vision.astype(np.float32))
+
+
+            action_offset = struct.calcsize("<d?") 
+    
+
+            # Each experience: (state, action, reward, next_state, done) 
+            experience = (
+                prev_vision_tensor,      # torch.Tensor
+                prev_action,     # torch.Tensor or int
+                reward,            # float
+                vision_tensor
+            )
+
+
             train_model()
+            replay_buffer = []
+            prev_action = 0
+            prev_vision_tensor = torch.zeros(60*2)
         else:
             reward, game_over, action = struct.unpack_from(header_fmt, mapfile, 0)
 
@@ -213,18 +235,20 @@ if __name__ == "__main__":
                 m = torch.distributions.Categorical(action_probs)
                 action = m.sample()
 
-            # Each experience: (state, action, reward, next_state, done)
+            # Each experience: (state, action, reward, next_state, done) 
             experience = (
-                vision_tensor,      # torch.Tensor
-                action,     # torch.Tensor or int
-                prev_reward            # float
+                prev_vision_tensor,      # torch.Tensor
+                prev_action,     # torch.Tensor or int
+                reward,            # float
+                vision_tensor
             )
-            prev_reward = reward
+            prev_vision_tensor = vision_tensor
+            prev_action = action
             replay_buffer.append(experience)
 
             
             struct.pack_into("q", mapfile, action_offset, action)
-            print(f"[INF] wrote action {action}")
+           # print(f"[INF] wrote action {action}")
         # сигналим Clock, что данные готовы
         sem_inf_done.release()
 

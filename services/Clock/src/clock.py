@@ -60,6 +60,7 @@ while True:
     if game_over == 1:
         episode += 1
         print(f"[Clock] Episode {episode} done")
+        
         # reset header
         struct.pack_into(ctrl_fmt_env, mapfile_env_ctrl, 0, 1)
         struct.pack_into(ctrl_fmt_inf, mapfile_inf_ctrl, 0, 1)

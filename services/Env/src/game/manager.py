@@ -121,7 +121,7 @@ class GameManager:
     def add_snake(self, snake_id):
         if len(self.snakes) >= self.MAX_SNAKES:
             return False
-        print(f"[ENV] Added snake with id={snake_id}")
+        #print(f"[ENV] Added snake with id={snake_id}")
         snake = SnakeGame(snake_id, self)
         self.snakes[snake_id] = snake
         self.snake_locks[snake_id] = threading.Lock()
