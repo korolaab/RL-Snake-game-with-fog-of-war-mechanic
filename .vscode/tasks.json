@@ -1,0 +1,11 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "clean-shm",
+      "type": "shell",
+      "command": "rm -f /dev/shm/game_state /dev/shm/sem.sem_env* /dev/shm/sem.sem_inf* /dev/shm/inf_control /dev/shm/env_control",
+      "problemMatcher": []
+    }
+  ]
+}
