@@ -81,7 +81,7 @@ if __name__ == "__main__":
     mapfile = mmap.mmap(shm.fd, total_size)
 
     mapfile_ctrl = mmap.mmap(shm_ctrl.fd, shm_ctrl.size)
-    ctrl_fmt = "=i"
+    ctrl_fmt = "=iddd"
 
 
     while True:
@@ -90,7 +90,7 @@ if __name__ == "__main__":
         #print("[ENV] got signal")
 
             # Check if this is a reset request
-        (reset,) = struct.unpack_from(ctrl_fmt, mapfile_ctrl, 0)
+        (reset,)  = struct.unpack_from("=i", mapfile_ctrl, 0)
         
         if reset == 1:  
             #print("[ENV] Reset requested, resetting environment...")
@@ -100,6 +100,7 @@ if __name__ == "__main__":
             game.reset()
             struct.pack_into(header_fmt, mapfile, 0, reward,False,0)
             mapfile[header_size:header_size + state.nbytes] = state.tobytes()
+            struct.pack_into("=i", mapfile_ctrl, 0, 0)
            # print("[ENV] wrote state")
         else:
             reward, game_over, action = struct.unpack_from(header_fmt, mapfile, 0)

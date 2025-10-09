@@ -30,8 +30,9 @@ sem_env_done = posix_ipc.Semaphore("/sem_env_done", posix_ipc.O_CREX, initial_va
 # Control format: command (int)
 # 0 = normal step
 # 1 = reset
-ctrl_fmt_env = "=i"
-sem_env_control = posix_ipc.SharedMemory("/env_control", posix_ipc.O_CREX, size=64)
+ctrl_fmt_env = "=iddd" # reset, snake_length, episodes, sum_reward
+sem_env_control = posix_ipc.SharedMemory("/env_control", posix_ipc.O_CREX, 
+                size=struct.calcsize(ctrl_fmt_env))
 mapfile_env_ctrl = mmap.mmap(sem_env_control.fd, sem_env_control.size)
 
 
@@ -42,8 +43,9 @@ sem_inf_training = posix_ipc.Semaphore("/sem_inf_training", posix_ipc.O_CREX, in
 # Control format: command (int)
 # 0 = normal step
 # 1 = train
-ctrl_fmt_inf = "=i"
-sem_inf_control = posix_ipc.SharedMemory("/inf_control", posix_ipc.O_CREX, size=64)
+ctrl_fmt_inf = "=idddd" # do_train, loss, entropy.mean(), entropy.sum(). loss_1.sum()
+sem_inf_control = posix_ipc.SharedMemory("/inf_control", posix_ipc.O_CREX, 
+    size=struct.calcsize(ctrl_fmt_inf))
 mapfile_inf_ctrl = mmap.mmap(sem_inf_control.fd, sem_inf_control.size)
 
 print("[Clock] started")
@@ -62,8 +64,8 @@ while True:
         print(f"[Clock] Episode {episode} done")
         
         # reset header
-        struct.pack_into(ctrl_fmt_env, mapfile_env_ctrl, 0, 1)
-        struct.pack_into(ctrl_fmt_inf, mapfile_inf_ctrl, 0, 1)
+        struct.pack_into("=i", mapfile_env_ctrl, 0, 1)
+        struct.pack_into("=i", mapfile_inf_ctrl, 0, 1)
         frame = 0
         print("[Clock] Env reset")
 
@@ -75,23 +77,27 @@ while True:
         print("[Clock] INF train")
         sem_inf_tick.release()   # разрешаем INF работать
         sem_inf_done.acquire()   # ждем, пока INF закончит
-        print("[Clock] INF train done")
+        
 
+        do_train, loss, entropy_mean, loss_1_sum, entropy_sum = struct.unpack_from(ctrl_fmt_inf, mapfile_inf_ctrl, 0)
+        print(f"[Clock] INF trained {loss=} {entropy_mean=} {loss_1_sum=} {entropy_sum=}")
     else:
-        print(f"[Clock] {episode=} {frame=} {reward=} {game_over=} {action=}")
-        print("[Clock] tick → ENV")
+        #print(f"[Clock] {episode=} {frame=} {reward=} {game_over=} {action=}")
+        #print("[Clock] tick → ENV")
         sem_env_tick.release()   # разрешаем ENV работать
         sem_env_done.acquire()   # ждем, пока ENV скажет "готово"
 
-        print("[Clock] ENV done")
+        #print("[Clock] ENV done")
 
-        print("[Clock] tick → INF")
+        #print("[Clock] tick → INF")
         sem_inf_tick.release()   # разрешаем INF работать
         sem_inf_done.acquire()   # ждем, пока INF закончит
         
         frame +=1
-        print("[Clock] step Done")
-    struct.pack_into(ctrl_fmt_env, mapfile_env_ctrl, 0, 0)
-    struct.pack_into(ctrl_fmt_inf, mapfile_inf_ctrl, 0, 0)
+        #print("[Clock] step Done")
+    #struct.pack_into(ctrl_fmt_env, mapfile_env_ctrl, 0, 0)
+    #struct.pack_into(ctrl_fmt_inf, mapfile_inf_ctrl, 0, 0)
+
+
     
 shm.close_fd()

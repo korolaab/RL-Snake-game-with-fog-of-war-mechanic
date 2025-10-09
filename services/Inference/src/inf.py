@@ -48,7 +48,7 @@ class SnakeNet(nn.Module):
     def forward(self, x):
         return self.network(x)
     
-def train_model():
+def train():
     model
     # Extract episodes
     episodes = [replay_buffer]#TODO: several episodes
@@ -110,14 +110,15 @@ def train_model():
     entropy = m.entropy()
     # REINFORCE loss
     ent = entropy.sum()
-    loss = -(log_probs * returns_tensor).sum() - args.beta * ent
+    loss1 = -(log_probs * returns_tensor).sum()
+    loss =  loss1- args.beta * ent
     optimizer.zero_grad()                
     loss.backward()  
     #torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.5)                   
     optimizer.step()
     
-    print(f"[INF] loss = {loss.item()} entropy={entropy.mean()} rewards_sum={sum(rewards)}")
-
+    #print(f"[INF] loss = {loss.item()} entropy={entropy.mean()} rewards_sum={sum(rewards)}")
+    return loss.item(), entropy.mean().item(), ent.item(),loss1.item()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run neural network agent local training only (no gRPC)")
@@ -171,10 +172,10 @@ if __name__ == "__main__":
     header_fmt = "<d?q"
     header_size = struct.calcsize(header_fmt)
     vision_size = 62 #TODO unhardcode
-    total_size = header_size + (vision_size * 8)*2
+    total_size = header_size + (vision_size * 8) * 2
 
     mapfile_ctrl = mmap.mmap(shm_ctrl.fd, shm_ctrl.size)
-    ctrl_fmt = "=i"
+    ctrl_fmt = "=idddd"
 
     mapfile = mmap.mmap(shm.fd, total_size)
 
@@ -195,7 +196,7 @@ if __name__ == "__main__":
        # print("[INF] got signal")
         
         # Check if this is a do_train request
-        (do_train,) = struct.unpack_from(ctrl_fmt, mapfile_ctrl, 0)
+        do_train, loss, entropy_mean, loss_1_sum, entropy_sum = struct.unpack_from(ctrl_fmt, mapfile_ctrl, 0)
         
         if do_train == 1:  
             #print("[ENV] Train flag recieved")
@@ -219,7 +220,14 @@ if __name__ == "__main__":
             )
 
 
-            train_model()
+            loss,entropy_mean,loss_1_sum, entropy_sum = train()
+            struct.pack_into(ctrl_fmt, mapfile_ctrl, 0,
+                             0,
+                             loss,
+                             entropy_mean,
+                             loss_1_sum,
+                             entropy_sum)
+                             
             replay_buffer = []
             prev_action = 0
             prev_vision_tensor = torch.zeros(vision_size*2)
