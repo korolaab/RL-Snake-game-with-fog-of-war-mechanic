@@ -4,7 +4,7 @@ from config import parse_args
 import config
 import os
 import sys
-from game.manager import GameManager
+from game import SnakeGame
 
 
 import time
@@ -66,23 +66,18 @@ if __name__ == "__main__":
     regular_dict = json.loads(args.reward_config)
     reward_config = defaultdict(int, regular_dict)  # int() returns 0
 
-    game_manager = GameManager(
-        grid_width=args.grid_width,
-        grid_height=args.grid_height,
-        vision_radius=args.vision_radius,
-        vision_display_cols=args.vision_display_cols,
-        vision_display_rows=args.vision_display_rows,
-        fps=1, 
-        seed = args.seed,
-        reward_config = reward_config,
-        maxStepsWithoutApple = args.max_steps_without_food,
-        n_snakes=args.N_snakes
+    game = SnakeGame(
+        args.grid_width,
+        args.grid_height,
+        args.vision_radius,
+        args.vision_display_cols,
+        args.vision_display_rows
     )
 
     header_fmt = "<d?q"
     header_size = struct.calcsize(header_fmt)
     vision_size = manhattan_cells_without_center(args.vision_radius) + 2
-    total_size = header_size + vision_size * 2
+    total_size = header_size + (vision_size * 8) * 2
     mapfile = mmap.mmap(shm.fd, total_size)
 
     mapfile_ctrl = mmap.mmap(shm_ctrl.fd, shm_ctrl.size)
@@ -99,30 +94,19 @@ if __name__ == "__main__":
         
         if reset == 1:  
             #print("[ENV] Reset requested, resetting environment...")
-            print(f"[ENV] snake_len = {len(game_manager.snakes[0].snake)}")
+            print(f"[ENV] snake_len = {game.max_len}")
             with open("history.csv",'a') as f:
-                print(f"{len(game_manager.snakes[0].snake)}", file=f)
-            game_manager.reset_game()
-            # пишем данные
-            vision = game_manager.snakes[0].getVision()
-            reward = game_manager.snakes[0].reward
-            game_over = game_manager.GAME_OVER
-            struct.pack_into(header_fmt, mapfile,0, reward,game_over,0)
-            mapfile[header_size:header_size+vision.nbytes] = vision.tobytes()
+                print(f"{game.max_len}", file=f)
+            game.reset()
+            struct.pack_into(header_fmt, mapfile, 0, reward,False,0)
+            mapfile[header_size:header_size + state.nbytes] = state.tobytes()
            # print("[ENV] wrote state")
         else:
-            
             reward, game_over, action = struct.unpack_from(header_fmt, mapfile, 0)
             # пишем данные
-            vision = game_manager.snakes[0].getVision()
-            #print(vision)
-            reward = game_manager.snakes[0].reward
-            game_over = game_manager.GAME_OVER
+            state, reward, game_over = game.update(action)
             struct.pack_into(header_fmt, mapfile,0, reward,game_over,0)
-            mapfile[header_size:header_size+vision.nbytes] = vision.tobytes()
-           # print("[ENV] wrote state")
-            game_manager.snakes[0].turn(action)
-            game_manager.step_game_once()
+            mapfile[header_size:header_size + state.nbytes] = state.tobytes()
             
 
         # сигналим Clock, что данные готовы

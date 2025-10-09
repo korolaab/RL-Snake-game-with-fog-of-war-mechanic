@@ -16,7 +16,7 @@ def manhattan_cells_without_center(R: int) -> int:
 header_fmt = "<d?q"
 header_size = struct.calcsize(header_fmt)
 vision_size = manhattan_cells_without_center(args.vision_size) + 2
-total_size = header_size + vision_size * 2
+total_size = header_size + (vision_size*8) * 2
 
 
 # создаем shared memory
@@ -68,7 +68,6 @@ while True:
         print("[Clock] Env reset")
 
         sem_env_tick.release()   # разрешаем ENV работать
-
         sem_env_done.acquire()   # ждем, пока ENV скажет "готово"
 
         print("[Clock] ENV done")
@@ -82,13 +81,9 @@ while True:
         print(f"[Clock] {episode=} {frame=} {reward=} {game_over=} {action=}")
         print("[Clock] tick → ENV")
         sem_env_tick.release()   # разрешаем ENV работать
-
         sem_env_done.acquire()   # ждем, пока ENV скажет "готово"
 
         print("[Clock] ENV done")
-
-
-
 
         print("[Clock] tick → INF")
         sem_inf_tick.release()   # разрешаем INF работать

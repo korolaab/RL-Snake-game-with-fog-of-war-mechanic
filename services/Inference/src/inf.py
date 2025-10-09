@@ -170,8 +170,8 @@ if __name__ == "__main__":
 
     header_fmt = "<d?q"
     header_size = struct.calcsize(header_fmt)
-    vision_size = 60 #TODO unhardcode
-    total_size = header_size + vision_size*2
+    vision_size = 62 #TODO unhardcode
+    total_size = header_size + (vision_size * 8)*2
 
     mapfile_ctrl = mmap.mmap(shm_ctrl.fd, shm_ctrl.size)
     ctrl_fmt = "=i"
@@ -187,7 +187,7 @@ if __name__ == "__main__":
     replay_buffer = []
 
 
-    prev_vision_tensor = torch.zeros(60*2)
+    prev_vision_tensor = torch.zeros(vision_size*2)
     prev_action = 0
     while True:
 
@@ -222,12 +222,12 @@ if __name__ == "__main__":
             train_model()
             replay_buffer = []
             prev_action = 0
-            prev_vision_tensor = torch.zeros(60*2)
+            prev_vision_tensor = torch.zeros(vision_size*2)
         else:
             reward, game_over, action = struct.unpack_from(header_fmt, mapfile, 0)
 
             # читаем vision как np.int8
-            vision = np.frombuffer(mapfile, dtype=np.int8,
+            vision = np.frombuffer(mapfile, dtype=np.float64,
                         count=vision_size*2, offset=header_size)
             vision_tensor = torch.from_numpy(vision.astype(np.float32))
 
@@ -248,7 +248,7 @@ if __name__ == "__main__":
                 reward,            # float
                 vision_tensor
             )
-            prev_vision_tensor = vision_tensor
+            prev_vision_tensor = vision_tensor.clone()
             prev_action = action
             replay_buffer.append(experience)
 
