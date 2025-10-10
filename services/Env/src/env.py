@@ -81,9 +81,10 @@ if __name__ == "__main__":
     mapfile = mmap.mmap(shm.fd, total_size)
 
     mapfile_ctrl = mmap.mmap(shm_ctrl.fd, shm_ctrl.size)
-    ctrl_fmt = "=iddd"
+    ctrl_fmt = "=iiii"
 
-
+    sum_reward = 0
+    frames = 0
     while True:
         # ждем семафор от Env
         sem_env_tick.acquire()
@@ -94,20 +95,27 @@ if __name__ == "__main__":
         
         if reset == 1:  
             #print("[ENV] Reset requested, resetting environment...")
-            print(f"[ENV] snake_len = {game.max_len}")
+            #print(f"[ENV] snake_len = {game.max_len}")
             with open("history.csv",'a') as f:
                 print(f"{game.max_len}", file=f)
+
+            struct.pack_into(ctrl_fmt, mapfile_ctrl, 0, 0, int(game.max_len), int(frames),int(sum_reward))
             game.reset()
             struct.pack_into(header_fmt, mapfile, 0, reward,False,0)
             mapfile[header_size:header_size + state.nbytes] = state.tobytes()
-            struct.pack_into("=i", mapfile_ctrl, 0, 0)
+            
+            frames = 0
+            sum_reward = 0
+            
            # print("[ENV] wrote state")
         else:
             reward, game_over, action = struct.unpack_from(header_fmt, mapfile, 0)
             # пишем данные
+            sum_reward+=reward
             state, reward, game_over = game.update(action)
             struct.pack_into(header_fmt, mapfile,0, reward,game_over,0)
             mapfile[header_size:header_size + state.nbytes] = state.tobytes()
+            frames +=1
             
 
         # сигналим Clock, что данные готовы

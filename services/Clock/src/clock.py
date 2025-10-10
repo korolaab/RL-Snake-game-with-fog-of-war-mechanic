@@ -3,6 +3,8 @@ import posix_ipc
 import argparse
 import struct
 import mmap
+import mlflow
+
 # Parse command line arguments
 parser = argparse.ArgumentParser(description="Clock service for Snake RL")
 parser.add_argument("--vision-size", type=int, default=5, help="Vision area size in bytes")
@@ -30,7 +32,7 @@ sem_env_done = posix_ipc.Semaphore("/sem_env_done", posix_ipc.O_CREX, initial_va
 # Control format: command (int)
 # 0 = normal step
 # 1 = reset
-ctrl_fmt_env = "=iddd" # reset, snake_length, episodes, sum_reward
+ctrl_fmt_env = "=iiii" # reset, snake_length, frames, sum_reward
 sem_env_control = posix_ipc.SharedMemory("/env_control", posix_ipc.O_CREX, 
                 size=struct.calcsize(ctrl_fmt_env))
 mapfile_env_ctrl = mmap.mmap(sem_env_control.fd, sem_env_control.size)
@@ -61,26 +63,25 @@ while True:
     reward, game_over, action = struct.unpack_from(header_fmt, mapfile, 0)
     if game_over == 1:
         episode += 1
-        print(f"[Clock] Episode {episode} done")
+        
         
         # reset header
         struct.pack_into("=i", mapfile_env_ctrl, 0, 1)
         struct.pack_into("=i", mapfile_inf_ctrl, 0, 1)
-        frame = 0
-        print("[Clock] Env reset")
+        #frame = 0
+
 
         sem_env_tick.release()   # разрешаем ENV работать
         sem_env_done.acquire()   # ждем, пока ENV скажет "готово"
+        reset, snake_length, frames, sum_reward = struct.unpack_from(ctrl_fmt_env, mapfile_env_ctrl, 0)
 
-        print("[Clock] ENV done")
-
-        print("[Clock] INF train")
         sem_inf_tick.release()   # разрешаем INF работать
         sem_inf_done.acquire()   # ждем, пока INF закончит
         
 
         do_train, loss, entropy_mean, loss_1_sum, entropy_sum = struct.unpack_from(ctrl_fmt_inf, mapfile_inf_ctrl, 0)
-        print(f"[Clock] INF trained {loss=} {entropy_mean=} {loss_1_sum=} {entropy_sum=}")
+        #print(f"[Clock] Episode {episode} done")
+        print(f"[Clock] {episode}:{snake_length=} {loss=:0.3f} {entropy_mean=:0.3f} {loss_1_sum=:0.3f} {entropy_sum=:0.3f} {frames=}  {sum_reward=}")
     else:
         #print(f"[Clock] {episode=} {frame=} {reward=} {game_over=} {action=}")
         #print("[Clock] tick → ENV")
@@ -93,7 +94,7 @@ while True:
         sem_inf_tick.release()   # разрешаем INF работать
         sem_inf_done.acquire()   # ждем, пока INF закончит
         
-        frame +=1
+        #frame +=1
         #print("[Clock] step Done")
     #struct.pack_into(ctrl_fmt_env, mapfile_env_ctrl, 0, 0)
     #struct.pack_into(ctrl_fmt_inf, mapfile_inf_ctrl, 0, 0)
