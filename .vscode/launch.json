@@ -10,7 +10,11 @@
       "program": "${workspaceFolder}/services/Clock/src/clock.py",
       "console": "integratedTerminal",
       "postDebugTask": "clean-shm",
-      "args": ["--fps", "0"]
+      "args": ["--fps", "0",
+              "--mlflow_experiment_name", "1snake"],
+      "env": {
+        "MLFLOW_TRACKING_URI": "file:${workspaceFolder}/mlruns"
+      }
     },
     {
       "name": "Env",
@@ -27,6 +31,38 @@
       "program": "${workspaceFolder}/services/Inference/src/inf.py",
       "console": "integratedTerminal",
       "args": ["--snake-id", "1", 
+               "--gamma", "0.9", 
+               "--beta", "0.1",
+              "--learning-rate", "0.001"]
+    },
+        {
+      "name": "Clock(Prod)",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/services/Clock/src/clock.py",
+      "console": "integratedTerminal",
+      "postDebugTask": "clean-shm",
+      "args": ["--fps", "0",
+              "--mlflow_experiment_name", "1snake"],
+      "env": {
+        "MLFLOW_TRACKING_URI": "file:${workspaceFolder}/mlruns"
+      }
+    },
+    {
+      "name": "Env(Prod)",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/services/Env/src/env.py",
+      "console": "integratedTerminal",
+      "args": ["--reward-config", "{\"alive\":1, \"eat_food\":0, \"game_over\":0}"]
+    },
+    {
+      "name": "Inf(Prod)",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/services/Inference/src/inf.py",
+      "console": "integratedTerminal",
+      "args": ["--snake-id", "1", 
                "--gamma", "0.6", 
                "--beta", "0.1",
               "--learning-rate", "0.001"]
@@ -34,8 +70,13 @@
   ],
   "compounds": [
     {
-      "name": "Run All (Clock + Env + Inf)",
+      "name": "Debug (Clock + Env + Inf)",
       "configurations": ["Clock", "Env","Inf"],
+      "stopAll": true
+    },
+        {
+      "name": "Prod  (Clock + Env + Inf)",
+      "configurations": ["Clock(Prod)", "Env(Prod)","Inf(Prod)"],
       "stopAll": true
     }
   ]

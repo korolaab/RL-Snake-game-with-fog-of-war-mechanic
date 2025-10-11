@@ -18,7 +18,6 @@ import torch.optim as optim
 
 from collections import defaultdict
 import numpy as np
-import mlflow
 
 
 class SnakeNet(nn.Module):
@@ -35,11 +34,15 @@ class SnakeNet(nn.Module):
             nn.Linear(input_size, hidden_units_1),
            # nn.LayerNorm(hidden_units_1),
             nn.Tanh(),           
-            nn.Dropout(dropout_rate),
+           # nn.Dropout(dropout_rate),
             nn.Linear(hidden_units_1, hidden_units_2),
            # nn.LayerNorm(hidden_units_2),
             nn.Tanh(),
             nn.Dropout(dropout_rate),
+
+            nn.Linear(hidden_units_2, hidden_units_2),
+           # nn.LayerNorm(hidden_units_2),
+            nn.Tanh(),
             nn.Linear(hidden_units_2, 3),
             #nn.LayerNorm(3),
             nn.Softmax(dim=-1)
@@ -109,8 +112,8 @@ def train():
     log_probs = m.log_prob(actions_tensor)
     entropy = m.entropy()
     # REINFORCE loss
-    ent = entropy.sum()
-    loss1 = -(log_probs * returns_tensor).sum()
+    ent = entropy.mean()
+    loss1 = -(log_probs * returns_tensor).mean()
     loss =  loss1- args.beta * ent
     optimizer.zero_grad()                
     loss.backward()  
