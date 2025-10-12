@@ -1,0 +1,118 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "snake-rl.fullname" . }}-shared-memory
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "snake-rl.labels" . | nindent 4 }}
+    component: shared-memory-job
+spec:
+  ttlSecondsAfterFinished: {{ .Values.job.ttlSecondsAfterFinished }}
+  backoffLimit: {{ .Values.job.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "snake-rl.selectorLabels" . | nindent 8 }}
+        component: shared-memory-job
+    spec:
+      restartPolicy: {{ .Values.job.restartPolicy }}
+      containers:
+      
+      # Clock Service - Master Coordinator
+      - name: clock
+        image: "{{ .Values.global.imageRegistry }}/{{ .Values.clock.image.repository }}:{{ .Values.clock.image.tag | default .Values.global.imageTag }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        command: ["python", "/app/services/Clock/src/clock.py"]
+        args:
+          - "--fps"
+          - "{{ .Values.clock.fps }}"
+          - "--vision-size"
+          - "{{ .Values.clock.visionSize }}"
+          - "--mlflow_experiment_name"
+          - "{{ .Values.mlflow.experimentName }}"
+          {{- if .Values.mlflow.trackingUri }}
+          - "--mlflow_server"
+          - "{{ .Values.mlflow.trackingUri }}"
+          {{- end }}
+        env:
+        - name: MAX_EPISODES
+          value: "{{ .Values.experiment.maxEpisodes }}"
+        {{- if not .Values.mlflow.trackingUri }}
+        - name: MLFLOW_TRACKING_URI
+          value: "file:///logs/mlruns"
+        {{- end }}
+        resources:
+          {{- toYaml .Values.resources.clock | nindent 10 }}
+        volumeMounts:
+        - name: shared-memory
+          mountPath: /dev/shm
+        {{- if .Values.storage.logs.enabled }}
+        - name: logs-storage
+          mountPath: /logs
+        {{- end }}
+
+      # Environment Service - Snake Game Engine  
+      - name: env
+        image: "{{ .Values.global.imageRegistry }}/{{ .Values.env.image.repository }}:{{ .Values.env.image.tag | default .Values.global.imageTag }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        command: ["python", "/app/services/Env/src/env.py"]
+        args:
+          - "--grid_width"
+          - "{{ .Values.env.gridWidth }}"
+          - "--grid_height"
+          - "{{ .Values.env.gridHeight }}"
+          - "--vision_radius"
+          - "{{ .Values.env.visionRadius }}"
+          - "--vision_display_cols"
+          - "{{ .Values.env.visionDisplayCols }}"
+          - "--vision_display_rows"
+          - "{{ .Values.env.visionDisplayRows }}"
+          - "--reward-config"
+          - "{{ .Values.env.rewardConfig }}"
+        resources:
+          {{- toYaml .Values.resources.env | nindent 10 }}
+        volumeMounts:
+        - name: shared-memory
+          mountPath: /dev/shm
+        {{- if .Values.storage.logs.enabled }}
+        - name: logs-storage
+          mountPath: /logs
+        {{- end }}
+
+      # Inference Service - Neural Network Agent
+      - name: inference
+        image: "{{ .Values.global.imageRegistry }}/{{ .Values.inference.image.repository }}:{{ .Values.inference.image.tag | default .Values.global.imageTag }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        command: ["python", "/app/services/Inference/src/inf.py"]
+        args:
+          - "--snake-id"
+          - "{{ .Values.inference.snakeId }}"
+          - "--learning-rate"
+          - "{{ .Values.inference.learningRate }}"
+          - "--gamma"
+          - "{{ .Values.inference.gamma }}"
+          - "--beta"
+          - "{{ .Values.inference.beta }}"
+        resources:
+          {{- toYaml .Values.resources.inference | nindent 10 }}
+        volumeMounts:
+        - name: shared-memory
+          mountPath: /dev/shm
+        {{- if .Values.storage.logs.enabled }}
+        - name: logs-storage
+          mountPath: /logs
+        {{- end }}
+
+      volumes:
+      # Shared memory volume for POSIX IPC
+      - name: shared-memory
+        emptyDir:
+          medium: Memory
+          sizeLimit: 1Gi
+      
+      {{- if .Values.storage.logs.enabled }}
+      # Persistent volume for logs and models
+      - name: logs-storage
+        persistentVolumeClaim:
+          claimName: {{ include "snake-rl.fullname" . }}-logs
+      {{- end }}

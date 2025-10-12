@@ -1,121 +1,92 @@
-createNamespace: false
+# ==== GLOBAL CONFIGURATION ====
 global:
   imageRegistry: "localhost:5000"
   imageTag: "latest"
   imagePullPolicy: Always
 
-# ==== ENVIRONMENT SERVER CONFIGURATION ====
+# ==== EXPERIMENT CONFIGURATION ====
+experiment:
+  name: "snake-rl-shared-memory"
+  maxEpisodes: 1000                    # Configurable termination
+  
+# ==== MLFLOW CONFIGURATION ====  
+mlflow:
+  enabled: true                        # Can disable MLflow entirely
+  trackingUri: ""                      # Empty = file-based in PVC
+  experimentName: "snake-rl"           # MLflow experiment name
+  
+# ==== SERVICE PARAMETERS ====
+clock:
+  image:
+    repository: "snake-rl/clock"
+    tag: ""
+  fps: 1.0
+  visionSize: 5
+  
 env:
-  enabled: true       # Set to true to run the always-on Environment service
   image:
     repository: "snake-rl/env"
     tag: ""
-  service:
-    type: ClusterIP
-    port: 5000
-    targetPort: 5000
-  args:
-    fps: 100000
-    seed: 1
-    maxStepsWithoutFood: 1000
-    gridWidth: 15
-    gridHeight: 15
-    visionRadius: 5
-    visionDisplayCols: 11
-    visionDisplayRows: 11
-    maxSnakes: 1
-    rewardConfig: '{"alive":1, "eat_food":1, "game_over":0}'
-  resources:
-    requests:
-      memory: "1Gi"
-      cpu: "1000m"
-    limits:
-      memory: "1Gi"
-      cpu: "1000m"
-  replicaCount: 1
-  storage:
-    enabled: true
-    accessMode: "ReadWriteOnce"
-    storageClass: "local-path"
-    size: "5Gi"
-
-# ==== INFERENCE/AGENT EXPERIMENT JOB CONFIGURATION ====
+  gridWidth: 11
+  gridHeight: 11
+  visionRadius: 5
+  visionDisplayCols: 11
+  visionDisplayRows: 11
+  rewardConfig: '{"alive": 1, "eat_food": 10, "game_over": -10}'
+  
 inference:
-  enabled: true      # Set to true for inference, false if only running env
-  runAsJob: true      # Switch between Job and StatefulSet/Deployment
   image:
     repository: "snake-rl/inference"
     tag: ""
-  args:
-    snakeId: "adam"
-    envHost: "snake-rl-env:5000" # Use env service DNS name (host:port)
-    modelSaveDir: "/output/models"
-    logFile: "/output/agent1.log"
-    batchSize: 1
-    maxEpisodes: 1000
-    learningRate: 0.009
-    gamma: 0.6
-    beta: 0.16
-  resources:
-    requests:
-      memory: "1Gi"
-      cpu: "2000m"
-    limits:
-      memory: "1Gi"
-      cpu: "2000m"
-  ttlSecondsAfterFinished: 1200
-  storage:
-    enabled: true
-    accessMode: "ReadWriteOnce"
-    storageClass: "local-path"
-    size: "5Gi"
+  snakeId: 1
+  learningRate: 0.001
+  gamma: 0.99
+  beta: 0.1
 
-envContainer:
-  command: []
-  args: []
-
-inferenceContainer:
-  command: []
-  args: []
-
-run:
-  maxEpisodes: 1000
-  ttlSecondsAfterFinished: 10
-
-# ==== STORAGE SHARED AMONG COMPONENTS ====
+# ==== JOB CONFIGURATION ====
+job:
+  restartPolicy: Never
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 0
+  
+# ==== STORAGE CONFIGURATION ====
 storage:
-  enabled: true
-  accessMode: "ReadWriteOnce"
-  storageClass: "local-path"
-  size: "10Gi"
+  logs:
+    enabled: true
+    size: 10Gi
+    storageClass: "local-path"
+    accessMode: "ReadWriteOnce"
+    
+# ==== RESOURCE CONFIGURATION ====  
+resources:
+  clock:
+    requests: 
+      cpu: 100m
+      memory: 128Mi
+    limits: 
+      cpu: 500m
+      memory: 512Mi
+  env:
+    requests: 
+      cpu: 200m
+      memory: 256Mi
+    limits: 
+      cpu: 1000m
+      memory: 1Gi
+  inference:
+    requests: 
+      cpu: 500m
+      memory: 512Mi
+    limits: 
+      cpu: 2000m
+      memory: 2Gi
 
-# ==== RABBITMQ CONFIGURATION ====
+# ==== LEGACY CONFIGURATIONS (unused in shared memory) ====
+createNamespace: false
 rabbitmq:
-  enabled: true
-  host: "rabbitmq.data-stack.svc.cluster.local"
-  port: 5672
-  username: "tech"
-  password: "tech"
-  vhost: "/"
-  exchange: ""
-  routingKey: "rabbitmq_rl_snake_logs"
-  exchangeType: "direct"
-  durable: true
-  async: false
-  connectionTimeout: 10
-  retryDelay: 5
-  maxRetries: 3
-
-# ==== LOGGING ====
+  enabled: false
 logging:
-  level: "DEBUG"
-  enableConsoleLogs: true
-  file: ""
-
-# ==== EXPERIMENT TAGGING ====
-experiment:
-  name: "test_reward"
-# ==== NETWORK POLICY ====
+  level: "INFO"
 networkPolicy:
   enabled: false
 
