@@ -247,7 +247,7 @@ if __name__ == "__main__":
            
             
             with torch.no_grad():
-                model.eval()
+                #model.eval()
                 action_probs = model(vision_tensor)
                 m = torch.distributions.Categorical(action_probs)
                 action = m.sample()

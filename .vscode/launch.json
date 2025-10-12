@@ -43,7 +43,7 @@
       "console": "integratedTerminal",
       "postDebugTask": "clean-shm",
       "args": ["--fps", "0",
-              "--mlflow_experiment_name", "1snake"],
+              "--mlflow_experiment_name", "debug"],
       "env": {
         "MLFLOW_TRACKING_URI": "file:${workspaceFolder}/mlruns"
       }

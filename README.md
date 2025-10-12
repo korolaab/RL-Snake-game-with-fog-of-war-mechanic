@@ -11,86 +11,49 @@ The full game area is not provided to the model.
 
 Model have only the local observation as shown in the FOV.
 
-## Progress
 
-1. **Monolithic Setup (legacy/):**  
-   Initially, the environment and agent were combined into a single monolithic application. While this version allowed for the successful training of one agent, it was inflexible and made running experiments difficult.
-   Results in [./legacy/Readme.md](./legacy/README.md)
+## Current Architecture
 
-2. **Kubernetes-Based Modular Setup:**  
-   The architecture was refactored to Kubernetes distributed architecture with separeted blocks. The current setup consists of 2 containers:
-   - **env:** The Snake game environment.
-   - **inf:** The inference (agent) service + inside a training.  
+### Service Overview
 
+**Clock Service** (`services/Clock/src/clock.py`)
+- **Role**: Master coordinator and experiment tracker
+- **Functions**: Controls training loop timing, manages shared memory, orchestrates episodes via semaphores, logs metrics to MLflow
+- **Key Resources**: Creates `/game_state`, `/env_control`, `/inf_control` shared memory segments
 
-3. **Next Steps:**  
-   - Debug current setup
-   - Expand to 3 containers: environment, inference, and training.
-   - Add support for two agents in the same environment.
-   - Research how agents can collaborate and communicate.
+**Environment Service** (`services/Env/src/env.py`) 
+- **Role**: Snake game simulation engine
+- **Functions**: Runs Snake game logic, processes actions, computes rewards, writes game state to shared memory
+- **Features**: Configurable grid size, vision radius, and reward structure
 
-## How to Run
+**Inference Service** (`services/Inference/src/inf.py`)
+- **Role**: Neural network agent with integrated training
+- **Functions**: Runs SnakeNet (hyperopt-optimized architecture), implements REINFORCE algorithm, maintains replay buffer
+- **Training**: On-policy learning with entropy regularization
 
-- **From Scratch:**  
-  Follow the setup steps provided earlier in this README.
+### Communication Mechanism
 
-- **Using Existing Data Stack:**  
-  If you already have a data stack available (RabbitMQ, PVC for logs), you can use it by updating the configuration:
-    - Edit the `rabbitmq` hostname in `k8s/snake-rl/values.yaml` to point to your RabbitMQ instance.
-    - Alternatively, configure log dumping to a file in your persistent volume claim (PVC) if preferred.
+**Shared Memory Architecture**: Services communicate via POSIX shared memory and semaphores for maximum performance:
 
-Please refer to the instructions in `/k8s/snake-rl/values.yaml` for further customization.
+- **`/game_state`**: Game state (reward, game_over, action) + vision data
+- **`/env_control`**: Environment control (reset commands, episode stats)  
+- **`/inf_control`**: Inference control (training triggers, loss metrics)
 
-## Cold Setup
+**Synchronization Flow**:
+1. Clock releases semaphores → ENV updates game state, INF selects action
+2. Services signal completion → Clock coordinates next step
+3. Episode end → Clock triggers training in INF service
 
-To get your RabbitMQ + ClickHouse data-stack running:
+### Development Setup
 
-### Prerequisites
-
-- kubectl configured for your cluster
-- Helm 3 installed
-- Access to pull from Docker Hub (bitnamicharts)
-
-### Quick Setup (All-in-One)
-
-If you want to run all steps automatically:
-
-```bash
-make quick-deploy
+**VSCode Debug Launch** (recommended):
+```
+Debug (Clock + Env + Inf)  # Launches all services with debugpy
 ```
 
-This runs init, secrets, deploy, health check, and create-tables in sequence.
+**Manual Start Order**:
+1. Clock service (creates shared memory resources)
+2. Environment service (waits for Clock resources)  
+3. Inference service (waits for Clock resources)
 
-### What Gets Deployed
-
-- **ClickHouse**: OLAP database for analytics
-- **RabbitMQ**: Message queue for data ingestion
-- **Persistent volumes**: For data storage
-- **Kubernetes secrets**: For secure credential management
-
-### Getting Connection Details
-
-After deployment, get connection information:
-
-```bash
-make how-to-connect
-```
-
-This shows URLs, credentials, and port-forwarding instructions for accessing your services.
-
-### Troubleshooting
-
-- Check deployment status: `make status`
-- View service logs: `make logs`
-- Run health checks: `make health`
-- View passwords: `make passwords`
-
-### Cleanup
-
-To completely remove everything (WARNING: destroys all data):
-
-```bash
-make destroy
-```
-
-You'll need to type 'DELETE' to confirm.
+**Cleanup**: Automatic shared memory cleanup via VSCode `clean-shm` task
