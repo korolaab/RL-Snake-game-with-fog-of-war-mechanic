@@ -41,7 +41,7 @@ build_base_image() {
 }
 
 build_service_images() {
-    local services=("Env"  "Inference" ) #"Training"
+    local services=("Env"  "Inference" "Clock") #"Training"
     
     for service in "${services[@]}"; do
         echo_info "Building ${service} service..."
@@ -77,6 +77,7 @@ main() {
     echo "  - ${REGISTRY}/snake-rl/env:${VERSION}"
    # echo "  - ${REGISTRY}/snake-rl/training:${VERSION}"
     echo "  - ${REGISTRY}/snake-rl/inference:${VERSION}"
+    echo "  - ${REGISTRY}/snake-rl/clock:${VERSION}"
 }
 
 main "$@"

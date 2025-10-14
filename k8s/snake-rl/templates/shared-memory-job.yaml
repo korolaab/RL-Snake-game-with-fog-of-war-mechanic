@@ -25,24 +25,29 @@ spec:
         command: ["python", "/app/services/Clock/src/clock.py"]
         args:
           - "--fps"
-          - "{{ .Values.clock.fps }}"
+          - {{ .Values.clock.fps | quote}}
           - "--vision-size"
-          - "{{ .Values.clock.visionSize }}"
+          - {{ .Values.clock.visionSize | quote}}
           - "--mlflow_experiment_name"
-          - "{{ .Values.mlflow.experimentName }}"
+          - {{ .Values.mlflow.experimentName | quote}}
           {{- if .Values.mlflow.trackingUri }}
           - "--mlflow_server"
-          - "{{ .Values.mlflow.trackingUri }}"
+          - {{ .Values.mlflow.trackingUri | quote}}
           {{- end }}
         env:
         - name: MAX_EPISODES
-          value: "{{ .Values.experiment.maxEpisodes }}"
+          value: {{ .Values.experiment.maxEpisodes | quote}}
         {{- if not .Values.mlflow.trackingUri }}
         - name: MLFLOW_TRACKING_URI
           value: "file:///logs/mlruns"
         {{- end }}
         resources:
-          {{- toYaml .Values.resources.clock | nindent 10 }}
+          requests:
+            cpu: {{ .Values.resources.clock.requests.cpu }}
+            memory: {{ .Values.resources.clock.requests.memory }}
+          limits:
+            cpu: {{ .Values.resources.clock.limits.cpu }}
+            memory: {{ .Values.resources.clock.limits.memory }}
         volumeMounts:
         - name: shared-memory
           mountPath: /dev/shm
@@ -58,19 +63,24 @@ spec:
         command: ["python", "/app/services/Env/src/env.py"]
         args:
           - "--grid_width"
-          - "{{ .Values.env.gridWidth }}"
+          - {{ .Values.env.gridWidth | quote}}
           - "--grid_height"
-          - "{{ .Values.env.gridHeight }}"
+          - {{ .Values.env.gridHeight | quote}}
           - "--vision_radius"
-          - "{{ .Values.env.visionRadius }}"
+          - {{ .Values.env.visionRadius | quote}}
           - "--vision_display_cols"
-          - "{{ .Values.env.visionDisplayCols }}"
+          - {{ .Values.env.visionDisplayCols | quote}}
           - "--vision_display_rows"
-          - "{{ .Values.env.visionDisplayRows }}"
+          - {{ .Values.env.visionDisplayRows | quote}}
           - "--reward-config"
-          - "{{ .Values.env.rewardConfig }}"
+          - {{ .Values.env.rewardConfig | quote}}
         resources:
-          {{- toYaml .Values.resources.env | nindent 10 }}
+          requests:
+            cpu: {{ .Values.resources.env.requests.cpu }}
+            memory: {{ .Values.resources.env.requests.memory }}
+          limits:
+            cpu: {{ .Values.resources.env.limits.cpu }}
+            memory: {{ .Values.resources.env.limits.memory }}
         volumeMounts:
         - name: shared-memory
           mountPath: /dev/shm
@@ -86,15 +96,20 @@ spec:
         command: ["python", "/app/services/Inference/src/inf.py"]
         args:
           - "--snake-id"
-          - "{{ .Values.inference.snakeId }}"
+          - {{ .Values.inference.snakeId | quote}}
           - "--learning-rate"
-          - "{{ .Values.inference.learningRate }}"
+          - {{ .Values.inference.learningRate | quote }}
           - "--gamma"
-          - "{{ .Values.inference.gamma }}"
+          - {{ .Values.inference.gamma | quote}}
           - "--beta"
-          - "{{ .Values.inference.beta }}"
+          - {{ .Values.inference.beta | quote}}
         resources:
-          {{- toYaml .Values.resources.inference | nindent 10 }}
+          requests:
+            cpu: {{ .Values.resources.inference.requests.cpu }}
+            memory: {{ .Values.resources.inference.requests.memory }}
+          limits:
+            cpu: {{ .Values.resources.inference.limits.cpu }}
+            memory: {{ .Values.resources.inference.limits.memory }}
         volumeMounts:
         - name: shared-memory
           mountPath: /dev/shm

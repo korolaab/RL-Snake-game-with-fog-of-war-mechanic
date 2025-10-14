@@ -18,9 +18,5 @@ COPY src/ ./
 # Expose any necessary ports (none for Clock service)
 # EXPOSE 
 
-# Create non-root user for security
-RUN useradd -m -u 1000 clockuser && chown -R clockuser:clockuser /app
-USER clockuser
-
 # Command to run the service
 CMD ["python", "main.py"]
