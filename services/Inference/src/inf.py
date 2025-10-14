@@ -117,11 +117,32 @@ def train():
     loss =  loss1- args.beta * ent
     optimizer.zero_grad()                
     loss.backward()  
-    #torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.5)                   
+    
+    # Calculate gradient norm
+    grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float('inf'))
     optimizer.step()
     
-    #print(f"[INF] loss = {loss.item()} entropy={entropy.mean()} rewards_sum={sum(rewards)}")
-    return loss.item(), entropy.mean().item(), ent.item(),loss1.item()
+    # Calculate additional metrics
+    entropy_std = entropy.std().item() if len(entropy) > 1 else 0.0
+    returns_mean = returns_tensor.mean().item()
+    returns_std = returns_tensor.std().item()
+    
+    # Action distribution analysis
+    action_counts = torch.bincount(actions_tensor, minlength=3)
+    action_freqs = action_counts.float() / len(actions_tensor)
+    
+    return {
+        'loss': loss.item(),
+        'policy_loss': loss1.item(),
+        'entropy_mean': entropy.mean().item(),
+        'entropy_std': entropy_std,
+        'grad_norm': grad_norm.item(),
+        'returns_mean': returns_mean,
+        'returns_std': returns_std,
+        'action_0_freq': action_freqs[0].item(),
+        'action_1_freq': action_freqs[1].item(),
+        'action_2_freq': action_freqs[2].item()
+    }
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run neural network agent local training only (no gRPC)")
@@ -178,7 +199,7 @@ if __name__ == "__main__":
     total_size = header_size + (vision_size * 8) * 2
 
     mapfile_ctrl = mmap.mmap(shm_ctrl.fd, shm_ctrl.size)
-    ctrl_fmt = "=idddd"
+    ctrl_fmt = "=idddddddddd"  # do_train, loss, policy_loss, entropy_mean, entropy_std, grad_norm, returns_mean, returns_std, action_0_freq, action_1_freq, action_2_freq
 
     mapfile = mmap.mmap(shm.fd, total_size)
 
@@ -190,7 +211,9 @@ if __name__ == "__main__":
     # Store as list of tuples
     replay_buffer = []
 
-
+    # Episode counter for model checkpointing
+    episode_count = 0
+    
     prev_vision_tensor = torch.zeros(vision_size*2)
     prev_action = 0
     while True:
@@ -199,11 +222,11 @@ if __name__ == "__main__":
        # print("[INF] got signal")
         
         # Check if this is a do_train request
-        do_train, loss, entropy_mean, loss_1_sum, entropy_sum = struct.unpack_from(ctrl_fmt, mapfile_ctrl, 0)
+        do_train, loss, policy_loss, entropy_mean, entropy_std, grad_norm, returns_mean, returns_std, action_0_freq, action_1_freq, action_2_freq = struct.unpack_from(ctrl_fmt, mapfile_ctrl, 0)
         
         if do_train == 1:  
             #print("[ENV] Train flag recieved")
-
+            episode_count += 1
 
             # читаем vision как np.int8
             vision = np.frombuffer(mapfile, dtype=np.int8,
@@ -223,13 +246,41 @@ if __name__ == "__main__":
             )
 
 
-            loss,entropy_mean,loss_1_sum, entropy_sum = train()
+            metrics = train()
+            
+            # Save model checkpoint every 50 episodes
+            if episode_count % 50 == 0:
+                checkpoint_path = f"/logs/model_checkpoint_episode_{episode_count}.pth"
+                torch.save({
+                    'epoch': episode_count,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'loss': metrics['loss'],
+                    'architecture': {
+                        'input_size': model.input_size,
+                        'hidden_units_1': model.hidden_units_1,
+                        'hidden_units_2': model.hidden_units_2
+                    },
+                    'hyperparameters': {
+                        'learning_rate': args.learning_rate,
+                        'gamma': args.gamma,
+                        'beta': args.beta
+                    }
+                }, checkpoint_path)
+                print(f"[INF] Saved model checkpoint: {checkpoint_path}")
+            
             struct.pack_into(ctrl_fmt, mapfile_ctrl, 0,
-                             0,
-                             loss,
-                             entropy_mean,
-                             loss_1_sum,
-                             entropy_sum)
+                             0,  # do_train flag
+                             metrics['loss'],
+                             metrics['policy_loss'],
+                             metrics['entropy_mean'],
+                             metrics['entropy_std'],
+                             metrics['grad_norm'],
+                             metrics['returns_mean'],
+                             metrics['returns_std'],
+                             metrics['action_0_freq'],
+                             metrics['action_1_freq'],
+                             metrics['action_2_freq'])
                              
             replay_buffer = []
             prev_action = 0

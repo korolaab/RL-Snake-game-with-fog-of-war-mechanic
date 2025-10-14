@@ -6,6 +6,8 @@ import mmap
 import mlflow
 import signal
 import sys
+import glob
+import os
 
 # Parse command line arguments
 parser = argparse.ArgumentParser(description="Clock service for Snake RL")
@@ -65,7 +67,7 @@ sem_inf_training = posix_ipc.Semaphore("/sem_inf_training", posix_ipc.O_CREX, in
 # Control format: command (int)
 # 0 = normal step
 # 1 = train
-ctrl_fmt_inf = "=idddd" # do_train, loss, entropy.mean(), entropy.sum(). loss_1.sum()
+ctrl_fmt_inf = "=idddddddddd" # do_train, loss, policy_loss, entropy_mean, entropy_std, grad_norm, returns_mean, returns_std, action_0_freq, action_1_freq, action_2_freq
 sem_inf_control = posix_ipc.SharedMemory("/inf_control", posix_ipc.O_CREX, 
     size=struct.calcsize(ctrl_fmt_inf))
 mapfile_inf_ctrl = mmap.mmap(sem_inf_control.fd, sem_inf_control.size)
@@ -77,6 +79,10 @@ mapfile = mmap.mmap(shm.fd, shm.size)
 episode = 0
 frame = 0
 mlflow_run = None
+
+# Track moving averages
+reward_history = []
+length_history = []
 
 def cleanup_resources():
     """Clean up all IPC resources and MLflow"""
@@ -119,6 +125,14 @@ def cleanup_resources():
 try:
     mlflow_run = mlflow.start_run()
     with mlflow_run:
+        # Log hyperparameters once at start
+        mlflow.log_params({
+            "vision_size": args.vision_size,
+            "fps": args.fps,
+            "mlflow_experiment_name": args.mlflow_experiment_name,
+            "architecture": "REINFORCE",
+            "shared_memory_communication": True
+        })
         while running:
             if args.fps != 0:
                 time.sleep(1.0 / args.fps)
@@ -142,16 +156,54 @@ try:
                 sem_inf_tick.release()   # разрешаем INF работать
                 sem_inf_done.acquire()   # ждем, пока INF закончит
                 
-                do_train, loss, entropy_mean, loss_1_sum, entropy_sum = struct.unpack_from(ctrl_fmt_inf, mapfile_inf_ctrl, 0)
-                print(f"[Clock] {episode}:{snake_length=} {loss=:0.3f} {entropy_mean=:0.3f} {loss_1_sum=:0.3f} {entropy_sum=:0.3f} {frames=}  {sum_reward=}")
+                do_train, loss, policy_loss, entropy_mean, entropy_std, grad_norm, returns_mean, returns_std, action_0_freq, action_1_freq, action_2_freq = struct.unpack_from(ctrl_fmt_inf, mapfile_inf_ctrl, 0)
+                print(f"[Clock] {episode}:{snake_length=} {loss=:0.3f} {policy_loss=:0.3f} {entropy_mean=:0.3f} {grad_norm=:0.3f} {frames=}  {sum_reward=}")
                 
-                mlflow.log_metric("snake_length", snake_length, step=episode)
-                mlflow.log_metric("loss", loss, step=episode)
-                mlflow.log_metric("entropy_mean", entropy_mean, step=episode)
-                mlflow.log_metric("loss_1_sum", loss_1_sum, step=episode)
-                mlflow.log_metric("entropy_sum", entropy_sum, step=episode)
-                mlflow.log_metric("frames", frames, step=episode)
-                mlflow.log_metric("sum_reward", sum_reward, step=episode)
+                # Update moving averages
+                reward_history.append(sum_reward)
+                length_history.append(frames)
+                
+                # Prepare metrics dict
+                metrics = {
+                    "episode_reward": sum_reward,
+                    "episode_length": frames,
+                    "snake_length": snake_length,
+                    "total_loss": loss,
+                    "policy_loss": policy_loss,
+                    "entropy_mean": entropy_mean,
+                    "entropy_std": entropy_std,
+                    "grad_norm": grad_norm,
+                    "returns_mean": returns_mean,
+                    "returns_std": returns_std,
+                    "action_0_freq": action_0_freq,
+                    "action_1_freq": action_1_freq,
+                    "action_2_freq": action_2_freq
+                }
+                
+                # Add moving averages (last 100 episodes)
+                if len(reward_history) >= 100:
+                    metrics["reward_100ep_avg"] = sum(reward_history[-100:]) / 100
+                    metrics["length_100ep_avg"] = sum(length_history[-100:]) / 100
+                elif len(reward_history) >= 10:
+                    # Use available history if less than 100 episodes
+                    metrics["reward_10ep_avg"] = sum(reward_history[-10:]) / len(reward_history[-10:])
+                    metrics["length_10ep_avg"] = sum(length_history[-10:]) / len(length_history[-10:])
+                
+                # Log comprehensive metrics
+                mlflow.log_metrics(metrics, step=episode)
+                
+                # Model checkpointing every 50 episodes
+                if episode % 50 == 0:
+                    import glob
+                    import os
+                    model_files = glob.glob("/logs/model_checkpoint_*.pth")
+                    if model_files:
+                        # Log latest model as artifact
+                        latest_model = max(model_files, key=os.path.getctime)
+                        mlflow.log_artifact(latest_model, "models")
+                        print(f"[Clock] Logged model checkpoint: {os.path.basename(latest_model)}")
+                        # Clean up after logging
+                        os.remove(latest_model)
 
             else:
                 sem_env_tick.release()   # разрешаем ENV работать
