@@ -9,14 +9,18 @@ services:
       - shared-memory:/dev/shm
       - ./logs-storage:/logs
     environment:
-      - MAX_EPISODES=100
+      - MAX_EPISODES=30
       - MLFLOW_TRACKING_URI=file:///logs/mlruns
     command: >
       python /app/clock.py
       --fps 0
       --vision-size 5
       --mlflow_experiment_name snake-rl-docker
+      --max-episodes 3000
     restart: "no"
+    depends_on:
+      - env
+      - inference
 
   # Environment Service - Snake Game Engine
   env:

@@ -15,6 +15,7 @@ parser.add_argument("--vision-size", type=int, default=5, help="Vision area size
 parser.add_argument("--fps", type=float, default=1.0, help="Frames per second (sleep interval)")
 parser.add_argument('--mlflow_server', type=str, default=None, help='Mlflow server host')
 parser.add_argument('--mlflow_experiment_name', required=True, type=str, help='Mlflow experiment')
+parser.add_argument("--max-episodes", type=int, default=None, help="Maximum episodes to run")
 args = parser.parse_args()
 
 mlflow.set_tracking_uri(uri=args.mlflow_server)
@@ -133,7 +134,7 @@ try:
             "architecture": "REINFORCE",
             "shared_memory_communication": True
         })
-        while running:
+        while running and (args.max_episodes is None or episode < args.max_episodes):
             if args.fps != 0:
                 time.sleep(1.0 / args.fps)
             
@@ -211,6 +212,10 @@ try:
 
                 sem_inf_tick.release()   # разрешаем INF работать
                 sem_inf_done.acquire()   # ждем, пока INF закончит
+        
+        # Check if we reached max episodes
+        if args.max_episodes is not None and episode >= args.max_episodes:
+            print(f"[Clock] Reached maximum episodes ({args.max_episodes}). Stopping experiment.")
 
 except KeyboardInterrupt:
     print("\n[Clock] Interrupted by user")
