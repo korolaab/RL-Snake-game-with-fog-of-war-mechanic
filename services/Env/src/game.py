@@ -93,7 +93,8 @@ class SnakeGame:
                  VISION_RADIUS,
                  VISION_DISPLAY_COLS,
                  VISION_DISPLAY_ROWS,
-                 max_lifetime=10000
+                 max_lifetime=10000,
+                 max_hunger_steps=150
                  ):
         self.GRID_WIDTH = GRID_WIDTH
         self.GRID_HEIGHT = GRID_HEIGHT
@@ -108,6 +109,11 @@ class SnakeGame:
         self.max_lifetime = max_lifetime
         self.lifetime_steps = 0
         
+        # Hunger and apple tracking system
+        self.steps_without_apple = 0
+        self.max_hunger_steps = max_hunger_steps
+        self.eaten_apples = 0
+        
         self.reset()
     
     def reset(self):
@@ -117,14 +123,16 @@ class SnakeGame:
             (self.GRID_WIDTH // 2 - 2, self.GRID_HEIGHT // 2)
         ]
         self.direction = (1, 0)
-        self.max_len = len(self.snake)
+        self.max_len = 0  # Reset max apples eaten
         
         # Initialize running apple
         apple_pos = self.random_food_position()
         self.apple = RunningApple(apple_pos, self.GRID_WIDTH, self.GRID_HEIGHT)
         
-        # Reset lifetime
+        # Reset lifetime and hunger
         self.lifetime_steps = 0
+        self.steps_without_apple = 0
+        self.eaten_apples = 0
     
     def random_food_position(self):
         while True:
@@ -141,13 +149,19 @@ class SnakeGame:
             return self.direction
     
     def update(self, move):
-        # Increment lifetime counter
+        # Increment lifetime counter and hunger
         self.lifetime_steps += 1
+        self.steps_without_apple += 1
         
         # Check for lifetime expiration
         if self.lifetime_steps >= self.max_lifetime:
             state = self.get_state()
             return state, 0, True  # Die from old age
+        
+        # Check for hunger death
+        if self.steps_without_apple >= self.max_hunger_steps:
+            state = self.get_state()
+            return state, 0, True  # Die from hunger
         
         # Apply the move
         self.direction = self.relative_turn(move)
@@ -172,12 +186,15 @@ class SnakeGame:
         reward = 1
         if new_head == self.apple.position:
             reward += 1  # Give reward but NO growth
+            self.eaten_apples += 1  # Track eaten apples
+            self.steps_without_apple = 0  # Reset hunger timer
             self.apple.respawn(self.snake)  # Respawn apple at new location
         
         # Always remove tail (no growth, fixed length snake)
         self.snake.pop()
         
-        self.max_len = max(len(self.snake), self.max_len)
+        # Update max_len to track maximum apples eaten (for compatibility)
+        self.max_len = max(self.eaten_apples, self.max_len)
         state = self.get_state()
         return state, reward, False
     
@@ -238,9 +255,9 @@ class SnakeGame:
             elif color == WHITE:
                 matrix.append([0, 0])
         
-        # Add snake length information
-        is_alive = np.exp(-np.abs(len(self.snake)))
-        matrix.append([is_alive, 1 - is_alive])
+        # Add eaten apples information instead of snake length
+        apples_normalized = min(self.eaten_apples / 10.0, 1.0)  # Normalize to 0-1 range
+        matrix.append([apples_normalized, 1 - apples_normalized])
         
         # Add last action information
         last_action_vector = [1, 0] if last_action != 1 else [0, 1]

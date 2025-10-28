@@ -72,7 +72,8 @@ if __name__ == "__main__":
         args.vision_radius,
         args.vision_display_cols,
         args.vision_display_rows,
-        args.max_lifetime
+        args.max_lifetime,
+        args.max_hunger_steps
     )
 
     header_fmt = "<d?q"
