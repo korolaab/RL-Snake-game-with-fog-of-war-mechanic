@@ -15,7 +15,7 @@ services:
       python /app/clock.py
       --fps 0
       --vision-size 5
-      --mlflow_experiment_name snake-rl-docker
+      --mlflow_experiment_name running-apple-hunt
       --max-episodes 3000
     restart: "no"
     depends_on:
@@ -38,6 +38,7 @@ services:
       --reward-config '{"alive": 1, "eat_food": 0, "game_over": 0}'
       --max-lifetime 10000
       --apple-speed 0.5
+      --max-hunger-steps 150
     restart: "no"
 
   # Inference Service - Neural Network Agent

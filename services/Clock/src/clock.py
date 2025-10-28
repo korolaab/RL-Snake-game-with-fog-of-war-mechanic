@@ -84,6 +84,7 @@ mlflow_run = None
 # Track moving averages
 reward_history = []
 length_history = []
+apples_history = []
 
 def cleanup_resources():
     """Clean up all IPC resources and MLflow"""
@@ -152,23 +153,24 @@ try:
 
                 sem_env_tick.release()   # разрешаем ENV работать
                 sem_env_done.acquire()   # ждем, пока ENV скажет "готово"
-                reset, snake_length, frames, sum_reward = struct.unpack_from(ctrl_fmt_env, mapfile_env_ctrl, 0)
+                reset, eaten_apples, frames, sum_reward = struct.unpack_from(ctrl_fmt_env, mapfile_env_ctrl, 0)
 
                 sem_inf_tick.release()   # разрешаем INF работать
                 sem_inf_done.acquire()   # ждем, пока INF закончит
                 
                 do_train, loss, policy_loss, entropy_mean, entropy_std, grad_norm, returns_mean, returns_std, action_0_freq, action_1_freq, action_2_freq = struct.unpack_from(ctrl_fmt_inf, mapfile_inf_ctrl, 0)
-                print(f"[Clock] {episode}:{snake_length=} {loss=:0.3f} {policy_loss=:0.3f} {entropy_mean=:0.3f} {grad_norm=:0.3f} {frames=}  {sum_reward=}")
+                print(f"[Clock] {episode}:{eaten_apples=} {loss=:0.3f} {policy_loss=:0.3f} {entropy_mean=:0.3f} {grad_norm=:0.3f} {frames=}  {sum_reward=}")
                 
                 # Update moving averages
                 reward_history.append(sum_reward)
                 length_history.append(frames)
+                apples_history.append(eaten_apples)
                 
                 # Prepare metrics dict
                 metrics = {
                     "episode_reward": sum_reward,
                     "episode_length": frames,
-                    "snake_length": snake_length,
+                    "eaten_apples": eaten_apples,
                     "total_loss": loss,
                     "policy_loss": policy_loss,
                     "entropy_mean": entropy_mean,
@@ -185,10 +187,12 @@ try:
                 if len(reward_history) >= 100:
                     metrics["reward_100ep_avg"] = sum(reward_history[-100:]) / 100
                     metrics["length_100ep_avg"] = sum(length_history[-100:]) / 100
+                    metrics["apples_100ep_avg"] = sum(apples_history[-100:]) / 100
                 elif len(reward_history) >= 10:
                     # Use available history if less than 100 episodes
                     metrics["reward_10ep_avg"] = sum(reward_history[-10:]) / len(reward_history[-10:])
                     metrics["length_10ep_avg"] = sum(length_history[-10:]) / len(length_history[-10:])
+                    metrics["apples_10ep_avg"] = sum(apples_history[-10:]) / len(apples_history[-10:])
                 
                 # Log comprehensive metrics
                 mlflow.log_metrics(metrics, step=episode)
