@@ -36,6 +36,8 @@ services:
       --vision_display_cols 11
       --vision_display_rows 11
       --reward-config '{"alive": 1, "eat_food": 0, "game_over": 0}'
+      --max-lifetime 10000
+      --apple-speed 0.5
     restart: "no"
 
   # Inference Service - Neural Network Agent

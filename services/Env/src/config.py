@@ -23,4 +23,6 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument('--reward-config', type=str, default='{"alive": 1}', help='Reward configuration as JSON string. Example: \'{"alive": 1, "food": 10, "death": -10}\'')
     parser.add_argument('--max-steps-without-food', type=int, default=50, help='Maximum steps before game over if no food eaten')
+    parser.add_argument('--max-lifetime', type=int, default=10000, help='Maximum steps before snake dies of old age')
+    parser.add_argument('--apple-speed', type=float, default=0.5, help='Apple movement speed (0.5 = half speed, moves every 2 frames)')
     return parser.parse_args()
