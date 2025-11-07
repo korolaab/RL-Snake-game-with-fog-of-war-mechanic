@@ -14,19 +14,20 @@ DARKGRAY  = (50, 51, 50)
 
 
 class RunningApple:
-    """Apple that runs away from snake at half speed"""
+    """Apple that runs away from snake at configurable fraction of snake speed"""
     
-    def __init__(self, position, grid_width, grid_height):
+    def __init__(self, position, grid_width, grid_height, speed_fraction=0.5):
         self.position = position
         self.grid_width = grid_width
         self.grid_height = grid_height
-        self.move_counter = 0
+        self.move_counter = 0.0
+        self.speed_fraction = speed_fraction  # Fraction of snake speed (0.5 = half speed)
         
     def should_move(self):
-        """Check if apple should move (every 2 frames)"""
-        self.move_counter += 1
-        if self.move_counter >= 2:
-            self.move_counter = 0
+        """Check if apple should move based on speed fraction"""
+        self.move_counter += self.speed_fraction
+        if self.move_counter >= 1.0:
+            self.move_counter -= 1.0
             return True
         return False
     
@@ -83,7 +84,7 @@ class RunningApple:
                    random.randint(0, self.grid_height - 1))
             if pos not in snake_body:
                 self.position = pos
-                self.move_counter = 0
+                self.move_counter = 0.0  # Reset movement counter
                 break
 
 class SnakeGame:
@@ -94,7 +95,8 @@ class SnakeGame:
                  VISION_DISPLAY_COLS,
                  VISION_DISPLAY_ROWS,
                  max_lifetime=10000,
-                 max_hunger_steps=150
+                 max_hunger_steps=150,
+                 apple_speed=0.5
                  ):
         self.GRID_WIDTH = GRID_WIDTH
         self.GRID_HEIGHT = GRID_HEIGHT
@@ -114,6 +116,9 @@ class SnakeGame:
         self.max_hunger_steps = max_hunger_steps
         self.eaten_apples = 0
         
+        # Apple speed configuration
+        self.apple_speed = apple_speed
+        
         self.reset()
     
     def reset(self):
@@ -125,9 +130,9 @@ class SnakeGame:
         self.direction = (1, 0)
         self.max_len = 0  # Reset max apples eaten
         
-        # Initialize running apple
+        # Initialize running apple with configured speed
         apple_pos = self.random_food_position()
-        self.apple = RunningApple(apple_pos, self.GRID_WIDTH, self.GRID_HEIGHT)
+        self.apple = RunningApple(apple_pos, self.GRID_WIDTH, self.GRID_HEIGHT, self.apple_speed)
         
         # Reset lifetime and hunger
         self.lifetime_steps = 0

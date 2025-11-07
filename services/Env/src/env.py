@@ -73,7 +73,8 @@ if __name__ == "__main__":
         args.vision_display_cols,
         args.vision_display_rows,
         args.max_lifetime,
-        args.max_hunger_steps
+        args.max_hunger_steps,
+        args.apple_speed
     )
 
     header_fmt = "<d?q"

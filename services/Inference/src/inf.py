@@ -52,7 +52,6 @@ class SnakeNet(nn.Module):
         return self.network(x)
     
 def train():
-    model
     # Extract episodes
     episodes = [replay_buffer]#TODO: several episodes
     all_states, all_actions, all_returns = [], [], []
@@ -195,7 +194,9 @@ if __name__ == "__main__":
 
     header_fmt = "<d?q"
     header_size = struct.calcsize(header_fmt)
-    vision_size = 62 #TODO unhardcode
+    # Calculate vision size dynamically (consistent with environment)
+    vision_radius = 5  # Should match environment configuration
+    vision_size = 2 * vision_radius * (vision_radius + 1) + 2
     total_size = header_size + (vision_size * 8) * 2
 
     mapfile_ctrl = mmap.mmap(shm_ctrl.fd, shm_ctrl.size)
@@ -228,14 +229,13 @@ if __name__ == "__main__":
             #print("[ENV] Train flag recieved")
             episode_count += 1
 
-            # читаем vision как np.int8
-            vision = np.frombuffer(mapfile, dtype=np.int8,
+            # Read reward and game state from shared memory
+            reward, game_over, action = struct.unpack_from(header_fmt, mapfile, 0)
+
+            # читаем vision как np.float64 (consistent with inference section)
+            vision = np.frombuffer(mapfile, dtype=np.float64,
                         count=vision_size*2, offset=header_size)
             vision_tensor = torch.from_numpy(vision.astype(np.float32))
-
-
-            action_offset = struct.calcsize("<d?") 
-    
 
             # Each experience: (state, action, reward, next_state, done) 
             experience = (
