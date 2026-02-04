@@ -10,8 +10,8 @@ spec:
       labels:
         {{- include "snake-rl.selectorLabels" . | nindent 8 }}
     spec:
-      # Clock service starts first to create shared memory
-      initContainers:
+      # All three containers run in parallel, synchronized via shared memory
+      containers:
         - name: clock
           image: "{{ .Values.images.clock.repository }}:{{ .Values.images.clock.tag }}"
           imagePullPolicy: {{ .Values.images.pullPolicy }}
@@ -34,8 +34,6 @@ spec:
           resources:
             {{- toYaml .Values.resources.clock | nindent 12 }}
 
-      # Env and Inference run in parallel after Clock completes
-      containers:
         - name: env
           image: "{{ .Values.images.env.repository }}:{{ .Values.images.env.tag }}"
           imagePullPolicy: {{ .Values.images.pullPolicy }}
