@@ -1,0 +1,30 @@
+# Minikube-specific overrides for Snake RL
+# Use with: helm install snake-rl . -f values-minikube.yaml
+
+# Smaller storage for minikube
+storage:
+  size: 5Gi  # Reduced from 10Gi
+
+# Lower resource requests for local development
+resources:
+  clock:
+    requests:
+      cpu: 50m      # Reduced from 100m
+      memory: 128Mi  # Reduced from 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  env:
+    requests:
+      cpu: 100m     # Reduced from 200m
+      memory: 256Mi  # Reduced from 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  inference:
+    requests:
+      cpu: 200m     # Reduced from 500m
+      memory: 512Mi  # Reduced from 1Gi
+    limits:
+      cpu: 2000m
+      memory: 2Gi

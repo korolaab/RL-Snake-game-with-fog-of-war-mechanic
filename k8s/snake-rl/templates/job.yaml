@@ -1,0 +1,98 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "snake-rl.fullname" . }}
+  labels:
+    {{- include "snake-rl.labels" . | nindent 4 }}
+spec:
+  template:
+    metadata:
+      labels:
+        {{- include "snake-rl.selectorLabels" . | nindent 8 }}
+    spec:
+      # Clock service starts first to create shared memory
+      initContainers:
+        - name: clock
+          image: "{{ .Values.images.clock.repository }}:{{ .Values.images.clock.tag }}"
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              python /app/clock.py \
+                --fps {{ .Values.clock.fps }} \
+                --vision-size {{ .Values.clock.visionSize }} \
+                --mlflow_experiment_name {{ .Values.experiment.name }} \
+                --max-episodes {{ .Values.experiment.maxEpisodes }}
+          volumeMounts:
+            - name: shared-memory
+              mountPath: /dev/shm
+            - name: logs
+              mountPath: /logs
+          env:
+            - name: MLFLOW_TRACKING_URI
+              value: "file:///logs/mlruns"
+          resources:
+            {{- toYaml .Values.resources.clock | nindent 12 }}
+
+      # Env and Inference run in parallel after Clock completes
+      containers:
+        - name: env
+          image: "{{ .Values.images.env.repository }}:{{ .Values.images.env.tag }}"
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              python /app/env.py \
+                --grid_width {{ .Values.env.gridWidth }} \
+                --grid_height {{ .Values.env.gridHeight }} \
+                --vision_radius {{ .Values.env.visionRadius }} \
+                --vision_display_cols {{ .Values.env.visionDisplayCols }} \
+                --vision_display_rows {{ .Values.env.visionDisplayRows }} \
+                --reward-config '{{ .Values.env.rewardConfig }}' \
+                --max-lifetime {{ .Values.env.maxLifetime }} \
+                --apple-speed {{ .Values.env.appleSpeed }} \
+                --max-hunger-steps {{ .Values.env.maxHungerSteps }}
+          volumeMounts:
+            - name: shared-memory
+              mountPath: /dev/shm
+            - name: logs
+              mountPath: /logs
+          resources:
+            {{- toYaml .Values.resources.env | nindent 12 }}
+
+        - name: inference
+          image: "{{ .Values.images.inference.repository }}:{{ .Values.images.inference.tag }}"
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              python /app/inf.py \
+                --snake-id {{ .Values.inference.snakeId }} \
+                --learning-rate {{ .Values.inference.learningRate }} \
+                --gamma {{ .Values.inference.gamma }} \
+                --beta {{ .Values.inference.beta }}
+          volumeMounts:
+            - name: shared-memory
+              mountPath: /dev/shm
+            - name: logs
+              mountPath: /logs
+          resources:
+            {{- toYaml .Values.resources.inference | nindent 12 }}
+
+      # Shared volumes
+      volumes:
+        - name: shared-memory
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{ .Values.sharedMemory.size }}
+        - name: logs
+          {{- if .Values.storage.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "snake-rl.fullname" . }}-logs
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+
+      restartPolicy: {{ .Values.job.restartPolicy }}
+  backoffLimit: {{ .Values.job.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.job.ttlSecondsAfterFinished }}

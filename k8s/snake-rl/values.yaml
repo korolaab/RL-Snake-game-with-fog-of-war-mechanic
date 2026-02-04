@@ -1,92 +1,82 @@
-# ==== GLOBAL CONFIGURATION ====
-global:
-  imageRegistry: "localhost:5000"
-  imageTag: "latest"
-  imagePullPolicy: Always
-
-# ==== EXPERIMENT CONFIGURATION ====
+# Experiment settings
 experiment:
-  name: "snake-rl-shared-memory"
-  maxEpisodes: 1000                    # Configurable termination
-  
-# ==== MLFLOW CONFIGURATION ====  
-mlflow:
-  enabled: true                        # Can disable MLflow entirely
-  trackingUri: ""                      # Empty = file-based in PVC
-  experimentName: "snake-rl"           # MLflow experiment name
-  
-# ==== SERVICE PARAMETERS ====
+  name: running-apple-hunt
+  maxEpisodes: 3000
+
+# Docker images (match docker-compose.yaml)
+images:
+  clock:
+    repository: localhost:5000/snake-rl/clock
+    tag: latest
+  env:
+    repository: localhost:5000/snake-rl/env
+    tag: latest
+  inference:
+    repository: localhost:5000/snake-rl/inference
+    tag: latest
+  pullPolicy: Never  # Use local images
+
+# Clock service parameters (from docker-compose.yaml)
 clock:
-  image:
-    repository: "snake-rl/clock"
-    tag: ""
-  fps: 1.0
+  fps: 0
   visionSize: 5
-  
+
+# Environment service parameters (from docker-compose.yaml)
 env:
-  image:
-    repository: "snake-rl/env"
-    tag: ""
   gridWidth: 11
   gridHeight: 11
   visionRadius: 5
   visionDisplayCols: 11
   visionDisplayRows: 11
-  rewardConfig: '{"alive": 1, "eat_food": 10, "game_over": -10}'
-  
+  rewardConfig: '{"alive": 1, "eat_food": 0, "game_over": 0}'
+  maxLifetime: 10000
+  appleSpeed: 0.5
+  maxHungerSteps: 150
+
+# Inference service parameters (from docker-compose.yaml)
 inference:
-  image:
-    repository: "snake-rl/inference"
-    tag: ""
   snakeId: 1
   learningRate: 0.001
-  gamma: 0.99
+  gamma: 0.9
   beta: 0.1
 
-# ==== JOB CONFIGURATION ====
-job:
-  restartPolicy: Never
-  ttlSecondsAfterFinished: 300
-  backoffLimit: 0
-  
-# ==== STORAGE CONFIGURATION ====
+# Shared memory configuration (increased from docker-compose 128Mi)
+sharedMemory:
+  size: 256Mi
+
+# Persistent storage for logs (MLflow + checkpoints)
 storage:
-  logs:
-    enabled: true
-    size: 10Gi
-    storageClass: "local-path"
-    accessMode: "ReadWriteOnce"
-    
-# ==== RESOURCE CONFIGURATION ====  
+  enabled: true
+  size: 10Gi
+  storageClass: standard
+  accessMode: ReadWriteOnce
+
+# Resource limits (minikube-friendly)
 resources:
   clock:
-    requests: 
+    requests:
       cpu: 100m
-      memory: 128Mi
-    limits: 
+      memory: 256Mi
+    limits:
       cpu: 500m
       memory: 512Mi
   env:
-    requests: 
+    requests:
       cpu: 200m
-      memory: 256Mi
-    limits: 
+      memory: 512Mi
+    limits:
       cpu: 1000m
       memory: 1Gi
   inference:
-    requests: 
+    requests:
       cpu: 500m
-      memory: 512Mi
-    limits: 
+      memory: 1Gi
+    limits:
       cpu: 2000m
       memory: 2Gi
 
-# ==== LEGACY CONFIGURATIONS (unused in shared memory) ====
-createNamespace: false
-rabbitmq:
-  enabled: false
-logging:
-  level: "INFO"
-networkPolicy:
-  enabled: false
-
+# Job configuration
+job:
+  restartPolicy: Never
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 300

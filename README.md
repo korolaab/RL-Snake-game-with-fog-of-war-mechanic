@@ -174,3 +174,67 @@ Debug (Clock + Env + Inf)  # Launches all services with debugpy
 3. Inference service (waits for Clock resources)
 
 **Cleanup**: Automatic shared memory cleanup via VSCode `clean-shm` task
+
+### Method 3: Kubernetes / Minikube (Production & Local Cluster)
+
+Run experiments in Kubernetes using Helm. Perfect for reproducibility and scaling.
+
+#### Quick Start (Minikube)
+
+```bash
+cd k8s/minikube
+./setup.sh
+```
+
+The script will:
+1. Start minikube (if not running)
+2. Build Docker images in minikube's Docker
+3. Install Helm chart with minikube-optimized values
+4. Start the experiment Job
+
+#### Monitor Progress
+
+```bash
+# Watch job status
+kubectl get jobs -w
+
+# View logs from Clock (master coordinator)
+kubectl logs job/snake-rl -c clock -f
+
+# Check all containers
+kubectl logs job/snake-rl -c env        # Game engine
+kubectl logs job/snake-rl -c inference  # RL agent
+```
+
+#### Verify Shared Memory
+
+```bash
+kubectl exec -it job/snake-rl -c env -- df -h /dev/shm
+# Should show 256MB available
+```
+
+#### Access Results
+
+```bash
+# List generated files
+kubectl exec -it job/snake-rl -c clock -- ls -la /logs
+
+# Copy model checkpoint
+kubectl cp snake-rl:/logs/model_checkpoint_episode_3000.pth ./model.pth
+```
+
+#### Cleanup
+
+```bash
+# Uninstall chart
+helm uninstall snake-rl
+
+# Stop minikube (optional)
+minikube stop
+```
+
+#### Manual Installation
+
+See detailed guide: [k8s/snake-rl/README.md](k8s/snake-rl/README.md)
+
+**Architecture**: Single Kubernetes Job with 3 containers (clock as initContainer, env + inference as main containers) sharing `/dev/shm` via emptyDir volume with `medium: Memory`.
