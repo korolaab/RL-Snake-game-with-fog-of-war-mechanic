@@ -44,16 +44,133 @@ Model have only the local observation as shown in the FOV.
 2. Services signal completion → Clock coordinates next step
 3. Episode end → Clock triggers training in INF service
 
-### Development Setup
+## Running Experiments
 
-**VSCode Debug Launch** (recommended):
+### Method 1: Docker Compose (Recommended for Production)
+
+This method runs the full shared memory architecture in Docker containers with MLflow tracking.
+
+#### Step 1: Build Base Image
+
+First, build the base image containing PyTorch and shared dependencies:
+
+```bash
+cd services/
+docker build -t korolaab/snake_rl_base:latest -f Dockerfile .
+```
+
+This will take 5-10 minutes as it downloads PyTorch and CUDA libraries.
+
+#### Step 2: Build Service Images
+
+Build the three service images:
+
+```bash
+# Build Clock service (master coordinator)
+docker build -t localhost:5000/snake-rl/clock:latest -f Clock/Dockerfile Clock/
+
+# Build Environment service (Snake game engine)
+docker build -t localhost:5000/snake-rl/env:latest -f Env/Dockerfile Env/
+
+# Build Inference service (RL agent)
+docker build -t localhost:5000/snake-rl/inference:latest -f Inference/Dockerfile Inference/
+```
+
+#### Step 3: Run Experiment
+
+Start all services with Docker Compose:
+
+```bash
+cd services/
+docker compose up
+```
+
+The experiment will:
+- Run for 3000 episodes (configurable in `docker-compose.yaml`)
+- Log metrics to MLflow every episode
+- Save model checkpoints every 50 episodes
+- Store results in `./logs-storage/`
+
+#### Step 4: Monitor Progress
+
+Watch logs in real-time:
+
+```bash
+# All services
+docker compose logs -f
+
+# Specific service
+docker compose logs -f clock
+docker compose logs -f env
+docker compose logs -f inference
+```
+
+Expected output:
+```
+clock-1 | [Clock] 100:eaten_apples=0 loss=-0.109 entropy_mean=1.098 frames=150 sum_reward=149
+clock-1 | [Clock] 101:eaten_apples=1 loss=-0.107 entropy_mean=1.097 frames=153 sum_reward=153
+```
+
+#### Step 5: View Results
+
+After the experiment completes, view MLflow metrics:
+
+```bash
+cd services/logs-storage/
+mlflow ui --backend-store-uri file:///logs/mlruns
+```
+
+Open http://localhost:5000 to explore:
+- Episode rewards over time
+- Loss curves
+- Entropy trends
+- Eaten apples statistics
+
+Model checkpoints are saved in `services/logs-storage/`:
+```bash
+ls -lh services/logs-storage/*.pth
+```
+
+#### Step 6: Stop Experiment
+
+To stop the experiment early:
+
+```bash
+docker compose down
+```
+
+### Configuration Options
+
+Edit `services/docker-compose.yaml` to customize:
+
+**Clock Service:**
+- `--max-episodes 3000` - Total episodes to run
+- `--fps 0` - Game speed (0 = unlimited)
+- `--vision-size 5` - Field of view radius
+
+**Environment Service:**
+- `--grid_width 11` - Grid width
+- `--grid_height 11` - Grid height
+- `--max-lifetime 10000` - Max steps per episode
+- `--apple-speed 0.5` - Apple movement speed
+- `--max-hunger-steps 150` - Steps before snake dies of hunger
+- `--reward-config '{"alive": 1, "eat_food": 0, "game_over": 0}'` - Reward structure
+
+**Inference Service:**
+- `--learning-rate 0.001` - Neural network learning rate
+- `--gamma 0.9` - Discount factor
+- `--beta 0.1` - Entropy regularization weight
+
+### Method 2: VSCode Debug Launch (Development)
+
+**VSCode Debug Launch** (recommended for debugging):
 ```
 Debug (Clock + Env + Inf)  # Launches all services with debugpy
 ```
 
 **Manual Start Order**:
 1. Clock service (creates shared memory resources)
-2. Environment service (waits for Clock resources)  
+2. Environment service (waits for Clock resources)
 3. Inference service (waits for Clock resources)
 
 **Cleanup**: Automatic shared memory cleanup via VSCode `clean-shm` task

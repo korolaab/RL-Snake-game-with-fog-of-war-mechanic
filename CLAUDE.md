@@ -45,7 +45,32 @@ make destroy          # Remove everything (requires 'DELETE' confirmation)
 
 ### Development Workflows
 
-#### Docker Compose (Local Development)
+#### Docker Compose with Shared Memory (Recommended)
+
+**Production-ready setup** with Clock/Env/Inference services using POSIX shared memory:
+
+```bash
+cd services/
+
+# 1. Build images (one-time setup)
+docker build -t korolaab/snake_rl_base:latest -f Dockerfile .
+docker build -t localhost:5000/snake-rl/clock:latest -f Clock/Dockerfile Clock/
+docker build -t localhost:5000/snake-rl/env:latest -f Env/Dockerfile Env/
+docker build -t localhost:5000/snake-rl/inference:latest -f Inference/Dockerfile Inference/
+
+# 2. Run experiment (3000 episodes with MLflow tracking)
+docker compose up
+
+# 3. View results
+cd logs-storage/ && mlflow ui --backend-store-uri file:///logs/mlruns
+```
+
+See `services/QUICKSTART.md` for detailed guide.
+
+#### Docker Compose - Legacy HTTP/gRPC (Root Directory)
+
+**Older architecture** with HTTP API and gRPC communication:
+
 ```bash
 # Start experiment with interactive setup
 ./start_experiment.sh

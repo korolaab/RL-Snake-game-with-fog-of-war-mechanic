@@ -4,7 +4,7 @@ services:
   # Clock Service - Master Coordinator
   clock:
     image: localhost:5000/snake-rl/clock:latest
-    pull_policy: always
+    pull_policy: never
     volumes:
       - shared-memory:/dev/shm
       - ./logs-storage:/logs
@@ -25,6 +25,7 @@ services:
   # Environment Service - Snake Game Engine
   env:
     image: localhost:5000/snake-rl/env:latest
+    pull_policy: never
     volumes:
       - shared-memory:/dev/shm
       - ./logs-storage:/logs
@@ -44,6 +45,7 @@ services:
   # Inference Service - Neural Network Agent
   inference:
     image: localhost:5000/snake-rl/inference:latest
+    pull_policy: never
     volumes:
       - shared-memory:/dev/shm
       - ./logs-storage:/logs
