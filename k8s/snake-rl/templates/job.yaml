@@ -46,10 +46,7 @@ spec:
                 --vision_radius {{ .Values.env.visionRadius }} \
                 --vision_display_cols {{ .Values.env.visionDisplayCols }} \
                 --vision_display_rows {{ .Values.env.visionDisplayRows }} \
-                --reward-config '{{ .Values.env.rewardConfig }}' \
-                --max-lifetime {{ .Values.env.maxLifetime }} \
-                --apple-speed {{ .Values.env.appleSpeed }} \
-                --max-hunger-steps {{ .Values.env.maxHungerSteps }}
+                --reward-config '{{ .Values.env.rewardConfig }}'
           volumeMounts:
             - name: shared-memory
               mountPath: /dev/shm

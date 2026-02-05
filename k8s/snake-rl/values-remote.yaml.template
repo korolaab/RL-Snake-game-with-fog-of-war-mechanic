@@ -1,0 +1,86 @@
+# Remote cluster configuration template
+# Copy to values-remote.yaml and set REMOTE_REGISTRY_HOST environment variable
+# Usage: export REMOTE_REGISTRY_HOST=192.168.88.253
+
+experiment:
+  name: running-apple-hunt
+  maxEpisodes: 3000
+
+# Docker images from remote registry
+# REMOTE_REGISTRY_HOST will be substituted by deployment script
+images:
+  clock:
+    repository: ${REMOTE_REGISTRY_HOST}:5000/snake-rl/clock
+    tag: latest
+  env:
+    repository: ${REMOTE_REGISTRY_HOST}:5000/snake-rl/env
+    tag: latest
+  inference:
+    repository: ${REMOTE_REGISTRY_HOST}:5000/snake-rl/inference
+    tag: latest
+  pullPolicy: IfNotPresent
+
+# Clock service parameters
+clock:
+  fps: 0
+  visionSize: 5
+
+# Environment service parameters
+env:
+  gridWidth: 11
+  gridHeight: 11
+  visionRadius: 5
+  visionDisplayCols: 11
+  visionDisplayRows: 11
+  rewardConfig: '{"alive": 1, "eat_food": 0, "game_over": 0}'
+  maxLifetime: 10000
+  appleSpeed: 0.5
+  maxHungerSteps: 150
+
+# Inference service parameters
+inference:
+  snakeId: 1
+  learningRate: 0.001
+  gamma: 0.9
+  beta: 0.1
+
+# Shared memory configuration
+sharedMemory:
+  size: 256Mi
+
+# Persistent storage for logs (MLflow + checkpoints)
+storage:
+  enabled: true
+  size: 10Gi
+  storageClass: local-path
+  accessMode: ReadWriteOnce
+
+# Resource limits
+resources:
+  clock:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  env:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  inference:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+# Job configuration
+job:
+  restartPolicy: Never
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 300

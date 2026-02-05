@@ -9,3 +9,6 @@ trash
 .vimrc
 .vscode
 .continue
+
+# Generated k8s values with sensitive data
+k8s/snake-rl/values-remote.yaml
