@@ -11,6 +11,19 @@ The full game area is not provided to the model.
 
 Model have only the local observation as shown in the FOV.
 
+## Quick Start
+
+Choose your deployment method:
+
+- **Local Development (Docker Compose)**: [Method 1: Docker Compose](#method-1-docker-compose-recommended-for-production) - Ready in 5 minutes
+- **Kubernetes (Minikube)**: [Method 3: Kubernetes/Minikube](#method-3-kubernetes--minikube-production--local-cluster) - Automated setup script
+- **VSCode Debugging**: [Method 2: VSCode Debug Launch](#method-2-vscode-debug-launch-development)
+
+**Additional Resources:**
+- Architecture deep dive: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- Parameter reference: [docs/PARAMETERS.md](docs/PARAMETERS.md)
+- Project evolution: [docs/HISTORY.md](docs/HISTORY.md)
+- Historical results: [legacy/README.md](legacy/README.md)
 
 ## Current Architecture
 
@@ -43,6 +56,17 @@ Model have only the local observation as shown in the FOV.
 1. Clock releases semaphores → ENV updates game state, INF selects action
 2. Services signal completion → Clock coordinates next step
 3. Episode end → Clock triggers training in INF service
+
+## Results
+
+The current shared memory architecture has been validated with successful multi-thousand episode experiments:
+
+- **Training Performance**: 3000 episodes complete in approximately 4 hours
+- **Checkpointing**: Model saved every 50 episodes to persistent storage
+- **Metrics**: Full MLflow tracking with loss, entropy, reward, and custom metrics
+- **Stability**: Runs complete without intervention using POSIX IPC synchronization
+
+For visualizations and results from the legacy Pygame-based system, including performance graphs and demo videos, see [legacy/README.md](legacy/README.md).
 
 ## Running Experiments
 
@@ -237,4 +261,4 @@ minikube stop
 
 See detailed guide: [k8s/snake-rl/README.md](k8s/snake-rl/README.md)
 
-**Architecture**: Single Kubernetes Job with 3 containers (clock as initContainer, env + inference as main containers) sharing `/dev/shm` via emptyDir volume with `medium: Memory`.
+**Architecture**: Single Kubernetes Job with 3 containers (clock, env, inference) running in parallel, sharing `/dev/shm` via emptyDir volume with `medium: Memory`. All containers communicate via POSIX IPC (shared memory and semaphores).

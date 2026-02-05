@@ -191,15 +191,13 @@ kubectl delete pvc snake-rl-logs
 │         Kubernetes Job: snake-rl            │
 │                                             │
 │  ┌────────────────────────────────────┐    │
-│  │      Init Container: clock         │    │
-│  │  (Creates shared memory objects)   │    │
-│  └────────────────────────────────────┘    │
-│                    │                        │
-│                    ▼                        │
-│  ┌────────────────────────────────────┐    │
-│  │   Container: env    │ Container:   │    │
-│  │   (Snake game)      │ inference    │    │
-│  │                     │ (RL agent)   │    │
+│  │   Container: clock (coordinator)   │    │
+│  │   Container: env (game engine)     │    │
+│  │   Container: inference (RL agent)  │    │
+│  │                                    │    │
+│  │  All run in parallel, communicate  │    │
+│  │  via POSIX IPC (shared memory +    │    │
+│  │  semaphores)                       │    │
 │  └────────────────────────────────────┘    │
 │                                             │
 │  Volumes:                                   │
@@ -219,7 +217,7 @@ All containers share:
 |---------|---------------|------------|
 | Architecture | Separate containers | Single Pod with 3 containers |
 | Shared Memory | 128MB | 256MB |
-| Orchestration | `depends_on` | initContainer + containers |
+| Orchestration | `depends_on` | All containers run in parallel |
 | Storage | Bind mount | PersistentVolumeClaim |
 | Auto-cleanup | Manual | TTL (300s after completion) |
 

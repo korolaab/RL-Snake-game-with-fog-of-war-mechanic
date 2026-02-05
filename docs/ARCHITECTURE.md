@@ -1,4 +1,6 @@
-# Shared Memory Architecture Plan
+# Shared Memory Architecture
+
+> **Current Implementation**: This documents the active shared memory architecture used in production.
 
 ## System Specification
 

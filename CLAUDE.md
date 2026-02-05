@@ -8,40 +8,23 @@ This is a reinforcement learning research project implementing Snake game with f
 
 ## Architecture
 
-The project uses a Kubernetes-based modular architecture with separated services:
+The project uses a shared memory architecture with three services communicating via POSIX IPC:
 
-- **env**: Snake game environment server (Flask API on port 5000)
-- **inference**: Agent inference service (connects to env via HTTP)
-- **training**: Training service (gRPC server on port 50051) 
-- **Data stack**: RabbitMQ (message queue) + ClickHouse (analytics database)
+- **clock**: Master coordinator managing execution timing and synchronization
+- **env**: Snake game environment server (game logic and state)
+- **inference**: Agent inference service (neural network and training)
 
-The current setup supports both Docker Compose (development) and Kubernetes (production) deployments.
+All services communicate via shared memory (`/dev/shm`) using semaphores for synchronization. The current setup supports both Docker Compose (development) and Kubernetes (production) deployments.
 
 ### Service Structure
-- `services/Env/`: Environment server (Flask-based Snake game)
-- `services/Inference/`: Agent inference service
-- `services/Training/`: Training service with gRPC interface
+- `services/Clock/`: Coordination service (master orchestrator)
+- `services/Env/`: Environment server (Snake game logic)
+- `services/Inference/`: Agent inference service (neural network)
 - `services/utils/`: Shared utilities
 - `k8s/snake-rl/`: Helm chart for main RL application
-- `k8s/data-stack/`: Data infrastructure (RabbitMQ, ClickHouse)
+- `k8s/minikube/`: Minikube setup scripts
 
 ## Common Development Commands
-
-### Data Stack Management (ClickHouse + RabbitMQ)
-```bash
-# Full setup from scratch
-make quick-deploy
-
-# Individual steps
-make init              # Create namespace and config files
-make secrets          # Generate passwords and create K8s secrets  
-make deploy           # Deploy ClickHouse and RabbitMQ
-make create-tables    # Initialize database tables
-make status           # Check deployment status
-make health           # Run health checks
-make how-to-connect   # Get connection details
-make destroy          # Remove everything (requires 'DELETE' confirmation)
-```
 
 ### Development Workflows
 
@@ -67,18 +50,6 @@ cd logs-storage/ && mlflow ui --backend-store-uri file:///logs/mlruns
 
 See `services/QUICKSTART.md` for detailed guide.
 
-#### Docker Compose - Legacy HTTP/gRPC (Root Directory)
-
-**Older architecture** with HTTP API and gRPC communication:
-
-```bash
-# Start experiment with interactive setup
-./start_experiment.sh
-
-# Manual Docker Compose
-docker compose up --build
-```
-
 #### Kubernetes Deployment
 ```bash
 # Deploy with Helm
@@ -97,38 +68,31 @@ helm install snake-rl k8s/snake-rl/ -n experiments --values k8s/snake-rl/values.
 Key environment variables for services:
 - `EXPERIMENT_NAME`: Experiment identifier
 - `RUN_ID`: Unique run identifier (timestamp + UUID)
-- `RABBITMQ_HOST`: RabbitMQ hostname (default: rabbitmq.data-stack.svc.cluster.local)
-- `RABBITMQ_USERNAME/PASSWORD`: RabbitMQ credentials (tech/tech for development)
 - `LOG_LEVEL`: Logging level (DEBUG, INFO, etc.)
+- `MLFLOW_TRACKING_URI`: MLflow tracking server URI
 
 ### Kubernetes Configuration
 - Main chart: `k8s/snake-rl/values.yaml`
-- Data stack: `k8s/data-stack/`
-- Storage classes: `k8s/storage/`
-- Namespaces: `experiments` (RL services), `data-stack` (infrastructure)
+- Minikube setup: `k8s/minikube/setup.sh`
+- Namespace: `default` (or as configured)
 
 ### Agent/Environment Parameters
-Configure in `k8s/snake-rl/values.yaml`:
-- `env.args`: Game parameters (fps, grid size, vision radius, rewards)
-- `inference.args`: Agent parameters (learning rate, episodes, batch size)
-- `inference.runAsJob`: true for Job, false for StatefulSet/Deployment
+Configure in `k8s/snake-rl/values.yaml` or `services/docker-compose.yaml`:
+- `clock.args`: Coordination parameters (max episodes, fps, vision size)
+- `env.args`: Game parameters (grid size, rewards, max lifetime)
+- `inference.args`: Agent parameters (learning rate, gamma, beta)
 
 ## Repository Structure Notes
 
-- `legacy/`: Previous monolithic implementation (reference only)
-- `helm/`: Helm charts for infrastructure
+- `legacy/`: Previous monolithic implementation with Pygame (reference only, includes results)
+- `docs/`: Documentation (ARCHITECTURE.md, PARAMETERS.md, HISTORY.md)
 - `scripts/`: Deployment and utility scripts
-- `shared/`: Shared configurations and volumes
-- Current branch: `bug/bad_training` (branched from `hyperopt_tuning`)
+- `services/`: Service implementations (Clock, Env, Inference)
 
 ## Testing and Development
 
-The project is currently in active development focusing on:
-- Debugging the current Kubernetes setup
-- Expanding from 2 to 3 containers (env, inference, training)
-- Adding support for multiple agents
-- Agent collaboration and communication research
-
-## Data Infrastructure
-
-ClickHouse and RabbitMQ are managed via the data-stack namespace. Connection details and credentials are managed through Kubernetes secrets. Use `make how-to-connect` to get current connection information after deployment.
+The project uses shared memory architecture for fast, modular RL training:
+- Clock service orchestrates execution timing
+- All services communicate via POSIX IPC (shared memory + semaphores)
+- MLflow tracking for experiment monitoring
+- Docker Compose for local development, Kubernetes for production

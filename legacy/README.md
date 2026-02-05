@@ -1,5 +1,7 @@
 # Snake AI with Reinforcement Learning
 
+> **Note**: This documents the legacy monolithic system. For the current shared memory architecture, see the [main README](../README.md).
+
 This project implements a Snake game with an AI agent trained using Policy Gradient reinforcement learning.
 
 ## Project Structure
