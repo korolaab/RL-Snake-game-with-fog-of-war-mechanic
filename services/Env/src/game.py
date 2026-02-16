@@ -107,13 +107,7 @@ class SnakeGame:
         self.last_action = 0  # Initially no turn
         self.ticks = 0
         
-        # Lifetime system
-        self.max_lifetime = max_lifetime
-        self.lifetime_steps = 0
-        
-        # Hunger and apple tracking system
-        self.steps_without_apple = 0
-        self.max_hunger_steps = max_hunger_steps
+        # Apple tracking
         self.eaten_apples = 0
         
         # Apple speed configuration
@@ -128,15 +122,12 @@ class SnakeGame:
             (self.GRID_WIDTH // 2 - 2, self.GRID_HEIGHT // 2)
         ]
         self.direction = (1, 0)
-        self.max_len = 0  # Reset max apples eaten
+        self.max_len = len(self.snake)
         
         # Initialize running apple with configured speed
         apple_pos = self.random_food_position()
         self.apple = RunningApple(apple_pos, self.GRID_WIDTH, self.GRID_HEIGHT, self.apple_speed)
         
-        # Reset lifetime and hunger
-        self.lifetime_steps = 0
-        self.steps_without_apple = 0
         self.eaten_apples = 0
     
     def random_food_position(self):
@@ -154,20 +145,6 @@ class SnakeGame:
             return self.direction
     
     def update(self, move):
-        # Increment lifetime counter and hunger
-        self.lifetime_steps += 1
-        self.steps_without_apple += 1
-        
-        # Check for lifetime expiration
-        if self.lifetime_steps >= self.max_lifetime:
-            state = self.get_state()
-            return state, 0, True  # Die from old age
-        
-        # Check for hunger death
-        if self.steps_without_apple >= self.max_hunger_steps:
-            state = self.get_state()
-            return state, 0, True  # Die from hunger
-        
         # Apply the move
         self.direction = self.relative_turn(move)
         
@@ -192,14 +169,8 @@ class SnakeGame:
         if new_head == self.apple.position:
             reward += 1
             self.eaten_apples += 1
-            self.steps_without_apple = 0
             self.apple.respawn(self.snake)
         else:
-            # Tick-based growth: every 50 ticks, skip tail pop (snake grows)
-            self.ticks += 1
-            if self.ticks == 50:
-                self.snake.pop()
-                self.ticks = 0
             self.snake.pop()
 
         # Update max_len to track maximum snake length
