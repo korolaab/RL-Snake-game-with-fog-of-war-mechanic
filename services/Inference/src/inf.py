@@ -20,120 +20,170 @@ from collections import defaultdict
 import numpy as np
 
 
+class STEBinarize(torch.autograd.Function):
+    """Straight-Through Estimator for binary activation: round in forward, pass gradient through sigmoid in backward."""
+    @staticmethod
+    def forward(ctx, x):
+        return torch.round(x)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return grad_output
+
+
 class SnakeNet(nn.Module):
-    """Нейронная сеть для змейки."""
-    
-    def __init__(self, input_size, hidden_units_1=14, hidden_units_2=12, dropout_rate=0.3):
+    """Neural network for snake with optional talk vector communication."""
+
+    def __init__(self, input_size, talk_size=0, hidden_units_1=14, hidden_units_2=12, dropout_rate=0.3, comm_dropout=0.0):
         super(SnakeNet, self).__init__()
         self.input_size = input_size
+        self.talk_size = talk_size
         self.hidden_units_1 = hidden_units_1
         self.hidden_units_2 = hidden_units_2
-        # HYPEROPT-OPTIMIZED ARCHITECTURE: Best configuration from hyperopt tuning
-        # {"hidden_units_1": 14, "activation_1": "Tanh", "hidden_units_2": 8, "activation_2": "Tanh", "dropout_rate": 0.6}
-        self.network = nn.Sequential(
-            nn.Linear(input_size, hidden_units_1),
-           # nn.LayerNorm(hidden_units_1),
-            nn.Tanh(),           
-           # nn.Dropout(dropout_rate),
+
+        total_input = input_size + talk_size
+
+        # Layer 1
+        self.layer1 = nn.Sequential(
+            nn.Linear(total_input, hidden_units_1),
+            nn.Tanh(),
+        )
+        # Layer 2
+        self.layer2 = nn.Sequential(
             nn.Linear(hidden_units_1, hidden_units_2),
-           # nn.LayerNorm(hidden_units_2),
             nn.Tanh(),
             nn.Dropout(dropout_rate),
-
+        )
+        # Policy head (layers 3-4)
+        self.policy_head = nn.Sequential(
             nn.Linear(hidden_units_2, hidden_units_2),
-           # nn.LayerNorm(hidden_units_2),
             nn.Tanh(),
             nn.Linear(hidden_units_2, 3),
-            #nn.LayerNorm(3),
             nn.Softmax(dim=-1)
         )
-    
-    def forward(self, x):
-        return self.network(x)
-    
-def train():
-    # Extract episodes
-    episodes = [replay_buffer]#TODO: several episodes
-    all_states, all_actions, all_returns = [], [], []
+        # Talk head (branches from layer2 output)
+        if talk_size > 0:
+            self.talk_head = nn.Sequential(
+                nn.Linear(hidden_units_2, talk_size),
+                nn.Sigmoid(),
+            )
+            self.comm_dropout = nn.Dropout(comm_dropout)
 
-    # Process each episode
+    def forward(self, x, talk_in=None):
+        if self.talk_size > 0 and talk_in is not None:
+            talk_in = self.comm_dropout(talk_in)
+            x = torch.cat([x, talk_in], dim=-1)
+        elif self.talk_size > 0:
+            x = torch.cat([x, torch.zeros(x.shape[:-1] + (self.talk_size,))], dim=-1)
+
+        h1 = self.layer1(x)
+        h2 = self.layer2(h1)
+        action_probs = self.policy_head(h2)
+
+        if self.talk_size > 0:
+            talk_out = self.talk_head(h2)
+            talk_out = STEBinarize.apply(talk_out)
+            return action_probs, talk_out
+
+        return action_probs, None
+
+
+def train():
+    episodes = [replay_buffer]
+    all_states1, all_states2, all_actions1, all_actions2, all_returns = [], [], [], [], []
+
     for episode in episodes:
         if not episode:
             continue
-        
-        # Extract (state, action, reward) from each experience
-        states = []
-        actions = []
-        rewards = []
-        
-        for exp in episode[1:]:
-            # Process state
 
-            states.append(exp[0])
-            
-            # Convert action name to index
-            action_idx = exp[1]
-            actions.append(action_idx)
-            
-            # Store reward
-            rewards.append(exp[2])
-        
-        # Calculate discounted returns (backward through episode)
+        rewards = []
+        for exp in episode[1:]:
+            if num_snakes == 2:
+                s1, s2, a1, a2, r = exp
+                all_states1.append(s1)
+                all_states2.append(s2)
+                all_actions1.append(a1)
+                all_actions2.append(a2)
+            else:
+                s, a, r = exp[0], exp[1], exp[2]
+                all_states1.append(s)
+                all_actions1.append(a)
+            rewards.append(r)
+
+        # Calculate discounted returns
         returns = []
         G = 0
         for r in reversed(rewards):
             G = r + args.gamma * G
             returns.insert(0, G)
-        
-        # Normalize returns
+
         returns = torch.tensor(returns, dtype=torch.float32)
-        
         returns = (returns - returns.mean()) / (returns.std() + 1e-8)
-        
-        # Add to batch
-        all_states.extend(states)
-        all_actions.extend(actions)
         all_returns.extend(returns.tolist())
 
-    # Skip if no data
-    if not all_states:
+    if not all_states1:
         return False
 
-    # Create tensors
-    states_tensor = torch.stack(all_states)
-    actions_tensor = torch.tensor(all_actions, dtype=torch.long)
+    states1_tensor = torch.stack(all_states1)
+    actions1_tensor = torch.tensor(all_actions1, dtype=torch.long)
     returns_tensor = torch.tensor(all_returns, dtype=torch.float32)
 
-    # Forward pass and loss
     model.train()
-    action_probs = model(states_tensor)
-    m = torch.distributions.Categorical(action_probs)
-    log_probs = m.log_prob(actions_tensor)
-    entropy = m.entropy()
-    # REINFORCE loss
-    ent = entropy.mean()
-    loss1 = -(log_probs * returns_tensor).mean()
-    loss =  loss1- args.beta * ent
-    optimizer.zero_grad()                
-    loss.backward()  
-    
-    # Calculate gradient norm
+
+    if num_snakes == 2:
+        states2_tensor = torch.stack(all_states2)
+        actions2_tensor = torch.tensor(all_actions2, dtype=torch.long)
+
+        # Forward pass snake1 with zeros talk_in
+        talk_in_zeros = torch.zeros(states1_tensor.shape[0], args.talk_size) if args.talk_size > 0 else None
+        probs1, talk_out = model(states1_tensor, talk_in_zeros)
+
+        # Forward pass snake2 with talk from snake1
+        probs2, _ = model(states2_tensor, talk_out)
+
+        m1 = torch.distributions.Categorical(probs1)
+        m2 = torch.distributions.Categorical(probs2)
+        log_probs1 = m1.log_prob(actions1_tensor)
+        log_probs2 = m2.log_prob(actions2_tensor)
+        entropy1 = m1.entropy()
+        entropy2 = m2.entropy()
+
+        ent = (entropy1.mean() + entropy2.mean()) / 2
+        loss1 = -((log_probs1 + log_probs2) * returns_tensor).mean()
+        loss = loss1 - args.beta * ent
+
+        entropy_all = torch.cat([entropy1, entropy2])
+        actions_all = torch.cat([actions1_tensor, actions2_tensor])
+    else:
+        probs1, _ = model(states1_tensor, None)
+        m1 = torch.distributions.Categorical(probs1)
+        log_probs1 = m1.log_prob(actions1_tensor)
+        entropy1 = m1.entropy()
+
+        ent = entropy1.mean()
+        loss1 = -(log_probs1 * returns_tensor).mean()
+        loss = loss1 - args.beta * ent
+
+        entropy_all = entropy1
+        actions_all = actions1_tensor
+
+    optimizer.zero_grad()
+    loss.backward()
+
     grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float('inf'))
     optimizer.step()
-    
-    # Calculate additional metrics
-    entropy_std = entropy.std().item() if len(entropy) > 1 else 0.0
+
+    entropy_std = entropy_all.std().item() if len(entropy_all) > 1 else 0.0
     returns_mean = returns_tensor.mean().item()
     returns_std = returns_tensor.std().item()
-    
-    # Action distribution analysis
-    action_counts = torch.bincount(actions_tensor, minlength=3)
-    action_freqs = action_counts.float() / len(actions_tensor)
-    
+
+    action_counts = torch.bincount(actions_all, minlength=3)
+    action_freqs = action_counts.float() / len(actions_all)
+
     return {
         'loss': loss.item(),
         'policy_loss': loss1.item(),
-        'entropy_mean': entropy.mean().item(),
+        'entropy_mean': ent.item(),
         'entropy_std': entropy_std,
         'grad_norm': grad_norm.item(),
         'returns_mean': returns_mean,
@@ -153,28 +203,32 @@ if __name__ == "__main__":
     parser.add_argument("--batch-size", type=int, default=5, help="Episodes per batch")
     parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor (gamma) for RL")
     parser.add_argument("--beta", type=float, default=0.1, help="Entropy bonus (beta)")
-    parser.add_argument("--max-episodes", type=int, default=None, help="Number of episodes before exit (overrides env N_EPISODES)")
+    parser.add_argument("--max-episodes", type=int, default=None, help="Number of episodes before exit")
+    parser.add_argument("--num-snakes", type=int, default=1, help="Number of snakes (1 or 2)")
+    parser.add_argument("--talk-size", type=int, default=12, help="Size of talk vector for inter-snake communication")
+    parser.add_argument("--comm-dropout", type=float, default=0.0, help="Dropout rate on talk input (0.0=full comm, 1.0=no comm)")
 
     args = parser.parse_args()
-  
+    num_snakes = args.num_snakes
+
     # открываем shared memory (создано Clock)
     while True:
         try:
             shm = posix_ipc.SharedMemory("/game_state")
             break
         except posix_ipc.ExistentialError:
-            print("[ENV] waiting for /game_state shm...")
+            print("[INF] waiting for /game_state shm...")
             time.sleep(0.1)
-    
+
     # открываем семафоры
     while True:
         try:
             sem_inf_tick = posix_ipc.Semaphore("/sem_inf_tick")
             break
         except posix_ipc.ExistentialError:
-            print("[INF] waiting for /sem_env_tick semaphore...")
+            print("[INF] waiting for /sem_inf_tick semaphore...")
             time.sleep(0.1)
- 
+
     while True:
         try:
             sem_inf_done = posix_ipc.Semaphore("/sem_inf_done")
@@ -182,73 +236,66 @@ if __name__ == "__main__":
         except posix_ipc.ExistentialError:
             print("[INF] waiting for /sem_inf_done semaphore...")
             time.sleep(0.1)
-    
+
     while True:
         try:
-            shm_ctrl = posix_ipc.SharedMemory("/inf_control")   
+            shm_ctrl = posix_ipc.SharedMemory("/inf_control")
             break
         except posix_ipc.ExistentialError:
-            print("[ENV] waiting for /inf_control shm...")
+            print("[INF] waiting for /inf_control shm...")
             time.sleep(0.1)
 
 
-    header_fmt = "<d?q"
+    if num_snakes == 2:
+        header_fmt = "<d?qq"
+    else:
+        header_fmt = "<d?q"
     header_size = struct.calcsize(header_fmt)
-    # Calculate vision size dynamically (consistent with environment)
-    vision_radius = 5  # Should match environment configuration
+    vision_radius = 5
     vision_size = 2 * vision_radius * (vision_radius + 1) + 2
-    total_size = header_size + (vision_size * 8) * 2
+    state_bytes = (vision_size * 8) * 2  # one state buffer
+    total_size = header_size + state_bytes * num_snakes
 
     mapfile_ctrl = mmap.mmap(shm_ctrl.fd, shm_ctrl.size)
-    ctrl_fmt = "=idddddddddd"  # do_train, loss, policy_loss, entropy_mean, entropy_std, grad_norm, returns_mean, returns_std, action_0_freq, action_1_freq, action_2_freq
+    ctrl_fmt = "=idddddddddd"
 
     mapfile = mmap.mmap(shm.fd, total_size)
 
-    
-    model = SnakeNet( input_size = vision_size * 2)
+    obs_size = vision_size * 2
+    talk_size = args.talk_size if num_snakes == 2 else 0
+
+    model = SnakeNet(input_size=obs_size, talk_size=talk_size, comm_dropout=args.comm_dropout)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
-    #print("[INF] Created Model")
 
-    # Store as list of tuples
     replay_buffer = []
-
-    # Episode counter for model checkpointing
     episode_count = 0
-    
-    prev_vision_tensor = torch.zeros(vision_size*2)
-    prev_action = 0
-    while True:
 
+    prev_vision1 = torch.zeros(obs_size)
+    prev_vision2 = torch.zeros(obs_size) if num_snakes == 2 else None
+    prev_action1 = 0
+    prev_action2 = 0
+
+    while True:
         sem_inf_tick.acquire()
-       # print("[INF] got signal")
-        
-        # Check if this is a do_train request
+
         do_train, loss, policy_loss, entropy_mean, entropy_std, grad_norm, returns_mean, returns_std, action_0_freq, action_1_freq, action_2_freq = struct.unpack_from(ctrl_fmt, mapfile_ctrl, 0)
-        
-        if do_train == 1:  
-            #print("[ENV] Train flag recieved")
+
+        if do_train == 1:
             episode_count += 1
 
-            # Read reward and game state from shared memory
-            reward, game_over, action = struct.unpack_from(header_fmt, mapfile, 0)
+            # Read final state for last experience
+            header_data = struct.unpack_from(header_fmt, mapfile, 0)
+            reward = header_data[0]
 
-            # читаем vision как np.float64 (consistent with inference section)
-            vision = np.frombuffer(mapfile, dtype=np.float64,
-                        count=vision_size*2, offset=header_size)
-            vision_tensor = torch.from_numpy(vision.astype(np.float32))
+            vision1 = np.frombuffer(mapfile, dtype=np.float64, count=vision_size*2, offset=header_size)
+            v1_tensor = torch.from_numpy(vision1.astype(np.float32))
 
-            # Each experience: (state, action, reward, next_state, done) 
-            experience = (
-                prev_vision_tensor,      # torch.Tensor
-                prev_action,     # torch.Tensor or int
-                reward,            # float
-                vision_tensor
-            )
-
+            if num_snakes == 2:
+                vision2 = np.frombuffer(mapfile, dtype=np.float64, count=vision_size*2, offset=header_size + state_bytes)
+                v2_tensor = torch.from_numpy(vision2.astype(np.float32))
 
             metrics = train()
-            
-            # Save model checkpoint every 50 episodes
+
             if episode_count % 50 == 0:
                 checkpoint_path = f"/logs/model_checkpoint_episode_{episode_count}.pth"
                 torch.save({
@@ -258,19 +305,23 @@ if __name__ == "__main__":
                     'loss': metrics['loss'],
                     'architecture': {
                         'input_size': model.input_size,
+                        'talk_size': model.talk_size,
                         'hidden_units_1': model.hidden_units_1,
                         'hidden_units_2': model.hidden_units_2
                     },
                     'hyperparameters': {
                         'learning_rate': args.learning_rate,
                         'gamma': args.gamma,
-                        'beta': args.beta
+                        'beta': args.beta,
+                        'talk_size': talk_size,
+                        'comm_dropout': args.comm_dropout,
+                        'num_snakes': num_snakes
                     }
                 }, checkpoint_path)
                 print(f"[INF] Saved model checkpoint: {checkpoint_path}")
-            
+
             struct.pack_into(ctrl_fmt, mapfile_ctrl, 0,
-                             0,  # do_train flag
+                             0,
                              metrics['loss'],
                              metrics['policy_loss'],
                              metrics['entropy_mean'],
@@ -281,43 +332,72 @@ if __name__ == "__main__":
                              metrics['action_0_freq'],
                              metrics['action_1_freq'],
                              metrics['action_2_freq'])
-                             
+
             replay_buffer = []
-            prev_action = 0
-            prev_vision_tensor = torch.zeros(vision_size*2)
+            prev_action1 = 0
+            prev_action2 = 0
+            prev_vision1 = torch.zeros(obs_size)
+            if num_snakes == 2:
+                prev_vision2 = torch.zeros(obs_size)
         else:
-            reward, game_over, action = struct.unpack_from(header_fmt, mapfile, 0)
+            header_data = struct.unpack_from(header_fmt, mapfile, 0)
+            reward = header_data[0]
 
-            # читаем vision как np.int8
-            vision = np.frombuffer(mapfile, dtype=np.float64,
-                        count=vision_size*2, offset=header_size)
-            vision_tensor = torch.from_numpy(vision.astype(np.float32))
+            vision1 = np.frombuffer(mapfile, dtype=np.float64, count=vision_size*2, offset=header_size)
+            v1_tensor = torch.from_numpy(vision1.astype(np.float32))
 
+            if num_snakes == 2:
+                vision2 = np.frombuffer(mapfile, dtype=np.float64, count=vision_size*2, offset=header_size + state_bytes)
+                v2_tensor = torch.from_numpy(vision2.astype(np.float32))
 
-            action_offset = struct.calcsize("<d?") 
-           
-            
-            with torch.no_grad():
-                #model.eval()
-                action_probs = model(vision_tensor)
-                m = torch.distributions.Categorical(action_probs)
-                action = m.sample()
+                with torch.no_grad():
+                    # Snake1 forward with zeros talk_in
+                    talk_in_zeros = torch.zeros(talk_size) if talk_size > 0 else None
+                    probs1, talk_out = model(v1_tensor, talk_in_zeros)
+                    m1 = torch.distributions.Categorical(probs1)
+                    action1 = m1.sample()
 
-            # Each experience: (state, action, reward, next_state, done) 
-            experience = (
-                prev_vision_tensor,      # torch.Tensor
-                prev_action,     # torch.Tensor or int
-                reward,            # float
-                vision_tensor
-            )
-            prev_vision_tensor = vision_tensor.clone()
-            prev_action = action
-            replay_buffer.append(experience)
+                    # Snake2 forward with talk from snake1
+                    probs2, _ = model(v2_tensor, talk_out)
+                    m2 = torch.distributions.Categorical(probs2)
+                    action2 = m2.sample()
 
-            
-            struct.pack_into("q", mapfile, action_offset, action)
-           # print(f"[INF] wrote action {action}")
-        # сигналим Clock, что данные готовы
+                experience = (
+                    prev_vision1,
+                    prev_vision2,
+                    prev_action1,
+                    prev_action2,
+                    reward,
+                )
+                prev_vision1 = v1_tensor.clone()
+                prev_vision2 = v2_tensor.clone()
+                prev_action1 = action1
+                prev_action2 = action2
+                replay_buffer.append(experience)
+
+                # Write both actions
+                action_offset = struct.calcsize("<d?")
+                struct.pack_into("q", mapfile, action_offset, action1)
+                struct.pack_into("q", mapfile, action_offset + 8, action2)
+            else:
+                with torch.no_grad():
+                    probs1, _ = model(v1_tensor, None)
+                    m1 = torch.distributions.Categorical(probs1)
+                    action1 = m1.sample()
+
+                experience = (
+                    prev_vision1,
+                    prev_action1,
+                    reward,
+                    v1_tensor
+                )
+                prev_vision1 = v1_tensor.clone()
+                prev_action1 = action1
+                replay_buffer.append(experience)
+
+                action_offset = struct.calcsize("<d?")
+                struct.pack_into("q", mapfile, action_offset, action1)
+
         sem_inf_done.release()
 
     shm.close_fd()

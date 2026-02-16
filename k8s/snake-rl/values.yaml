@@ -20,6 +20,7 @@ images:
 clock:
   fps: 0
   visionSize: 5
+  numSnakes: 2
 
 # Environment service parameters (from docker-compose.yaml)
 env:
@@ -32,6 +33,7 @@ env:
   maxLifetime: 10000
   appleSpeed: 0.5
   maxHungerSteps: 150
+  numSnakes: 2
 
 # Inference service parameters (from docker-compose.yaml)
 inference:
@@ -39,6 +41,9 @@ inference:
   learningRate: 0.001
   gamma: 0.9
   beta: 0.1
+  numSnakes: 2
+  talkSize: 12
+  commDropout: 0.0
 
 # Shared memory configuration (increased from docker-compose 128Mi)
 sharedMemory:

@@ -26,4 +26,5 @@ def parse_args():
     parser.add_argument('--max-lifetime', type=int, default=10000, help='Maximum steps before snake dies of old age')
     parser.add_argument('--apple-speed', type=float, default=0.5, help='Apple movement speed (0.5 = half speed, moves every 2 frames)')
     parser.add_argument('--max-hunger-steps', type=int, default=150, help='Maximum steps without eating apple before death')
+    parser.add_argument('--num-snakes', type=int, default=1, help='Number of snakes (1 or 2)')
     return parser.parse_args()

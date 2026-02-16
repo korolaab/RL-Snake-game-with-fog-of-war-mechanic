@@ -23,7 +23,8 @@ spec:
                 --vision-size {{ .Values.clock.visionSize }} \
                 --mlflow_experiment_name {{ .Values.experiment.name }} \
                 --max-episodes {{ .Values.experiment.maxEpisodes }} \
-                --apple-speed {{ .Values.env.appleSpeed }}
+                --apple-speed {{ .Values.env.appleSpeed }} \
+                --num-snakes {{ .Values.clock.numSnakes }}
           volumeMounts:
             - name: shared-memory
               mountPath: /dev/shm
@@ -50,7 +51,8 @@ spec:
                 --reward-config '{{ .Values.env.rewardConfig }}' \
                 --apple-speed {{ .Values.env.appleSpeed }} \
                 --max-lifetime {{ .Values.env.maxLifetime }} \
-                --max-hunger-steps {{ .Values.env.maxHungerSteps }}
+                --max-hunger-steps {{ .Values.env.maxHungerSteps }} \
+                --num-snakes {{ .Values.env.numSnakes }}
           volumeMounts:
             - name: shared-memory
               mountPath: /dev/shm
@@ -69,7 +71,10 @@ spec:
                 --snake-id {{ .Values.inference.snakeId }} \
                 --learning-rate {{ .Values.inference.learningRate }} \
                 --gamma {{ .Values.inference.gamma }} \
-                --beta {{ .Values.inference.beta }}
+                --beta {{ .Values.inference.beta }} \
+                --num-snakes {{ .Values.inference.numSnakes }} \
+                --talk-size {{ .Values.inference.talkSize }} \
+                --comm-dropout {{ .Values.inference.commDropout }}
           volumeMounts:
             - name: shared-memory
               mountPath: /dev/shm

@@ -17,6 +17,7 @@ parser.add_argument('--mlflow_server', type=str, default=None, help='Mlflow serv
 parser.add_argument('--mlflow_experiment_name', required=True, type=str, help='Mlflow experiment')
 parser.add_argument("--max-episodes", type=int, default=None, help="Maximum episodes to run")
 parser.add_argument("--apple-speed", type=float, default=0, help="Apple movement speed (for MLflow logging)")
+parser.add_argument("--num-snakes", type=int, default=1, help="Number of snakes (1 or 2)")
 args = parser.parse_args()
 
 mlflow.set_tracking_uri(uri=args.mlflow_server)
@@ -40,10 +41,14 @@ signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
 
-header_fmt = "<d?q"
+if args.num_snakes == 2:
+    header_fmt = "<d?qq"
+else:
+    header_fmt = "<d?q"
 header_size = struct.calcsize(header_fmt)
 vision_size = manhattan_cells_without_center(args.vision_size) + 2
-total_size = header_size + (vision_size*8) * 2
+state_bytes = (vision_size * 8) * 2  # one state buffer in bytes
+total_size = header_size + state_bytes * args.num_snakes
 
 
 # создаем shared memory
@@ -136,7 +141,8 @@ try:
             "mlflow_experiment_name": args.mlflow_experiment_name,
             "architecture": "REINFORCE",
             "shared_memory_communication": True,
-            "apple_speed": args.apple_speed
+            "apple_speed": args.apple_speed,
+            "num_snakes": args.num_snakes
         })
         while running and (args.max_episodes is None or episode < args.max_episodes):
             if args.fps != 0:
@@ -146,7 +152,9 @@ try:
             if not running:
                 break
             
-            reward, game_over, action = struct.unpack_from(header_fmt, mapfile, 0)
+            header_data = struct.unpack_from(header_fmt, mapfile, 0)
+            reward = header_data[0]
+            game_over = header_data[1]
             if game_over == 1:
                 episode += 1
                 

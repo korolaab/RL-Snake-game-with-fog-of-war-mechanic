@@ -1,4 +1,4 @@
-from utils.seed import set_seed  
+from utils.seed import set_seed
 
 from config import parse_args
 import config
@@ -22,14 +22,14 @@ def manhattan_cells_without_center(R: int) -> int:
 
 
 if __name__ == "__main__":
-    
+
     args = parse_args()
-    
-   
- 
+
+
+
     with open("history.csv",'w') as f:
         print("length", file=f)
-    
+
     # открываем shared memory (создано Clock)
     while True:
         try:
@@ -38,7 +38,7 @@ if __name__ == "__main__":
         except posix_ipc.ExistentialError:
             print("[ENV] waiting for /game_state shm...")
             time.sleep(0.1)
-    
+
     # открываем семафоры
     while True:
         try:
@@ -47,7 +47,7 @@ if __name__ == "__main__":
         except posix_ipc.ExistentialError:
             print("[ENV] waiting for /sem_env semaphore...")
             time.sleep(0.1)
- 
+
     while True:
         try:
             sem_env_done = posix_ipc.Semaphore("/sem_env_done")
@@ -57,7 +57,7 @@ if __name__ == "__main__":
             time.sleep(0.1)
     while True:
         try:
-            shm_ctrl = posix_ipc.SharedMemory("/env_control")   
+            shm_ctrl = posix_ipc.SharedMemory("/env_control")
             break
         except posix_ipc.ExistentialError:
             print("[ENV] waiting for /env_control shm...")
@@ -65,6 +65,8 @@ if __name__ == "__main__":
 
     regular_dict = json.loads(args.reward_config)
     reward_config = defaultdict(int, regular_dict)  # int() returns 0
+
+    num_snakes = getattr(args, 'num_snakes', 1)
 
     game = SnakeGame(
         args.grid_width,
@@ -74,13 +76,18 @@ if __name__ == "__main__":
         args.vision_display_rows,
         args.max_lifetime,
         args.max_hunger_steps,
-        args.apple_speed
+        args.apple_speed,
+        num_snakes=num_snakes
     )
 
-    header_fmt = "<d?q"
+    if num_snakes == 2:
+        header_fmt = "<d?qq"
+    else:
+        header_fmt = "<d?q"
     header_size = struct.calcsize(header_fmt)
     vision_size = manhattan_cells_without_center(args.vision_radius) + 2
-    total_size = header_size + (vision_size * 8) * 2
+    state_bytes = (vision_size * 8) * 2  # one state buffer size
+    total_size = header_size + state_bytes * num_snakes
     mapfile = mmap.mmap(shm.fd, total_size)
 
     mapfile_ctrl = mmap.mmap(shm_ctrl.fd, shm_ctrl.size)
@@ -89,40 +96,52 @@ if __name__ == "__main__":
     sum_reward = 0
     frames = 0
     while True:
-        # ждем семафор от Env
+        # ждем семафор от Clock
         sem_env_tick.acquire()
-        #print("[ENV] got signal")
 
-            # Check if this is a reset request
+        # Check if this is a reset request
         (reset,)  = struct.unpack_from("=i", mapfile_ctrl, 0)
-        
-        if reset == 1:  
-            #print("[ENV] Reset requested, resetting environment...")
-            #print(f"[ENV] snake_len = {game.max_len}")
+
+        if reset == 1:
             with open("history.csv",'a') as f:
                 print(f"{game.max_len}", file=f)
 
             struct.pack_into(ctrl_fmt, mapfile_ctrl, 0, 0, int(game.max_len), int(game.eaten_apples), int(frames), int(sum_reward))
             game.reset()
-            struct.pack_into(header_fmt, mapfile, 0, reward,False,0)
-            mapfile[header_size:header_size + state.nbytes] = state.tobytes()
-            
+
+            if num_snakes == 2:
+                struct.pack_into(header_fmt, mapfile, 0, 0.0, False, 0, 0)
+                state1, state2 = game.get_state()
+                s1_bytes = state1.tobytes()
+                s2_bytes = state2.tobytes()
+                mapfile[header_size:header_size + len(s1_bytes)] = s1_bytes
+                mapfile[header_size + state_bytes:header_size + state_bytes + len(s2_bytes)] = s2_bytes
+            else:
+                struct.pack_into(header_fmt, mapfile, 0, 0.0, False, 0)
+                state = game.get_state()
+                mapfile[header_size:header_size + state.nbytes] = state.tobytes()
+
             frames = 0
             sum_reward = 0
-            
-           # print("[ENV] wrote state")
         else:
-            reward, game_over, action = struct.unpack_from(header_fmt, mapfile, 0)
-            # пишем данные
-            sum_reward+=reward
-            state, reward, game_over = game.update(action)
-            struct.pack_into(header_fmt, mapfile,0, reward,game_over,0)
-            mapfile[header_size:header_size + state.nbytes] = state.tobytes()
-            frames +=1
-            
+            if num_snakes == 2:
+                reward, game_over, action1, action2 = struct.unpack_from(header_fmt, mapfile, 0)
+                sum_reward += reward
+                (state1, state2), reward, game_over = game.update(action1, action2)
+                struct.pack_into(header_fmt, mapfile, 0, reward, game_over, 0, 0)
+                s1_bytes = state1.tobytes()
+                s2_bytes = state2.tobytes()
+                mapfile[header_size:header_size + len(s1_bytes)] = s1_bytes
+                mapfile[header_size + state_bytes:header_size + state_bytes + len(s2_bytes)] = s2_bytes
+            else:
+                reward, game_over, action = struct.unpack_from(header_fmt, mapfile, 0)
+                sum_reward += reward
+                state, reward, game_over = game.update(action)
+                struct.pack_into(header_fmt, mapfile, 0, reward, game_over, 0)
+                mapfile[header_size:header_size + state.nbytes] = state.tobytes()
+            frames += 1
 
         # сигналим Clock, что данные готовы
         sem_env_done.release()
 
     shm.close_fd()
-
