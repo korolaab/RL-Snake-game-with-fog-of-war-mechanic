@@ -22,7 +22,8 @@ spec:
                 --fps {{ .Values.clock.fps }} \
                 --vision-size {{ .Values.clock.visionSize }} \
                 --mlflow_experiment_name {{ .Values.experiment.name }} \
-                --max-episodes {{ .Values.experiment.maxEpisodes }}
+                --max-episodes {{ .Values.experiment.maxEpisodes }} \
+                --apple-speed {{ .Values.env.appleSpeed }}
           volumeMounts:
             - name: shared-memory
               mountPath: /dev/shm
@@ -46,7 +47,10 @@ spec:
                 --vision_radius {{ .Values.env.visionRadius }} \
                 --vision_display_cols {{ .Values.env.visionDisplayCols }} \
                 --vision_display_rows {{ .Values.env.visionDisplayRows }} \
-                --reward-config '{{ .Values.env.rewardConfig }}'
+                --reward-config '{{ .Values.env.rewardConfig }}' \
+                --apple-speed {{ .Values.env.appleSpeed }} \
+                --max-lifetime {{ .Values.env.maxLifetime }} \
+                --max-hunger-steps {{ .Values.env.maxHungerSteps }}
           volumeMounts:
             - name: shared-memory
               mountPath: /dev/shm

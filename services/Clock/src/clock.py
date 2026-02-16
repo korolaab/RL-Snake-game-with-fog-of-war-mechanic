@@ -16,6 +16,7 @@ parser.add_argument("--fps", type=float, default=1.0, help="Frames per second (s
 parser.add_argument('--mlflow_server', type=str, default=None, help='Mlflow server host')
 parser.add_argument('--mlflow_experiment_name', required=True, type=str, help='Mlflow experiment')
 parser.add_argument("--max-episodes", type=int, default=None, help="Maximum episodes to run")
+parser.add_argument("--apple-speed", type=float, default=0, help="Apple movement speed (for MLflow logging)")
 args = parser.parse_args()
 
 mlflow.set_tracking_uri(uri=args.mlflow_server)
@@ -134,7 +135,8 @@ try:
             "fps": args.fps,
             "mlflow_experiment_name": args.mlflow_experiment_name,
             "architecture": "REINFORCE",
-            "shared_memory_communication": True
+            "shared_memory_communication": True,
+            "apple_speed": args.apple_speed
         })
         while running and (args.max_episodes is None or episode < args.max_episodes):
             if args.fps != 0:
