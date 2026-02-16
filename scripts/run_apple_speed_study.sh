@@ -3,8 +3,9 @@ set -euo pipefail
 
 SPEEDS=(0 0.1 0.2 0.3 0.5 0.7 1.0)
 CHART_DIR="k8s/snake-rl"
-VALUES_FILE="$CHART_DIR/values.yaml"
+VALUES_FILE="$CHART_DIR/values-remote.yaml"
 NAMESPACE="default"
+export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config-remote}"
 TMPDIR=$(mktemp -d)
 
 trap "rm -rf $TMPDIR" EXIT

@@ -84,7 +84,22 @@ def main():
     )
 
     fig, ax = plt.subplots(figsize=(12, 7))
-    colors = plt.cm.viridis(np.linspace(0, 1, len(speeds)))
+    colors = ["#e6194b", "#3cb44b", "#4363d8", "#f58231", "#911eb4", "#42d4f4", "#000000"]
+
+    def speed_to_label(s):
+        s_f = float(s)
+        if s_f == 0:
+            return "static"
+        n = 1.0 / s_f
+        if abs(n - round(n)) < 0.01:
+            n_int = int(round(n))
+            if n_int == 1:
+                return "every frame"
+            return f"every {n_int} frames"
+        return f"every ~{n:.1f} frames"
+
+    # Collect end points for grouping close labels
+    end_points = []  # list of (end_y, speed, color)
 
     for speed, color in zip(speeds, colors):
         mlruns_dir = os.path.join(args.logs_dir, speed, "mlruns")
@@ -102,13 +117,42 @@ def main():
             print(f"Warning: no {args.metric} data for speed={speed}, skipping")
             continue
 
-        ma = moving_average(np.array(values), args.window)
-        ma_steps = steps[args.window - 1 :] if len(steps) >= args.window else steps
-        ax.plot(ma_steps, ma, label=f"speed={speed}", color=color, linewidth=1.5)
+        window = max(10, min(args.window, len(values)))
+        ma = moving_average(np.array(values), window)
+        ma_steps = steps[window - 1 :] if len(steps) >= window else steps
+        ax.plot(ma_steps, ma, label=speed_to_label(speed), color=color, linewidth=1.5)
+        end_points.append((ma[-1], ma_steps[-1], speed_to_label(speed), color))
+
+    # Group nearby end points and annotate
+    threshold = (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.03
+    end_points.sort(key=lambda x: x[0])
+    groups = []
+    for ep in end_points:
+        if groups and abs(ep[0] - groups[-1][-1][0]) < threshold:
+            groups[-1].append(ep)
+        else:
+            groups.append([ep])
+
+    for group in groups:
+        if len(group) > 1:
+            continue
+        ep = group[0]
+        ax.annotate(
+            ep[2],
+            xy=(ep[1], ep[0]),
+            xytext=(5, 0),
+            textcoords="offset points",
+            color=ep[3],
+            fontweight="bold",
+            fontsize=10,
+            va="center",
+        )
 
     ax.set_xlabel("Episode")
     ax.set_ylabel(f"{args.metric} (MA-{args.window})")
-    ax.set_title(f"Apple Speed Study: {args.metric}")
+    ax.set_title("Running Apple: how apple movement frequency affects learning\n"
+                  "Slower apple → longer snake. Speed ≥ every 2 frames — agent barely learns",
+                  fontsize=11)
     ax.legend()
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
