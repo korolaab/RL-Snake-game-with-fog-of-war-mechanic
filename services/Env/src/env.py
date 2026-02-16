@@ -84,7 +84,7 @@ if __name__ == "__main__":
     mapfile = mmap.mmap(shm.fd, total_size)
 
     mapfile_ctrl = mmap.mmap(shm_ctrl.fd, shm_ctrl.size)
-    ctrl_fmt = "=iiii"
+    ctrl_fmt = "=iiiii"
 
     sum_reward = 0
     frames = 0
@@ -102,7 +102,7 @@ if __name__ == "__main__":
             with open("history.csv",'a') as f:
                 print(f"{game.max_len}", file=f)
 
-            struct.pack_into(ctrl_fmt, mapfile_ctrl, 0, 0, int(game.max_len), int(frames),int(sum_reward))
+            struct.pack_into(ctrl_fmt, mapfile_ctrl, 0, 0, int(game.max_len), int(game.eaten_apples), int(frames), int(sum_reward))
             game.reset()
             struct.pack_into(header_fmt, mapfile, 0, reward,False,0)
             mapfile[header_size:header_size + state.nbytes] = state.tobytes()

@@ -55,7 +55,7 @@ sem_env_done = posix_ipc.Semaphore("/sem_env_done", posix_ipc.O_CREX, initial_va
 # Control format: command (int)
 # 0 = normal step
 # 1 = reset
-ctrl_fmt_env = "=iiii" # reset, snake_length, frames, sum_reward
+ctrl_fmt_env = "=iiiii" # reset, snake_length, eaten_apples, frames, sum_reward
 sem_env_control = posix_ipc.SharedMemory("/env_control", posix_ipc.O_CREX, 
                 size=struct.calcsize(ctrl_fmt_env))
 mapfile_env_ctrl = mmap.mmap(sem_env_control.fd, sem_env_control.size)
@@ -85,6 +85,7 @@ mlflow_run = None
 reward_history = []
 length_history = []
 apples_history = []
+snake_length_history = []
 
 def cleanup_resources():
     """Clean up all IPC resources and MLflow"""
@@ -153,24 +154,26 @@ try:
 
                 sem_env_tick.release()   # разрешаем ENV работать
                 sem_env_done.acquire()   # ждем, пока ENV скажет "готово"
-                reset, eaten_apples, frames, sum_reward = struct.unpack_from(ctrl_fmt_env, mapfile_env_ctrl, 0)
+                reset, snake_length, eaten_apples, frames, sum_reward = struct.unpack_from(ctrl_fmt_env, mapfile_env_ctrl, 0)
 
                 sem_inf_tick.release()   # разрешаем INF работать
                 sem_inf_done.acquire()   # ждем, пока INF закончит
                 
                 do_train, loss, policy_loss, entropy_mean, entropy_std, grad_norm, returns_mean, returns_std, action_0_freq, action_1_freq, action_2_freq = struct.unpack_from(ctrl_fmt_inf, mapfile_inf_ctrl, 0)
-                print(f"[Clock] {episode}:{eaten_apples=} {loss=:0.3f} {policy_loss=:0.3f} {entropy_mean=:0.3f} {grad_norm=:0.3f} {frames=}  {sum_reward=}")
+                print(f"[Clock] {episode}:{snake_length=} {eaten_apples=} {loss=:0.3f} {policy_loss=:0.3f} {entropy_mean=:0.3f} {grad_norm=:0.3f} {frames=}  {sum_reward=}")
                 
                 # Update moving averages
                 reward_history.append(sum_reward)
                 length_history.append(frames)
                 apples_history.append(eaten_apples)
+                snake_length_history.append(snake_length)
                 
                 # Prepare metrics dict
                 metrics = {
                     "episode_reward": sum_reward,
                     "episode_length": frames,
                     "eaten_apples": eaten_apples,
+                    "snake_length": snake_length,
                     "total_loss": loss,
                     "policy_loss": policy_loss,
                     "entropy_mean": entropy_mean,
@@ -188,11 +191,13 @@ try:
                     metrics["reward_100ep_avg"] = sum(reward_history[-100:]) / 100
                     metrics["length_100ep_avg"] = sum(length_history[-100:]) / 100
                     metrics["apples_100ep_avg"] = sum(apples_history[-100:]) / 100
+                    metrics["snake_length_100ep_avg"] = sum(snake_length_history[-100:]) / 100
                 elif len(reward_history) >= 10:
                     # Use available history if less than 100 episodes
                     metrics["reward_10ep_avg"] = sum(reward_history[-10:]) / len(reward_history[-10:])
                     metrics["length_10ep_avg"] = sum(length_history[-10:]) / len(length_history[-10:])
                     metrics["apples_10ep_avg"] = sum(apples_history[-10:]) / len(apples_history[-10:])
+                    metrics["snake_length_10ep_avg"] = sum(snake_length_history[-10:]) / len(snake_length_history[-10:])
                 
                 # Log comprehensive metrics
                 mlflow.log_metrics(metrics, step=episode)

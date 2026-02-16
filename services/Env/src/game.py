@@ -190,16 +190,20 @@ class SnakeGame:
         # Check if snake caught apple
         reward = 1
         if new_head == self.apple.position:
-            reward += 1  # Give reward but NO growth
-            self.eaten_apples += 1  # Track eaten apples
-            self.steps_without_apple = 0  # Reset hunger timer
-            self.apple.respawn(self.snake)  # Respawn apple at new location
-        
-        # Always remove tail (no growth, fixed length snake)
-        self.snake.pop()
-        
-        # Update max_len to track maximum apples eaten (for compatibility)
-        self.max_len = max(self.eaten_apples, self.max_len)
+            reward += 1
+            self.eaten_apples += 1
+            self.steps_without_apple = 0
+            self.apple.respawn(self.snake)
+        else:
+            # Tick-based growth: every 50 ticks, skip tail pop (snake grows)
+            self.ticks += 1
+            if self.ticks == 50:
+                self.snake.pop()
+                self.ticks = 0
+            self.snake.pop()
+
+        # Update max_len to track maximum snake length
+        self.max_len = max(len(self.snake), self.max_len)
         state = self.get_state()
         return state, reward, False
     
@@ -260,9 +264,9 @@ class SnakeGame:
             elif color == WHITE:
                 matrix.append([0, 0])
         
-        # Add eaten apples information instead of snake length
-        apples_normalized = min(self.eaten_apples / 10.0, 1.0)  # Normalize to 0-1 range
-        matrix.append([apples_normalized, 1 - apples_normalized])
+        # Add snake length information
+        is_alive = np.exp(-np.abs(len(self.snake)))
+        matrix.append([is_alive, 1 - is_alive])
         
         # Add last action information
         last_action_vector = [1, 0] if last_action != 1 else [0, 1]
