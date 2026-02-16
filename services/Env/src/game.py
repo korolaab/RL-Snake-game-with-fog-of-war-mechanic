@@ -112,7 +112,11 @@ class SnakeGame:
         
         # Apple speed configuration
         self.apple_speed = apple_speed
-        
+
+        # Hunger mechanic
+        self.max_hunger_steps = max_hunger_steps
+        self.steps_since_food = 0
+
         self.reset()
     
     def reset(self):
@@ -129,7 +133,8 @@ class SnakeGame:
         self.apple = RunningApple(apple_pos, self.GRID_WIDTH, self.GRID_HEIGHT, self.apple_speed)
         
         self.eaten_apples = 0
-    
+        self.steps_since_food = 0
+
     def random_food_position(self):
         while True:
             pos = (random.randint(0, self.GRID_WIDTH - 1), random.randint(0, self.GRID_HEIGHT - 1))
@@ -166,12 +171,19 @@ class SnakeGame:
         
         # Check if snake caught apple
         reward = 1
+        self.steps_since_food += 1
         if new_head == self.apple.position:
             reward += 1
             self.eaten_apples += 1
+            self.steps_since_food = 0
             self.apple.respawn(self.snake)
         else:
             self.snake.pop()
+
+        # Hunger death
+        if self.max_hunger_steps > 0 and self.steps_since_food >= self.max_hunger_steps:
+            state = self.get_state()
+            return state, 0, True
 
         # Update max_len to track maximum snake length
         self.max_len = max(len(self.snake), self.max_len)

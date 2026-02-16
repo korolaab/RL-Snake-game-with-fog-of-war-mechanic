@@ -15,8 +15,9 @@ services:
       python /app/clock.py
       --fps 0
       --vision-size 5
-      --mlflow_experiment_name running-apple-hunt
+      --mlflow_experiment_name running-apple-speed-0.1
       --max-episodes 3000
+      --apple-speed 0.1
     restart: "no"
     depends_on:
       - env
@@ -38,7 +39,7 @@ services:
       --vision_display_rows 11
       --reward-config '{"alive": 1, "eat_food": 1, "game_over": 0}'
       --max-lifetime 10000
-      --apple-speed 0
+      --apple-speed 0.1
       --max-hunger-steps 500
     restart: "no"
 
