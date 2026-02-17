@@ -104,7 +104,8 @@ class SnakeGame:
                  max_lifetime=10000,
                  max_hunger_steps=150,
                  apple_speed=0.5,
-                 num_snakes=1
+                 num_snakes=1,
+                 reward_config=None
                  ):
         self.GRID_WIDTH = GRID_WIDTH
         self.GRID_HEIGHT = GRID_HEIGHT
@@ -112,6 +113,7 @@ class SnakeGame:
         self.VISION_DISPLAY_COLS = VISION_DISPLAY_COLS
         self.VISION_DISPLAY_ROWS = VISION_DISPLAY_ROWS
         self.num_snakes = num_snakes
+        self.reward_config = reward_config or {"alive": 1, "eat_food": 1, "game_over": 0}
         self.ticks = 0
 
         self.eaten_apples = 0
@@ -197,15 +199,15 @@ class SnakeGame:
 
         if new_head in self.snake1 or len(self.snake1) == 1:
             state = self.get_state()
-            return state, 0, True
+            return state, self.reward_config.get("game_over", 0), True
 
         self.snake1.insert(0, new_head)
         self.apple.move([self.snake1[0]], set(self.snake1))
 
-        reward = 1
+        reward = self.reward_config.get("alive", 1)
         self.steps_since_food += 1
         if new_head == self.apple.position:
-            reward += 1
+            reward += self.reward_config.get("eat_food", 1)
             self.eaten_apples += 1
             self.steps_since_food = 0
             self.apple.respawn(set(self.snake1))
@@ -214,7 +216,7 @@ class SnakeGame:
 
         if self.max_hunger_steps > 0 and self.steps_since_food >= self.max_hunger_steps:
             state = self.get_state()
-            return state, 0, True
+            return state, self.reward_config.get("game_over", 0), True
 
         self.max_len = max(len(self.snake1), self.max_len)
         self.snake = self.snake1
@@ -241,11 +243,11 @@ class SnakeGame:
         all_body = set(self.snake1) | set(self.snake2)
         if new_head1 in all_body or new_head2 in all_body or new_head1 == new_head2:
             state1, state2 = self.get_state()
-            return (state1, state2), 0, True
+            return (state1, state2), self.reward_config.get("game_over", 0), True
 
         if len(self.snake1) == 1 or len(self.snake2) == 1:
             state1, state2 = self.get_state()
-            return (state1, state2), 0, True
+            return (state1, state2), self.reward_config.get("game_over", 0), True
 
         # Add new heads
         self.snake1.insert(0, new_head1)
@@ -256,11 +258,11 @@ class SnakeGame:
         self.apple.move([new_head1, new_head2], all_body_new)
 
         # Check if either snake ate apple
-        reward = 1
+        reward = self.reward_config.get("alive", 1)
         self.steps_since_food += 1
         ate = (new_head1 == self.apple.position) or (new_head2 == self.apple.position)
         if ate:
-            reward += 1
+            reward += self.reward_config.get("eat_food", 1)
             self.eaten_apples += 1
             self.steps_since_food = 0
             self.apple.respawn(set(self.snake1) | set(self.snake2))
@@ -272,7 +274,7 @@ class SnakeGame:
         # Hunger death
         if self.max_hunger_steps > 0 and self.steps_since_food >= self.max_hunger_steps:
             state1, state2 = self.get_state()
-            return (state1, state2), 0, True
+            return (state1, state2), self.reward_config.get("game_over", 0), True
 
         self.max_len = max(len(self.snake1), len(self.snake2), self.max_len)
         self.snake = self.snake1
