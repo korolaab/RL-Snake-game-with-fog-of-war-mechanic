@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  # Clock Service - Master Coordinator
+  clock:
+    image: localhost:5000/snake-rl/clock:latest
+    pull_policy: never
+    volumes:
+      - shared-memory:/dev/shm
+      - ./logs-storage:/logs
+    environment:
+      - MAX_EPISODES=30
+      - MLFLOW_TRACKING_URI=file:///logs/mlruns
+    command: >
+      python /app/clock.py
+      --fps 0
+      --vision-size 5
+      --mlflow_experiment_name running-apple-speed-0.1
+      --max-episodes 3000
+      --apple-speed 0.1
+      --num-snakes 2
+    restart: "no"
+    depends_on:
+      - env
+      - inference
+
+  # Environment Service - Snake Game Engine
+  env:
+    image: localhost:5000/snake-rl/env:latest
+    pull_policy: never
+    volumes:
+      - shared-memory:/dev/shm
+      - ./logs-storage:/logs
+    command: >
+      python /app/env.py
+      --grid_width 11
+      --grid_height 11
+      --vision_radius 5
+      --vision_display_cols 11
+      --vision_display_rows 11
+      --reward-config '{"alive": 1, "eat_food": 1, "game_over": 0}'
+      --max-lifetime 10000
+      --apple-speed 0.1
+      --max-hunger-steps 500
+      --num-snakes 2
+    restart: "no"
+
+  # Inference Service - Neural Network Agent
+  inference:
+    image: localhost:5000/snake-rl/inference:latest
+    pull_policy: never
+    volumes:
+      - shared-memory:/dev/shm
+      - ./logs-storage:/logs
+    command: >
+      python /app/inf.py
+      --snake-id 1
+      --learning-rate 0.001
+      --gamma 0.9
+      --beta 0.1
+      --num-snakes 2
+      --talk-size 12
+      --comm-dropout 0.0
+    restart: "no"
+
+volumes:
+  # Shared memory volume for POSIX IPC
+  shared-memory:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=128m
