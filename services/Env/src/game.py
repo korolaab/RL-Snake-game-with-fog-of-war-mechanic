@@ -237,13 +237,12 @@ class SnakeGame:
         dx2, dy2 = self.direction2
         new_head2 = ((h2x + dx2) % self.GRID_WIDTH, (h2y + dy2) % self.GRID_HEIGHT)
 
-        # Check collisions (heads vs all bodies, excluding own head position)
-        all_body = set(self.snake1) | set(self.snake2)
-        if new_head1 in all_body or new_head2 in all_body or new_head1 == new_head2:
+        # Check self-collisions only (inter-snake collision disabled)
+        if new_head1 in set(self.snake1) or len(self.snake1) == 1:
             state1, state2 = self.get_state()
             return (state1, state2), 0, True
 
-        if len(self.snake1) == 1 or len(self.snake2) == 1:
+        if new_head2 in set(self.snake2) or len(self.snake2) == 1:
             state1, state2 = self.get_state()
             return (state1, state2), 0, True
 
