@@ -264,14 +264,17 @@ if __name__ == "__main__":
     obs_size = vision_size * 2
     talk_size = args.talk_size if num_snakes == 2 else 0
 
-    model = SnakeNet(input_size=obs_size, talk_size=talk_size, comm_dropout=args.comm_dropout)
+    id_size = 2 if num_snakes == 2 else 0
+    snake1_id = torch.tensor([1.0, 0.0]) if num_snakes == 2 else None
+    snake2_id = torch.tensor([0.0, 1.0]) if num_snakes == 2 else None
+    model = SnakeNet(input_size=obs_size + id_size, talk_size=talk_size, comm_dropout=args.comm_dropout)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
 
     replay_buffer = []
     episode_count = 0
 
-    prev_vision1 = torch.zeros(obs_size)
-    prev_vision2 = torch.zeros(obs_size) if num_snakes == 2 else None
+    prev_vision1 = torch.zeros(obs_size + id_size)
+    prev_vision2 = torch.zeros(obs_size + id_size) if num_snakes == 2 else None
     prev_action1 = 0
     prev_action2 = 0
 
@@ -336,9 +339,9 @@ if __name__ == "__main__":
             replay_buffer = []
             prev_action1 = 0
             prev_action2 = 0
-            prev_vision1 = torch.zeros(obs_size)
+            prev_vision1 = torch.zeros(obs_size + id_size)
             if num_snakes == 2:
-                prev_vision2 = torch.zeros(obs_size)
+                prev_vision2 = torch.zeros(obs_size + id_size)
         else:
             header_data = struct.unpack_from(header_fmt, mapfile, 0)
             reward = header_data[0]
@@ -353,12 +356,14 @@ if __name__ == "__main__":
                 with torch.no_grad():
                     # Snake1 forward with zeros talk_in
                     talk_in_zeros = torch.zeros(talk_size) if talk_size > 0 else None
-                    probs1, talk_out = model(v1_tensor, talk_in_zeros)
+                    v1_with_id = torch.cat([v1_tensor, snake1_id])
+                    probs1, talk_out = model(v1_with_id, talk_in_zeros)
                     m1 = torch.distributions.Categorical(probs1)
                     action1 = m1.sample()
 
                     # Snake2 forward with talk from snake1
-                    probs2, _ = model(v2_tensor, talk_out)
+                    v2_with_id = torch.cat([v2_tensor, snake2_id])
+                    probs2, _ = model(v2_with_id, talk_out)
                     m2 = torch.distributions.Categorical(probs2)
                     action2 = m2.sample()
 
@@ -369,8 +374,8 @@ if __name__ == "__main__":
                     prev_action2,
                     reward,
                 )
-                prev_vision1 = v1_tensor.clone()
-                prev_vision2 = v2_tensor.clone()
+                prev_vision1 = v1_with_id.clone()
+                prev_vision2 = v2_with_id.clone()
                 prev_action1 = action1
                 prev_action2 = action2
                 replay_buffer.append(experience)
