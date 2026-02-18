@@ -77,8 +77,7 @@ if __name__ == "__main__":
         args.max_lifetime,
         args.max_hunger_steps,
         args.apple_speed,
-        num_snakes=num_snakes,
-        reward_config=reward_config
+        num_snakes=num_snakes
     )
 
     if num_snakes == 2:

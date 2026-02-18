@@ -91,7 +91,6 @@ class SnakeNet(nn.Module):
 def train():
     episodes = [replay_buffer]
     all_states1, all_states2, all_actions1, all_actions2, all_returns = [], [], [], [], []
-    all_talks1, all_talks2 = [], []
 
     for episode in episodes:
         if not episode:
@@ -100,13 +99,11 @@ def train():
         rewards = []
         for exp in episode[1:]:
             if num_snakes == 2:
-                s1, s2, a1, a2, t_for_s1, t_for_s2, r = exp
+                s1, s2, a1, a2, r = exp
                 all_states1.append(s1)
                 all_states2.append(s2)
                 all_actions1.append(a1)
                 all_actions2.append(a2)
-                all_talks1.append(t_for_s1)
-                all_talks2.append(t_for_s2)
             else:
                 s, a, r = exp[0], exp[1], exp[2]
                 all_states1.append(s)
@@ -137,11 +134,12 @@ def train():
         states2_tensor = torch.stack(all_states2)
         actions2_tensor = torch.tensor(all_actions2, dtype=torch.long)
 
-        talks1_tensor = torch.stack(all_talks1)
-        talks2_tensor = torch.stack(all_talks2)
+        # Forward pass snake1 with zeros talk_in
+        talk_in_zeros = torch.zeros(states1_tensor.shape[0], args.talk_size) if args.talk_size > 0 else None
+        probs1, talk_out = model(states1_tensor, talk_in_zeros)
 
-        probs1, _ = model(states1_tensor, talks1_tensor)
-        probs2, _ = model(states2_tensor, talks2_tensor)
+        # Forward pass snake2 with talk from snake1
+        probs2, _ = model(states2_tensor, talk_out)
 
         m1 = torch.distributions.Categorical(probs1)
         m2 = torch.distributions.Categorical(probs2)
@@ -151,9 +149,8 @@ def train():
         entropy2 = m2.entropy()
 
         ent = (entropy1.mean() + entropy2.mean()) / 2
-        loss1 = -(log_probs1 * returns_tensor).mean()
-        loss2 = -(log_probs2 * returns_tensor).mean()
-        loss = loss1 + loss2 - args.beta * ent
+        loss1 = -((log_probs1 + log_probs2) * returns_tensor).mean()
+        loss = loss1 - args.beta * ent
 
         entropy_all = torch.cat([entropy1, entropy2])
         actions_all = torch.cat([actions1_tensor, actions2_tensor])
@@ -277,10 +274,6 @@ if __name__ == "__main__":
     prev_vision2 = torch.zeros(obs_size) if num_snakes == 2 else None
     prev_action1 = 0
     prev_action2 = 0
-    prev_talk1 = torch.zeros(talk_size) if num_snakes == 2 else None
-    prev_talk2 = torch.zeros(talk_size) if num_snakes == 2 else None
-    prev_talk_for_s1 = torch.zeros(talk_size) if num_snakes == 2 else None
-    prev_talk_for_s2 = torch.zeros(talk_size) if num_snakes == 2 else None
 
     while True:
         sem_inf_tick.acquire()
@@ -346,10 +339,6 @@ if __name__ == "__main__":
             prev_vision1 = torch.zeros(obs_size)
             if num_snakes == 2:
                 prev_vision2 = torch.zeros(obs_size)
-                prev_talk1 = torch.zeros(talk_size)
-                prev_talk2 = torch.zeros(talk_size)
-                prev_talk_for_s1 = torch.zeros(talk_size)
-                prev_talk_for_s2 = torch.zeros(talk_size)
         else:
             header_data = struct.unpack_from(header_fmt, mapfile, 0)
             reward = header_data[0]
@@ -362,11 +351,14 @@ if __name__ == "__main__":
                 v2_tensor = torch.from_numpy(vision2.astype(np.float32))
 
                 with torch.no_grad():
-                    probs1, talk1 = model(v1_tensor, prev_talk2)
+                    # Snake1 forward with zeros talk_in
+                    talk_in_zeros = torch.zeros(talk_size) if talk_size > 0 else None
+                    probs1, talk_out = model(v1_tensor, talk_in_zeros)
                     m1 = torch.distributions.Categorical(probs1)
                     action1 = m1.sample()
 
-                    probs2, talk2 = model(v2_tensor, prev_talk1)
+                    # Snake2 forward with talk from snake1
+                    probs2, _ = model(v2_tensor, talk_out)
                     m2 = torch.distributions.Categorical(probs2)
                     action2 = m2.sample()
 
@@ -375,18 +367,12 @@ if __name__ == "__main__":
                     prev_vision2,
                     prev_action1,
                     prev_action2,
-                    prev_talk_for_s1,
-                    prev_talk_for_s2,
                     reward,
                 )
                 prev_vision1 = v1_tensor.clone()
                 prev_vision2 = v2_tensor.clone()
                 prev_action1 = action1
                 prev_action2 = action2
-                prev_talk_for_s1 = prev_talk2.clone()
-                prev_talk_for_s2 = prev_talk1.clone()
-                prev_talk1 = talk1.detach()
-                prev_talk2 = talk2.detach()
                 replay_buffer.append(experience)
 
                 # Write both actions
