@@ -207,6 +207,8 @@ if __name__ == "__main__":
     parser.add_argument("--num-snakes", type=int, default=1, help="Number of snakes (1 or 2)")
     parser.add_argument("--talk-size", type=int, default=12, help="Size of talk vector for inter-snake communication")
     parser.add_argument("--comm-dropout", type=float, default=0.0, help="Dropout rate on talk input (0.0=full comm, 1.0=no comm)")
+    parser.add_argument("--hidden1", type=int, default=14, help="Hidden units in layer 1")
+    parser.add_argument("--hidden2", type=int, default=12, help="Hidden units in layer 2")
 
     args = parser.parse_args()
     num_snakes = args.num_snakes
@@ -267,7 +269,7 @@ if __name__ == "__main__":
     id_size = 2 if num_snakes == 2 else 0
     snake1_id = torch.tensor([1.0, 0.0]) if num_snakes == 2 else None
     snake2_id = torch.tensor([0.0, 1.0]) if num_snakes == 2 else None
-    model = SnakeNet(input_size=obs_size + id_size, talk_size=talk_size, comm_dropout=args.comm_dropout)
+    model = SnakeNet(input_size=obs_size + id_size, talk_size=talk_size, hidden_units_1=args.hidden1, hidden_units_2=args.hidden2, comm_dropout=args.comm_dropout)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
 
     replay_buffer = []
