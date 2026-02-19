@@ -165,20 +165,22 @@ def train():
             entropy1 = m1.entropy()
             entropy2 = m2.entropy()
 
-            # Shared advantage
-            values_mean = (values1 + values2) / 2
-            advantage = returns_tensor - values_mean.detach()
-            advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-8)
+            # Separate advantage per snake
+            adv1 = returns_tensor - values1.detach()
+            adv1 = (adv1 - adv1.mean()) / (adv1.std() + 1e-8)
+
+            adv2 = returns_tensor - values2.detach()
+            adv2 = (adv2 - adv2.mean()) / (adv2.std() + 1e-8)
 
             # Separate PPO loss for each snake
             ratio1 = torch.exp(new_log_probs1 - old_log_probs1_tensor)
-            surr1_a = ratio1 * advantage
-            surr1_b = torch.clamp(ratio1, 1 - args.eps_clip, 1 + args.eps_clip) * advantage
+            surr1_a = ratio1 * adv1
+            surr1_b = torch.clamp(ratio1, 1 - args.eps_clip, 1 + args.eps_clip) * adv1
             policy_loss1 = -torch.min(surr1_a, surr1_b).mean()
 
             ratio2 = torch.exp(new_log_probs2 - old_log_probs2_tensor)
-            surr2_a = ratio2 * advantage
-            surr2_b = torch.clamp(ratio2, 1 - args.eps_clip, 1 + args.eps_clip) * advantage
+            surr2_a = ratio2 * adv2
+            surr2_b = torch.clamp(ratio2, 1 - args.eps_clip, 1 + args.eps_clip) * adv2
             policy_loss2 = -torch.min(surr2_a, surr2_b).mean()
 
             value_loss1 = nn.functional.mse_loss(values1, returns_tensor)
