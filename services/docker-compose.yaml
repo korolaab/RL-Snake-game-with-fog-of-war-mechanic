@@ -11,14 +11,7 @@ services:
     environment:
       - MAX_EPISODES=30
       - MLFLOW_TRACKING_URI=file:///logs/mlruns
-    command: >
-      python /app/clock.py
-      --fps 0
-      --vision-size 5
-      --mlflow_experiment_name running-apple-speed-0.1
-      --max-episodes 3000
-      --apple-speed 0.1
-      --num-snakes 2
+    command: ["python", "/app/clock.py", "--fps", "0", "--vision-size", "5", "--mlflow_experiment_name", "running-apple-speed-0.1", "--max-episodes", "10000", "--apple-speed", "0.1", "--num-snakes", "2"]
     restart: "no"
     depends_on:
       - env
@@ -60,7 +53,7 @@ services:
       --beta 0.1
       --num-snakes 2
       --talk-size 12
-      --comm-dropout 0.0
+      --comm-dropout 1.0
       --hidden1 128
       --hidden2 64
     restart: "no"
