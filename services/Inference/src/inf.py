@@ -99,6 +99,7 @@ def train():
     episodes = [replay_buffer]
     all_states1, all_states2, all_actions1, all_actions2, all_returns = [], [], [], [], []
     all_old_log_probs1, all_old_log_probs2 = [], []
+    all_talk_in1, all_talk_in2 = [], []
 
     for episode in episodes:
         if not episode:
@@ -107,13 +108,16 @@ def train():
         rewards = []
         for exp in episode[1:]:
             if num_snakes == 2:
-                s1, s2, a1, a2, old_lp1, old_lp2, r = exp
+                s1, s2, a1, a2, old_lp1, old_lp2, ti1, ti2, r = exp
                 all_states1.append(s1)
                 all_states2.append(s2)
                 all_actions1.append(a1)
                 all_actions2.append(a2)
                 all_old_log_probs1.append(old_lp1)
                 all_old_log_probs2.append(old_lp2)
+                if ti1 is not None:
+                    all_talk_in1.append(ti1)
+                    all_talk_in2.append(ti2)
             else:
                 s, a, old_lp, r = exp[0], exp[1], exp[2], exp[3]
                 all_states1.append(s)
@@ -146,14 +150,13 @@ def train():
         actions2_tensor = torch.tensor(all_actions2, dtype=torch.long)
         old_log_probs2_tensor = torch.tensor(all_old_log_probs2, dtype=torch.float32)
 
-        last_metrics = None
-        for _ in range(args.ppo_epochs):
-            # Forward pass snake1 with zeros talk_in
-            talk_in_zeros = torch.zeros(states1_tensor.shape[0], args.talk_size) if args.talk_size > 0 else None
-            probs1, talk_out, values1 = model(states1_tensor, talk_in_zeros)
+        talk_in1_tensor = torch.stack(all_talk_in1) if all_talk_in1 else None
+        talk_in2_tensor = torch.stack(all_talk_in2) if all_talk_in2 else None
 
-            # Forward pass snake2 with talk from snake1
-            probs2, _, values2 = model(states2_tensor, talk_out)
+        for _ in range(args.ppo_epochs):
+            # Forward pass with saved talk_in from experience
+            probs1, _, values1 = model(states1_tensor, talk_in1_tensor)
+            probs2, _, values2 = model(states2_tensor, talk_in2_tensor)
 
             m1 = torch.distributions.Categorical(probs1)
             m2 = torch.distributions.Categorical(probs2)
@@ -162,32 +165,27 @@ def train():
             entropy1 = m1.entropy()
             entropy2 = m2.entropy()
 
-            # Advantage for snake1
-            adv1 = returns_tensor - values1.detach()
-            adv1 = (adv1 - adv1.mean()) / (adv1.std() + 1e-8)
+            # Shared advantage
+            values_mean = (values1 + values2) / 2
+            advantage = returns_tensor - values_mean.detach()
+            advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-8)
 
-            # Advantage for snake2
-            adv2 = returns_tensor - values2.detach()
-            adv2 = (adv2 - adv2.mean()) / (adv2.std() + 1e-8)
-
-            # PPO clipped loss for snake1
+            # Separate PPO loss for each snake
             ratio1 = torch.exp(new_log_probs1 - old_log_probs1_tensor)
-            surr1_1 = ratio1 * adv1
-            surr1_2 = torch.clamp(ratio1, 1 - args.eps_clip, 1 + args.eps_clip) * adv1
-            policy_loss1 = -torch.min(surr1_1, surr1_2).mean()
-            value_loss1 = nn.functional.mse_loss(values1, returns_tensor)
+            surr1_a = ratio1 * advantage
+            surr1_b = torch.clamp(ratio1, 1 - args.eps_clip, 1 + args.eps_clip) * advantage
+            policy_loss1 = -torch.min(surr1_a, surr1_b).mean()
 
-            # PPO clipped loss for snake2
             ratio2 = torch.exp(new_log_probs2 - old_log_probs2_tensor)
-            surr2_1 = ratio2 * adv2
-            surr2_2 = torch.clamp(ratio2, 1 - args.eps_clip, 1 + args.eps_clip) * adv2
-            policy_loss2 = -torch.min(surr2_1, surr2_2).mean()
+            surr2_a = ratio2 * advantage
+            surr2_b = torch.clamp(ratio2, 1 - args.eps_clip, 1 + args.eps_clip) * advantage
+            policy_loss2 = -torch.min(surr2_a, surr2_b).mean()
+
+            value_loss1 = nn.functional.mse_loss(values1, returns_tensor)
             value_loss2 = nn.functional.mse_loss(values2, returns_tensor)
 
             ent = (entropy1.mean() + entropy2.mean()) / 2
-            loss1 = policy_loss1 + args.value_coef * value_loss1
-            loss2 = policy_loss2 + args.value_coef * value_loss2
-            loss = loss1 + loss2 - args.beta * ent
+            loss = policy_loss1 + policy_loss2 + args.value_coef * (value_loss1 + value_loss2) - args.beta * ent
 
             optimizer.zero_grad()
             loss.backward()
@@ -196,7 +194,7 @@ def train():
 
         entropy_all = torch.cat([entropy1, entropy2])
         actions_all = torch.cat([actions1_tensor, actions2_tensor])
-        policy_loss_total = (policy_loss1 + policy_loss2).item()
+        policy_loss_total = policy_loss1.item() + policy_loss2.item()
     else:
         for _ in range(args.ppo_epochs):
             probs1, _, values1 = model(states1_tensor, None)
@@ -336,6 +334,8 @@ if __name__ == "__main__":
     prev_action2 = 0
     prev_old_log_prob1 = 0.0
     prev_old_log_prob2 = 0.0
+    prev_talk1 = torch.zeros(talk_size) if talk_size > 0 else None
+    prev_talk2 = torch.zeros(talk_size) if talk_size > 0 else None
 
     while True:
         sem_inf_tick.acquire()
@@ -406,6 +406,9 @@ if __name__ == "__main__":
             prev_vision1 = torch.zeros(obs_size + id_size)
             if num_snakes == 2:
                 prev_vision2 = torch.zeros(obs_size + id_size)
+            if talk_size > 0:
+                prev_talk1 = torch.zeros(talk_size)
+                prev_talk2 = torch.zeros(talk_size)
         else:
             header_data = struct.unpack_from(header_fmt, mapfile, 0)
             reward = header_data[0]
@@ -418,20 +421,24 @@ if __name__ == "__main__":
                 v2_tensor = torch.from_numpy(vision2.astype(np.float32))
 
                 with torch.no_grad():
-                    # Snake1 forward with zeros talk_in
-                    talk_in_zeros = torch.zeros(talk_size) if talk_size > 0 else None
                     v1_with_id = torch.cat([v1_tensor, snake1_id])
-                    probs1, talk_out, _ = model(v1_with_id, talk_in_zeros)
+                    v2_with_id = torch.cat([v2_tensor, snake2_id])
+
+                    # Bidirectional: snake1 receives prev_talk2, snake2 receives prev_talk1
+                    probs1, talk_out1, _ = model(v1_with_id, prev_talk2)
+                    probs2, talk_out2, _ = model(v2_with_id, prev_talk1)
+
                     m1 = torch.distributions.Categorical(probs1)
                     action1 = m1.sample()
                     old_log_prob1 = m1.log_prob(action1)
 
-                    # Snake2 forward with talk from snake1
-                    v2_with_id = torch.cat([v2_tensor, snake2_id])
-                    probs2, _, _ = model(v2_with_id, talk_out)
                     m2 = torch.distributions.Categorical(probs2)
                     action2 = m2.sample()
                     old_log_prob2 = m2.log_prob(action2)
+
+                # Save talk_in used this step (for training)
+                talk_in1_saved = prev_talk2.clone() if prev_talk2 is not None else None
+                talk_in2_saved = prev_talk1.clone() if prev_talk1 is not None else None
 
                 experience = (
                     prev_vision1,
@@ -440,6 +447,8 @@ if __name__ == "__main__":
                     prev_action2,
                     prev_old_log_prob1,
                     prev_old_log_prob2,
+                    talk_in1_saved,
+                    talk_in2_saved,
                     reward,
                 )
                 prev_vision1 = v1_with_id.clone()
@@ -448,6 +457,9 @@ if __name__ == "__main__":
                 prev_action2 = action2
                 prev_old_log_prob1 = old_log_prob1.item()
                 prev_old_log_prob2 = old_log_prob2.item()
+                if talk_out1 is not None:
+                    prev_talk1 = talk_out1.clone()
+                    prev_talk2 = talk_out2.clone()
                 replay_buffer.append(experience)
 
                 # Write both actions
