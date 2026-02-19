@@ -61,8 +61,8 @@ services:
       --num-snakes 2
       --talk-size 12
       --comm-dropout 0.0
-      --hidden1 64
-      --hidden2 32
+      --hidden1 128
+      --hidden2 64
     restart: "no"
 
 volumes:
