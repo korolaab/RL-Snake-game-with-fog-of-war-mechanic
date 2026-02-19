@@ -61,6 +61,12 @@ class SnakeNet(nn.Module):
             nn.Linear(hidden_units_2, 3),
             nn.Softmax(dim=-1)
         )
+        # Value head (branches from layer2 output)
+        self.value_head = nn.Sequential(
+            nn.Linear(hidden_units_2, hidden_units_2),
+            nn.Tanh(),
+            nn.Linear(hidden_units_2, 1)
+        )
         # Talk head (branches from layer2 output)
         if talk_size > 0:
             self.talk_head = nn.Sequential(
@@ -79,18 +85,20 @@ class SnakeNet(nn.Module):
         h1 = self.layer1(x)
         h2 = self.layer2(h1)
         action_probs = self.policy_head(h2)
+        value = self.value_head(h2).squeeze(-1)
 
         if self.talk_size > 0:
             talk_out = self.talk_head(h2)
             talk_out = STEBinarize.apply(talk_out)
-            return action_probs, talk_out
+            return action_probs, talk_out, value
 
-        return action_probs, None
+        return action_probs, None, value
 
 
 def train():
     episodes = [replay_buffer]
     all_states1, all_states2, all_actions1, all_actions2, all_returns = [], [], [], [], []
+    all_old_log_probs1, all_old_log_probs2 = [], []
 
     for episode in episodes:
         if not episode:
@@ -99,15 +107,18 @@ def train():
         rewards = []
         for exp in episode[1:]:
             if num_snakes == 2:
-                s1, s2, a1, a2, r = exp
+                s1, s2, a1, a2, old_lp1, old_lp2, r = exp
                 all_states1.append(s1)
                 all_states2.append(s2)
                 all_actions1.append(a1)
                 all_actions2.append(a2)
+                all_old_log_probs1.append(old_lp1)
+                all_old_log_probs2.append(old_lp2)
             else:
-                s, a, r = exp[0], exp[1], exp[2]
+                s, a, old_lp, r = exp[0], exp[1], exp[2], exp[3]
                 all_states1.append(s)
                 all_actions1.append(a)
+                all_old_log_probs1.append(old_lp)
             rewards.append(r)
 
         # Calculate discounted returns
@@ -118,7 +129,6 @@ def train():
             returns.insert(0, G)
 
         returns = torch.tensor(returns, dtype=torch.float32)
-        returns = (returns - returns.mean()) / (returns.std() + 1e-8)
         all_returns.extend(returns.tolist())
 
     if not all_states1:
@@ -127,51 +137,93 @@ def train():
     states1_tensor = torch.stack(all_states1)
     actions1_tensor = torch.tensor(all_actions1, dtype=torch.long)
     returns_tensor = torch.tensor(all_returns, dtype=torch.float32)
+    old_log_probs1_tensor = torch.tensor(all_old_log_probs1, dtype=torch.float32)
 
     model.train()
 
     if num_snakes == 2:
         states2_tensor = torch.stack(all_states2)
         actions2_tensor = torch.tensor(all_actions2, dtype=torch.long)
+        old_log_probs2_tensor = torch.tensor(all_old_log_probs2, dtype=torch.float32)
 
-        # Forward pass snake1 with zeros talk_in
-        talk_in_zeros = torch.zeros(states1_tensor.shape[0], args.talk_size) if args.talk_size > 0 else None
-        probs1, talk_out = model(states1_tensor, talk_in_zeros)
+        last_metrics = None
+        for _ in range(args.ppo_epochs):
+            # Forward pass snake1 with zeros talk_in
+            talk_in_zeros = torch.zeros(states1_tensor.shape[0], args.talk_size) if args.talk_size > 0 else None
+            probs1, talk_out, values1 = model(states1_tensor, talk_in_zeros)
 
-        # Forward pass snake2 with talk from snake1
-        probs2, _ = model(states2_tensor, talk_out)
+            # Forward pass snake2 with talk from snake1
+            probs2, _, values2 = model(states2_tensor, talk_out)
 
-        m1 = torch.distributions.Categorical(probs1)
-        m2 = torch.distributions.Categorical(probs2)
-        log_probs1 = m1.log_prob(actions1_tensor)
-        log_probs2 = m2.log_prob(actions2_tensor)
-        entropy1 = m1.entropy()
-        entropy2 = m2.entropy()
+            m1 = torch.distributions.Categorical(probs1)
+            m2 = torch.distributions.Categorical(probs2)
+            new_log_probs1 = m1.log_prob(actions1_tensor)
+            new_log_probs2 = m2.log_prob(actions2_tensor)
+            entropy1 = m1.entropy()
+            entropy2 = m2.entropy()
 
-        ent = (entropy1.mean() + entropy2.mean()) / 2
-        loss1 = -((log_probs1 + log_probs2) * returns_tensor).mean()
-        loss = loss1 - args.beta * ent
+            # Advantage for snake1
+            adv1 = returns_tensor - values1.detach()
+            adv1 = (adv1 - adv1.mean()) / (adv1.std() + 1e-8)
+
+            # Advantage for snake2
+            adv2 = returns_tensor - values2.detach()
+            adv2 = (adv2 - adv2.mean()) / (adv2.std() + 1e-8)
+
+            # PPO clipped loss for snake1
+            ratio1 = torch.exp(new_log_probs1 - old_log_probs1_tensor)
+            surr1_1 = ratio1 * adv1
+            surr1_2 = torch.clamp(ratio1, 1 - args.eps_clip, 1 + args.eps_clip) * adv1
+            policy_loss1 = -torch.min(surr1_1, surr1_2).mean()
+            value_loss1 = nn.functional.mse_loss(values1, returns_tensor)
+
+            # PPO clipped loss for snake2
+            ratio2 = torch.exp(new_log_probs2 - old_log_probs2_tensor)
+            surr2_1 = ratio2 * adv2
+            surr2_2 = torch.clamp(ratio2, 1 - args.eps_clip, 1 + args.eps_clip) * adv2
+            policy_loss2 = -torch.min(surr2_1, surr2_2).mean()
+            value_loss2 = nn.functional.mse_loss(values2, returns_tensor)
+
+            ent = (entropy1.mean() + entropy2.mean()) / 2
+            loss1 = policy_loss1 + args.value_coef * value_loss1
+            loss2 = policy_loss2 + args.value_coef * value_loss2
+            loss = loss1 + loss2 - args.beta * ent
+
+            optimizer.zero_grad()
+            loss.backward()
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float('inf'))
+            optimizer.step()
 
         entropy_all = torch.cat([entropy1, entropy2])
         actions_all = torch.cat([actions1_tensor, actions2_tensor])
+        policy_loss_total = (policy_loss1 + policy_loss2).item()
     else:
-        probs1, _ = model(states1_tensor, None)
-        m1 = torch.distributions.Categorical(probs1)
-        log_probs1 = m1.log_prob(actions1_tensor)
-        entropy1 = m1.entropy()
+        for _ in range(args.ppo_epochs):
+            probs1, _, values1 = model(states1_tensor, None)
+            m1 = torch.distributions.Categorical(probs1)
+            new_log_probs1 = m1.log_prob(actions1_tensor)
+            entropy1 = m1.entropy()
 
-        ent = entropy1.mean()
-        loss1 = -(log_probs1 * returns_tensor).mean()
-        loss = loss1 - args.beta * ent
+            adv1 = returns_tensor - values1.detach()
+            adv1 = (adv1 - adv1.mean()) / (adv1.std() + 1e-8)
+
+            ratio1 = torch.exp(new_log_probs1 - old_log_probs1_tensor)
+            surr1 = ratio1 * adv1
+            surr2 = torch.clamp(ratio1, 1 - args.eps_clip, 1 + args.eps_clip) * adv1
+            policy_loss1 = -torch.min(surr1, surr2).mean()
+            value_loss1 = nn.functional.mse_loss(values1, returns_tensor)
+
+            ent = entropy1.mean()
+            loss = policy_loss1 + args.value_coef * value_loss1 - args.beta * ent
+
+            optimizer.zero_grad()
+            loss.backward()
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float('inf'))
+            optimizer.step()
 
         entropy_all = entropy1
         actions_all = actions1_tensor
-
-    optimizer.zero_grad()
-    loss.backward()
-
-    grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float('inf'))
-    optimizer.step()
+        policy_loss_total = policy_loss1.item()
 
     entropy_std = entropy_all.std().item() if len(entropy_all) > 1 else 0.0
     returns_mean = returns_tensor.mean().item()
@@ -182,7 +234,7 @@ def train():
 
     return {
         'loss': loss.item(),
-        'policy_loss': loss1.item(),
+        'policy_loss': policy_loss_total,
         'entropy_mean': ent.item(),
         'entropy_std': entropy_std,
         'grad_norm': grad_norm.item(),
@@ -209,6 +261,9 @@ if __name__ == "__main__":
     parser.add_argument("--comm-dropout", type=float, default=0.0, help="Dropout rate on talk input (0.0=full comm, 1.0=no comm)")
     parser.add_argument("--hidden1", type=int, default=14, help="Hidden units in layer 1")
     parser.add_argument("--hidden2", type=int, default=12, help="Hidden units in layer 2")
+    parser.add_argument("--ppo-epochs", type=int, default=4, help="PPO optimization epochs per episode")
+    parser.add_argument("--eps-clip", type=float, default=0.2, help="PPO clipping parameter")
+    parser.add_argument("--value-coef", type=float, default=0.5, help="Value loss coefficient")
 
     args = parser.parse_args()
     num_snakes = args.num_snakes
@@ -279,6 +334,8 @@ if __name__ == "__main__":
     prev_vision2 = torch.zeros(obs_size + id_size) if num_snakes == 2 else None
     prev_action1 = 0
     prev_action2 = 0
+    prev_old_log_prob1 = 0.0
+    prev_old_log_prob2 = 0.0
 
     while True:
         sem_inf_tick.acquire()
@@ -320,7 +377,10 @@ if __name__ == "__main__":
                         'beta': args.beta,
                         'talk_size': talk_size,
                         'comm_dropout': args.comm_dropout,
-                        'num_snakes': num_snakes
+                        'num_snakes': num_snakes,
+                        'ppo_epochs': args.ppo_epochs,
+                        'eps_clip': args.eps_clip,
+                        'value_coef': args.value_coef
                     }
                 }, checkpoint_path)
                 print(f"[INF] Saved model checkpoint: {checkpoint_path}")
@@ -341,6 +401,8 @@ if __name__ == "__main__":
             replay_buffer = []
             prev_action1 = 0
             prev_action2 = 0
+            prev_old_log_prob1 = 0.0
+            prev_old_log_prob2 = 0.0
             prev_vision1 = torch.zeros(obs_size + id_size)
             if num_snakes == 2:
                 prev_vision2 = torch.zeros(obs_size + id_size)
@@ -359,27 +421,33 @@ if __name__ == "__main__":
                     # Snake1 forward with zeros talk_in
                     talk_in_zeros = torch.zeros(talk_size) if talk_size > 0 else None
                     v1_with_id = torch.cat([v1_tensor, snake1_id])
-                    probs1, talk_out = model(v1_with_id, talk_in_zeros)
+                    probs1, talk_out, _ = model(v1_with_id, talk_in_zeros)
                     m1 = torch.distributions.Categorical(probs1)
                     action1 = m1.sample()
+                    old_log_prob1 = m1.log_prob(action1)
 
                     # Snake2 forward with talk from snake1
                     v2_with_id = torch.cat([v2_tensor, snake2_id])
-                    probs2, _ = model(v2_with_id, talk_out)
+                    probs2, _, _ = model(v2_with_id, talk_out)
                     m2 = torch.distributions.Categorical(probs2)
                     action2 = m2.sample()
+                    old_log_prob2 = m2.log_prob(action2)
 
                 experience = (
                     prev_vision1,
                     prev_vision2,
                     prev_action1,
                     prev_action2,
+                    prev_old_log_prob1,
+                    prev_old_log_prob2,
                     reward,
                 )
                 prev_vision1 = v1_with_id.clone()
                 prev_vision2 = v2_with_id.clone()
                 prev_action1 = action1
                 prev_action2 = action2
+                prev_old_log_prob1 = old_log_prob1.item()
+                prev_old_log_prob2 = old_log_prob2.item()
                 replay_buffer.append(experience)
 
                 # Write both actions
@@ -388,18 +456,20 @@ if __name__ == "__main__":
                 struct.pack_into("q", mapfile, action_offset + 8, action2)
             else:
                 with torch.no_grad():
-                    probs1, _ = model(v1_tensor, None)
+                    probs1, _, _ = model(v1_tensor, None)
                     m1 = torch.distributions.Categorical(probs1)
                     action1 = m1.sample()
+                    old_log_prob1 = m1.log_prob(action1)
 
                 experience = (
                     prev_vision1,
                     prev_action1,
+                    prev_old_log_prob1,
                     reward,
-                    v1_tensor
                 )
                 prev_vision1 = v1_tensor.clone()
                 prev_action1 = action1
+                prev_old_log_prob1 = old_log_prob1.item()
                 replay_buffer.append(experience)
 
                 action_offset = struct.calcsize("<d?")
