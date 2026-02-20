@@ -141,7 +141,6 @@ def train():
     states1_tensor = torch.stack(all_states1)
     actions1_tensor = torch.tensor(all_actions1, dtype=torch.long)
     returns_tensor = torch.tensor(all_returns, dtype=torch.float32)
-    returns_normalized = (returns_tensor - returns_tensor.mean()) / (returns_tensor.std() + 1e-8)
     old_log_probs1_tensor = torch.tensor(all_old_log_probs1, dtype=torch.float32)
 
     model.train()
@@ -167,10 +166,10 @@ def train():
             entropy2 = m2.entropy()
 
             # Separate advantage per snake
-            adv1 = returns_normalized - values1.detach()
+            adv1 = returns_tensor - values1.detach()
             adv1 = (adv1 - adv1.mean()) / (adv1.std() + 1e-8)
 
-            adv2 = returns_normalized - values2.detach()
+            adv2 = returns_tensor - values2.detach()
             adv2 = (adv2 - adv2.mean()) / (adv2.std() + 1e-8)
 
             # Separate PPO loss for each snake
@@ -184,8 +183,8 @@ def train():
             surr2_b = torch.clamp(ratio2, 1 - args.eps_clip, 1 + args.eps_clip) * adv2
             policy_loss2 = -torch.min(surr2_a, surr2_b).mean()
 
-            value_loss1 = nn.functional.mse_loss(values1, returns_normalized)
-            value_loss2 = nn.functional.mse_loss(values2, returns_normalized)
+            value_loss1 = nn.functional.mse_loss(values1, returns_tensor)
+            value_loss2 = nn.functional.mse_loss(values2, returns_tensor)
 
             ent = (entropy1.mean() + entropy2.mean()) / 2
             loss = policy_loss1 + policy_loss2 + args.value_coef * (value_loss1 + value_loss2) - args.beta * ent
@@ -205,14 +204,14 @@ def train():
             new_log_probs1 = m1.log_prob(actions1_tensor)
             entropy1 = m1.entropy()
 
-            adv1 = returns_normalized - values1.detach()
+            adv1 = returns_tensor - values1.detach()
             adv1 = (adv1 - adv1.mean()) / (adv1.std() + 1e-8)
 
             ratio1 = torch.exp(new_log_probs1 - old_log_probs1_tensor)
             surr1 = ratio1 * adv1
             surr2 = torch.clamp(ratio1, 1 - args.eps_clip, 1 + args.eps_clip) * adv1
             policy_loss1 = -torch.min(surr1, surr2).mean()
-            value_loss1 = nn.functional.mse_loss(values1, returns_normalized)
+            value_loss1 = nn.functional.mse_loss(values1, returns_tensor)
 
             ent = entropy1.mean()
             loss = policy_loss1 + args.value_coef * value_loss1 - args.beta * ent
