@@ -4,7 +4,9 @@
       "Bash(git add:*)",
       "Bash(git log:*)",
       "Bash(find:*)",
-      "Bash(git restore:*)"
+      "Bash(git restore:*)",
+      "Bash(export KUBECONFIG=/home/korolaab/.kube/config-remote)",
+      "Bash(kubectl logs:*)"
     ],
     "deny": [],
     "ask": []
