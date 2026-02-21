@@ -24,7 +24,7 @@ def manhattan_cells_without_center(R: int) -> int:
 if __name__ == "__main__":
 
     args = parse_args()
-
+    set_seed(args.seed)
 
 
     with open("history.csv",'w') as f:

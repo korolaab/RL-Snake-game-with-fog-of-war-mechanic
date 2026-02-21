@@ -262,8 +262,12 @@ if __name__ == "__main__":
     parser.add_argument("--ppo-epochs", type=int, default=4, help="PPO optimization epochs per episode")
     parser.add_argument("--eps-clip", type=float, default=0.2, help="PPO clipping parameter")
     parser.add_argument("--value-coef", type=float, default=0.5, help="Value loss coefficient")
+    parser.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility")
 
     args = parser.parse_args()
+    if args.seed is not None:
+        torch.manual_seed(args.seed)
+        np.random.seed(args.seed)
     num_snakes = args.num_snakes
 
     # открываем shared memory (создано Clock)

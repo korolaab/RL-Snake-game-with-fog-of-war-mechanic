@@ -36,6 +36,7 @@ services:
       --apple-speed 0.1
       --max-hunger-steps 88
       --num-snakes 2
+      --seed 42
     restart: "no"
 
   # Inference Service - Neural Network Agent
@@ -56,6 +57,7 @@ services:
       --comm-dropout 0.0
       --hidden1 128
       --hidden2 64
+      --seed 42
     restart: "no"
 
 volumes:
