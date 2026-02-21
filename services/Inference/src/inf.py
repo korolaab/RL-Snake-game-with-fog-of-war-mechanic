@@ -125,22 +125,15 @@ def train():
                 all_old_log_probs1.append(old_lp)
             rewards.append(r)
 
-        # Calculate discounted returns
-        returns = []
-        G = 0
-        for r in reversed(rewards):
-            G = r + args.gamma * G
-            returns.insert(0, G)
-
-        returns = torch.tensor(returns, dtype=torch.float32)
-        all_returns.extend(returns.tolist())
+        rewards_tensor = torch.tensor(rewards, dtype=torch.float32)
+        all_returns.extend(rewards)  # placeholder, will be replaced by GAE returns
 
     if not all_states1:
         return False
 
     states1_tensor = torch.stack(all_states1)
     actions1_tensor = torch.tensor(all_actions1, dtype=torch.long)
-    returns_tensor = torch.tensor(all_returns, dtype=torch.float32)
+    rewards_tensor = torch.tensor(all_returns, dtype=torch.float32)
     old_log_probs1_tensor = torch.tensor(all_old_log_probs1, dtype=torch.float32)
 
     model.train()
@@ -153,8 +146,24 @@ def train():
         talk_in1_tensor = torch.stack(all_talk_in1) if all_talk_in1 else None
         talk_in2_tensor = torch.stack(all_talk_in2) if all_talk_in2 else None
 
+        # Compute GAE advantages (once, before PPO loop)
+        with torch.no_grad():
+            _, _, values1_old = model(states1_tensor, talk_in1_tensor)
+            _, _, values2_old = model(states2_tensor, talk_in2_tensor)
+            values_old = (values1_old + values2_old) / 2
+
+        T = len(rewards_tensor)
+        advantages = torch.zeros(T)
+        gae = 0.0
+        for t in reversed(range(T)):
+            next_value = values_old[t + 1] if t + 1 < T else 0.0
+            delta = rewards_tensor[t] + args.gamma * next_value - values_old[t]
+            gae = delta + args.gamma * args.gae_lambda * gae
+            advantages[t] = gae
+        returns_tensor = advantages + values_old
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
         for _ in range(args.ppo_epochs):
-            # Forward pass with saved talk_in from experience
             probs1, _, values1 = model(states1_tensor, talk_in1_tensor)
             probs2, _, values2 = model(states2_tensor, talk_in2_tensor)
 
@@ -165,22 +174,17 @@ def train():
             entropy1 = m1.entropy()
             entropy2 = m2.entropy()
 
-            # Shared advantage
-            values_mean = (values1 + values2) / 2
-            advantage = returns_tensor - values_mean.detach()
-            advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-8)
-
-            # Separate PPO loss for each snake
             ratio1 = torch.exp(new_log_probs1 - old_log_probs1_tensor)
-            surr1_a = ratio1 * advantage
-            surr1_b = torch.clamp(ratio1, 1 - args.eps_clip, 1 + args.eps_clip) * advantage
+            surr1_a = ratio1 * advantages
+            surr1_b = torch.clamp(ratio1, 1 - args.eps_clip, 1 + args.eps_clip) * advantages
             policy_loss1 = -torch.min(surr1_a, surr1_b).mean()
 
             ratio2 = torch.exp(new_log_probs2 - old_log_probs2_tensor)
-            surr2_a = ratio2 * advantage
-            surr2_b = torch.clamp(ratio2, 1 - args.eps_clip, 1 + args.eps_clip) * advantage
+            surr2_a = ratio2 * advantages
+            surr2_b = torch.clamp(ratio2, 1 - args.eps_clip, 1 + args.eps_clip) * advantages
             policy_loss2 = -torch.min(surr2_a, surr2_b).mean()
 
+            values_mean = (values1 + values2) / 2
             value_loss1 = nn.functional.mse_loss(values1, returns_tensor)
             value_loss2 = nn.functional.mse_loss(values2, returns_tensor)
 
@@ -195,19 +199,32 @@ def train():
         entropy_all = torch.cat([entropy1, entropy2])
         actions_all = torch.cat([actions1_tensor, actions2_tensor])
         policy_loss_total = policy_loss1.item() + policy_loss2.item()
+        value_loss_total = value_loss1.item() + value_loss2.item()
     else:
+        # Compute GAE advantages (once, before PPO loop)
+        with torch.no_grad():
+            _, _, values_old = model(states1_tensor, None)
+
+        T = len(rewards_tensor)
+        advantages = torch.zeros(T)
+        gae = 0.0
+        for t in reversed(range(T)):
+            next_value = values_old[t + 1] if t + 1 < T else 0.0
+            delta = rewards_tensor[t] + args.gamma * next_value - values_old[t]
+            gae = delta + args.gamma * args.gae_lambda * gae
+            advantages[t] = gae
+        returns_tensor = advantages + values_old
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
         for _ in range(args.ppo_epochs):
             probs1, _, values1 = model(states1_tensor, None)
             m1 = torch.distributions.Categorical(probs1)
             new_log_probs1 = m1.log_prob(actions1_tensor)
             entropy1 = m1.entropy()
 
-            adv1 = returns_tensor - values1.detach()
-            adv1 = (adv1 - adv1.mean()) / (adv1.std() + 1e-8)
-
             ratio1 = torch.exp(new_log_probs1 - old_log_probs1_tensor)
-            surr1 = ratio1 * adv1
-            surr2 = torch.clamp(ratio1, 1 - args.eps_clip, 1 + args.eps_clip) * adv1
+            surr1 = ratio1 * advantages
+            surr2 = torch.clamp(ratio1, 1 - args.eps_clip, 1 + args.eps_clip) * advantages
             policy_loss1 = -torch.min(surr1, surr2).mean()
             value_loss1 = nn.functional.mse_loss(values1, returns_tensor)
 
@@ -222,6 +239,7 @@ def train():
         entropy_all = entropy1
         actions_all = actions1_tensor
         policy_loss_total = policy_loss1.item()
+        value_loss_total = value_loss1.item()
 
     entropy_std = entropy_all.std().item() if len(entropy_all) > 1 else 0.0
     returns_mean = returns_tensor.mean().item()
@@ -240,7 +258,8 @@ def train():
         'returns_std': returns_std,
         'action_0_freq': action_freqs[0].item(),
         'action_1_freq': action_freqs[1].item(),
-        'action_2_freq': action_freqs[2].item()
+        'action_2_freq': action_freqs[2].item(),
+        'value_loss': value_loss_total
     }
 
 if __name__ == "__main__":
@@ -262,6 +281,7 @@ if __name__ == "__main__":
     parser.add_argument("--ppo-epochs", type=int, default=4, help="PPO optimization epochs per episode")
     parser.add_argument("--eps-clip", type=float, default=0.2, help="PPO clipping parameter")
     parser.add_argument("--value-coef", type=float, default=0.5, help="Value loss coefficient")
+    parser.add_argument("--gae-lambda", type=float, default=0.95, help="GAE lambda for advantage estimation")
     parser.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility")
 
     args = parser.parse_args()
@@ -316,7 +336,7 @@ if __name__ == "__main__":
     total_size = header_size + state_bytes * num_snakes
 
     mapfile_ctrl = mmap.mmap(shm_ctrl.fd, shm_ctrl.size)
-    ctrl_fmt = "=idddddddddd"
+    ctrl_fmt = "=iddddddddddd"
 
     mapfile = mmap.mmap(shm.fd, total_size)
 
@@ -344,7 +364,7 @@ if __name__ == "__main__":
     while True:
         sem_inf_tick.acquire()
 
-        do_train, loss, policy_loss, entropy_mean, entropy_std, grad_norm, returns_mean, returns_std, action_0_freq, action_1_freq, action_2_freq = struct.unpack_from(ctrl_fmt, mapfile_ctrl, 0)
+        do_train, loss, policy_loss, entropy_mean, entropy_std, grad_norm, returns_mean, returns_std, action_0_freq, action_1_freq, action_2_freq, value_loss = struct.unpack_from(ctrl_fmt, mapfile_ctrl, 0)
 
         if do_train == 1:
             episode_count += 1
@@ -400,7 +420,8 @@ if __name__ == "__main__":
                              metrics['returns_std'],
                              metrics['action_0_freq'],
                              metrics['action_1_freq'],
-                             metrics['action_2_freq'])
+                             metrics['action_2_freq'],
+                             metrics['value_loss'])
 
             replay_buffer = []
             prev_action1 = 0
