@@ -11,6 +11,7 @@ DARKBLUE  = (0, 0, 155)    # Other snake body
 RED       = (255, 0, 0)
 GRAY      = (100, 100, 100)
 DARKGRAY  = (50, 51, 50)
+ORANGE    = (255, 165, 0)
 
 
 class RunningApple:
@@ -104,7 +105,8 @@ class SnakeGame:
                  max_lifetime=10000,
                  max_hunger_steps=150,
                  apple_speed=0.5,
-                 num_snakes=1
+                 num_snakes=1,
+                 apple_ttl=0,
                  ):
         self.GRID_WIDTH = GRID_WIDTH
         self.GRID_HEIGHT = GRID_HEIGHT
@@ -116,6 +118,7 @@ class SnakeGame:
 
         self.eaten_apples = 0
         self.apple_speed = apple_speed
+        self.apple_ttl = apple_ttl
         self.max_hunger_steps = max_hunger_steps
         self.steps_since_food = 0
 
@@ -149,6 +152,16 @@ class SnakeGame:
 
         apple_pos = self._random_food_position(all_body)
         self.apple = RunningApple(apple_pos, self.GRID_WIDTH, self.GRID_HEIGHT, self.apple_speed)
+
+        # Two-apple cooperative mode (dual snakes only)
+        apple1_pos = apple_pos
+        self.apple1 = self.apple
+        apple2_pos = self._random_food_position(all_body | {apple1_pos})
+        self.apple2 = RunningApple(apple2_pos, self.GRID_WIDTH, self.GRID_HEIGHT, self.apple_speed)
+
+        self.apple1_eaten = False
+        self.apple2_eaten = False
+        self.apple_ttl_countdown = 0
 
         self.eaten_apples = 0
         self.steps_since_food = 0
@@ -202,7 +215,7 @@ class SnakeGame:
         self.snake1.insert(0, new_head)
         self.apple.move([self.snake1[0]], set(self.snake1))
 
-        reward = 1
+        reward = 0.01
         self.steps_since_food += 1
         if new_head == self.apple.position:
             reward += 1
@@ -251,19 +264,39 @@ class SnakeGame:
         self.snake1.insert(0, new_head1)
         self.snake2.insert(0, new_head2)
 
-        # Move apple (escapes from nearest head)
         all_body_new = set(self.snake1) | set(self.snake2)
-        self.apple.move([new_head1, new_head2], all_body_new)
+        self.apple1.move([new_head1, new_head2], all_body_new)
+        self.apple2.move([new_head1, new_head2], all_body_new)
 
-        # Check if either snake ate apple
-        reward = 1
+        reward = 0.01
         self.steps_since_food += 1
-        ate = (new_head1 == self.apple.position) or (new_head2 == self.apple.position)
-        if ate:
-            reward += 1
+
+        # Either snake eats either apple
+        if not self.apple1_eaten and (new_head1 == self.apple1.position or new_head2 == self.apple1.position):
+            self.apple1_eaten = True
+        if not self.apple2_eaten and (new_head1 == self.apple2.position or new_head2 == self.apple2.position):
+            self.apple2_eaten = True
+
+        # TTL countdown: starts when first apple eaten
+        if (self.apple1_eaten or self.apple2_eaten) and self.apple_ttl > 0:
+            if self.apple_ttl_countdown == 0:
+                self.apple_ttl_countdown = self.apple_ttl
+            else:
+                self.apple_ttl_countdown -= 1
+                if self.apple_ttl_countdown <= 0:
+                    state1, state2 = self.get_state()
+                    return (state1, state2), 0, True
+
+        # Both eaten → shared reward + respawn
+        if self.apple1_eaten and self.apple2_eaten:
+            reward += 1.0
             self.eaten_apples += 1
             self.steps_since_food = 0
-            self.apple.respawn(set(self.snake1) | set(self.snake2))
+            self.apple1_eaten = False
+            self.apple2_eaten = False
+            self.apple_ttl_countdown = 0
+            self.apple1.respawn(all_body_new | {self.apple2.position})
+            self.apple2.respawn(all_body_new | {self.apple1.position})
             # Both grow (don't pop)
         else:
             self.snake1.pop()
@@ -319,8 +352,10 @@ class SnakeGame:
                     color = DARKGREEN
                 elif cell in other_body_set:
                     color = DARKBLUE
-                elif cell == self.apple.position:
+                elif cell == self.apple1.position:
                     color = RED
+                elif cell == self.apple2.position:
+                    color = ORANGE
                 else:
                     color = WHITE
 
@@ -336,20 +371,22 @@ class SnakeGame:
     def _get_state_matrix(self, visible_cells, last_action, snake):
         matrix = []
         for (col, row), color in visible_cells.items():
-            if color == DARKGREEN:
-                matrix.append([1, 0])
+            if color == WHITE:
+                matrix.append([0, 0, 0, 0])
+            elif color == DARKGREEN:
+                matrix.append([1, 0, 0, 0])
             elif color == DARKBLUE:
-                matrix.append([0.5, 0])  # Other snake body - distinct encoding
+                matrix.append([0, 1, 0, 0])
             elif color == RED:
-                matrix.append([0, 1])
-            elif color == WHITE:
-                matrix.append([0, 0])
+                matrix.append([0, 0, 1, 0])
+            elif color == ORANGE:
+                matrix.append([0, 0, 0, 1])
 
         is_alive = np.exp(-np.abs(len(snake)))
-        matrix.append([is_alive, 1 - is_alive])
+        matrix.append([is_alive, 1 - is_alive, 0, 0])
 
         last_action_vector = [1, 0] if last_action != 1 else [0, 1]
-        matrix.append(last_action_vector)
+        matrix.append(last_action_vector + [0, 0])
 
         return np.array(matrix)
 

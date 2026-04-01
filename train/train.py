@@ -89,7 +89,8 @@ def collect_episode(env, model, args):
     snake1_id = torch.tensor([1.0, 0.0]) if num_snakes == 2 else None
     snake2_id = torch.tensor([0.0, 1.0]) if num_snakes == 2 else None
 
-    obs_size = (2 * args.vision_radius * (args.vision_radius + 1) + 2) * 2
+    vision_cells = 2 * args.vision_radius * (args.vision_radius + 1)
+    obs_size = (vision_cells + 2) * 4
     id_size = 2 if num_snakes == 2 else 0
     full_obs_size = obs_size + id_size
 
@@ -351,7 +352,9 @@ def main():
 
     # MLflow
     parser.add_argument("--experiment-name", type=str, default="train")
-    parser.add_argument("--mlflow-uri", type=str, default="file:///tmp/mlruns")
+    parser.add_argument("--mlflow-uri", type=str, default="file:///home/korolaab/projects/snake_rl/experiments/mlruns")
+    parser.add_argument("--checkpoint-dir", type=str, default="../experiments/checkpoints")
+    parser.add_argument("--apple-ttl", type=int, default=0)
 
     args = parser.parse_args()
 
@@ -363,8 +366,8 @@ def main():
     # State matrix rows = visible_cells_excluding_head + 2 = 2r(r+1) + 2 = vision_size
     vision_radius = args.vision_radius
     vision_display_size = 2 * vision_radius + 1
-    vision_size = 2 * vision_radius * (vision_radius + 1) + 2  # matches inf.py formula
-    obs_size = vision_size * 2
+    vision_cells = 2 * vision_radius * (vision_radius + 1)  # cells excluding head
+    obs_size = (vision_cells + 2) * 4  # 4-channel per cell + 2 meta rows padded to 4
     id_size = 2 if args.num_snakes == 2 else 0
     talk_size = args.talk_size if args.num_snakes == 2 else 0
 
@@ -386,12 +389,13 @@ def main():
         max_hunger_steps=args.max_hunger_steps,
         apple_speed=args.apple_speed,
         num_snakes=args.num_snakes,
+        apple_ttl=args.apple_ttl,
     )
 
     mlflow.set_tracking_uri(args.mlflow_uri)
     mlflow.set_experiment(args.experiment_name)
 
-    checkpoint_dir = "/tmp/snake_rl_checkpoints"
+    checkpoint_dir = args.checkpoint_dir
     os.makedirs(checkpoint_dir, exist_ok=True)
 
     with mlflow.start_run():
@@ -401,7 +405,7 @@ def main():
             replay_buffer, stats = collect_episode(env, model, args)
             metrics = train_on_episode(replay_buffer, model, optimizer, args)
 
-            log = {'apples': stats['apples'], 'steps': stats['steps']}
+            log = {'apples': stats['apples'], 'steps': stats['steps'], 'both_ate': env.eaten_apples}
             if metrics:
                 log.update(metrics)
 
