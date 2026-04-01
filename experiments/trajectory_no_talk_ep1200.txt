@@ -1,0 +1,31 @@
+Experiment: trajectory_no_talk_ep1200
+=====================================
+
+Setup:
+  grid: 22x22 torus
+  vision_radius: 3
+  num_snakes: 2
+  talk_size: 0 (no communication)
+  checkpoint: ep1200, dual_large_no_talk run
+  beta: 0.01, lr: 0.001
+
+Episode stats:
+  steps: 69, apples: 1
+
+Key observation:
+  Both snakes move diagonally across the torus (top-right to bottom-left).
+  This is NOT random walk — it is systematic space coverage via a learned diagonal strategy.
+  The snakes move in PARALLEL diagonal paths (same slope, different offset).
+
+Problem:
+  Without communication, both snakes cover the SAME zones of the torus.
+  Optimal cooperation would require different diagonals or offsets to cover
+  the full field together.
+
+Hypothesis confirmed:
+  Agents CAN orient themselves on a torus using only egocentric vision.
+  The diagonal strategy emerges naturally from the toroidal topology.
+
+Next step:
+  Run same visualization with talk_size=8 to see if communication
+  changes the trajectory — ideally snakes would diverge to cover different zones.
