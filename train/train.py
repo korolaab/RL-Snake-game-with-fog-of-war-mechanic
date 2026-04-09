@@ -90,7 +90,7 @@ def collect_episode(env, model, args):
     snake2_id = torch.tensor([0.0, 1.0]) if num_snakes == 2 else None
 
     vision_cells = 2 * args.vision_radius * (args.vision_radius + 1)
-    obs_size = (vision_cells + 2) * 4
+    obs_size = (vision_cells + 3) * 4  # 4-ch per cell + 3 meta rows (is_alive, last_action, partner_touched)
     id_size = 2 if num_snakes == 2 else 0
     full_obs_size = obs_size + id_size
 
@@ -100,6 +100,8 @@ def collect_episode(env, model, args):
     prev_lp1, prev_lp2 = 0.0, 0.0
     prev_talk1 = torch.zeros(talk_size) if talk_size > 0 else None
     prev_talk2 = torch.zeros(talk_size) if talk_size > 0 else None
+    talk1_log = []
+    talk2_log = []
 
     replay_buffer = []
     total_reward = 0.0
@@ -152,6 +154,8 @@ def collect_episode(env, model, args):
             if talk_out1 is not None:
                 prev_talk1 = talk_out1.clone()
                 prev_talk2 = talk_out2.clone()
+                talk1_log.append(talk_out1.detach().cpu().numpy())
+                talk2_log.append(talk_out2.detach().cpu().numpy())
         else:
             v1_in = v1
             with torch.no_grad():
@@ -173,11 +177,19 @@ def collect_episode(env, model, args):
             prev_a1 = a1
             prev_lp1 = lp1.item()
 
+    if talk1_log:
+        t1 = np.mean(talk1_log, axis=0)
+        t2 = np.mean(talk2_log, axis=0)
+        talk_divergence = float(np.mean(np.abs(t1 - t2)))
+    else:
+        talk_divergence = 0.0
+
     stats = {
         'length': env.steps if hasattr(env, 'steps') else len(replay_buffer),
         'apples': env.eaten_apples,
         'total_reward': total_reward,
         'steps': len(replay_buffer),
+        'talk_divergence': talk_divergence,
     }
     return replay_buffer, stats
 
@@ -367,7 +379,7 @@ def main():
     vision_radius = args.vision_radius
     vision_display_size = 2 * vision_radius + 1
     vision_cells = 2 * vision_radius * (vision_radius + 1)  # cells excluding head
-    obs_size = (vision_cells + 2) * 4  # 4-channel per cell + 2 meta rows padded to 4
+    obs_size = (vision_cells + 3) * 4  # 4-ch per cell + 3 meta rows (is_alive, last_action, partner_touched)  # 4-channel per cell + 2 meta rows padded to 4
     id_size = 2 if args.num_snakes == 2 else 0
     talk_size = args.talk_size if args.num_snakes == 2 else 0
 
@@ -405,7 +417,8 @@ def main():
             replay_buffer, stats = collect_episode(env, model, args)
             metrics = train_on_episode(replay_buffer, model, optimizer, args)
 
-            log = {'apples': stats['apples'], 'steps': stats['steps'], 'both_ate': env.eaten_apples}
+            log = {'apples': stats['apples'], 'steps': stats['steps'], 'both_ate': env.eaten_apples,
+                   'talk_divergence': stats['talk_divergence']}
             if metrics:
                 log.update(metrics)
 

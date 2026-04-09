@@ -152,16 +152,17 @@ class SnakeGame:
 
         apple_pos = self._random_food_position(all_body)
         self.apple = RunningApple(apple_pos, self.GRID_WIDTH, self.GRID_HEIGHT, self.apple_speed)
-
-        # Two-apple cooperative mode (dual snakes only)
-        apple1_pos = apple_pos
         self.apple1 = self.apple
-        apple2_pos = self._random_food_position(all_body | {apple1_pos})
-        self.apple2 = RunningApple(apple2_pos, self.GRID_WIDTH, self.GRID_HEIGHT, self.apple_speed)
 
+        # One-apple cooperative mode: both snakes must touch the apple
+        self.snake1_touched = False
+        self.snake2_touched = False
+        self.apple_ttl_countdown = 0
+
+        # Legacy two-apple fields (unused in one-apple mode)
+        self.apple2 = self.apple
         self.apple1_eaten = False
         self.apple2_eaten = False
-        self.apple_ttl_countdown = 0
 
         self.eaten_apples = 0
         self.steps_since_food = 0
@@ -250,9 +251,8 @@ class SnakeGame:
         dx2, dy2 = self.direction2
         new_head2 = ((h2x + dx2) % self.GRID_WIDTH, (h2y + dy2) % self.GRID_HEIGHT)
 
-        # Check collisions (heads vs all bodies, excluding own head position)
-        all_body = set(self.snake1) | set(self.snake2)
-        if new_head1 in all_body or new_head2 in all_body or new_head1 == new_head2:
+        # Collisions with own body only (partner collisions allowed)
+        if new_head1 in set(self.snake1) or new_head2 in set(self.snake2):
             state1, state2 = self.get_state()
             return (state1, state2), 0, True
 
@@ -265,38 +265,32 @@ class SnakeGame:
         self.snake2.insert(0, new_head2)
 
         all_body_new = set(self.snake1) | set(self.snake2)
-        self.apple1.move([new_head1, new_head2], all_body_new)
-        self.apple2.move([new_head1, new_head2], all_body_new)
+        self.apple.move([new_head1, new_head2], all_body_new)
 
         reward = 0.01
         self.steps_since_food += 1
 
-        # Either snake eats either apple
-        if not self.apple1_eaten and (new_head1 == self.apple1.position or new_head2 == self.apple1.position):
-            self.apple1_eaten = True
-        if not self.apple2_eaten and (new_head1 == self.apple2.position or new_head2 == self.apple2.position):
-            self.apple2_eaten = True
+        # One-apple cooperative: both snakes must touch the apple
+        apple_pos = self.apple.position
+        first_touch = False
+        if new_head1 == apple_pos and not self.snake1_touched:
+            self.snake1_touched = True
+            first_touch = not self.snake2_touched  # first to touch?
+        if new_head2 == apple_pos and not self.snake2_touched:
+            self.snake2_touched = True
+            first_touch = first_touch or not self.snake1_touched
 
-        # TTL countdown: starts when first apple eaten
-        if (self.apple1_eaten or self.apple2_eaten) and self.apple_ttl > 0:
-            if self.apple_ttl_countdown == 0:
-                self.apple_ttl_countdown = self.apple_ttl
-            else:
-                self.apple_ttl_countdown -= 1
-                if self.apple_ttl_countdown <= 0:
-                    state1, state2 = self.get_state()
-                    return (state1, state2), 0, True
+        if first_touch:
+            reward += 0.3  # partial reward for first touch
 
-        # Both eaten → shared reward + respawn
-        if self.apple1_eaten and self.apple2_eaten:
+        if self.snake1_touched and self.snake2_touched:
             reward += 1.0
             self.eaten_apples += 1
             self.steps_since_food = 0
-            self.apple1_eaten = False
-            self.apple2_eaten = False
-            self.apple_ttl_countdown = 0
-            self.apple1.respawn(all_body_new | {self.apple2.position})
-            self.apple2.respawn(all_body_new | {self.apple1.position})
+            self.snake1_touched = False
+            self.snake2_touched = False
+            self.apple.respawn(all_body_new)
+            self.apple1 = self.apple
             # Both grow (don't pop)
         else:
             self.snake1.pop()
@@ -352,10 +346,8 @@ class SnakeGame:
                     color = DARKGREEN
                 elif cell in other_body_set:
                     color = DARKBLUE
-                elif cell == self.apple1.position:
+                elif cell == self.apple.position:
                     color = RED
-                elif cell == self.apple2.position:
-                    color = ORANGE
                 else:
                     color = WHITE
 
@@ -368,7 +360,7 @@ class SnakeGame:
         return self._get_visible_cells(self.snake1, self.direction1,
                                         self.snake2 if self.num_snakes == 2 else None)
 
-    def _get_state_matrix(self, visible_cells, last_action, snake):
+    def _get_state_matrix(self, visible_cells, last_action, snake, partner_touched=False):
         matrix = []
         for (col, row), color in visible_cells.items():
             if color == WHITE:
@@ -388,6 +380,9 @@ class SnakeGame:
         last_action_vector = [1, 0] if last_action != 1 else [0, 1]
         matrix.append(last_action_vector + [0, 0])
 
+        # Partner touched the apple (key coordination signal)
+        matrix.append([float(partner_touched), 0, 0, 0])
+
         return np.array(matrix)
 
     def get_state_matrix(self, visible_cells, last_action):
@@ -402,6 +397,8 @@ class SnakeGame:
         # Two snakes: return (state1, state2)
         vis1 = self._get_visible_cells(self.snake1, self.direction1, self.snake2)
         vis2 = self._get_visible_cells(self.snake2, self.direction2, self.snake1)
-        state1 = self._get_state_matrix(vis1, self.last_action1, self.snake1)
-        state2 = self._get_state_matrix(vis2, self.last_action2, self.snake2)
+        state1 = self._get_state_matrix(vis1, self.last_action1, self.snake1,
+                                         partner_touched=self.snake2_touched)
+        state2 = self._get_state_matrix(vis2, self.last_action2, self.snake2,
+                                         partner_touched=self.snake1_touched)
         return (state1, state2)
