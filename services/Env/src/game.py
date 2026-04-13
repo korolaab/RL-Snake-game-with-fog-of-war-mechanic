@@ -216,10 +216,11 @@ class SnakeGame:
         self.snake1.insert(0, new_head)
         self.apple.move([self.snake1[0]], set(self.snake1))
 
-        reward = 0.01
         self.steps_since_food += 1
+        reward = 0
+
         if new_head == self.apple.position:
-            reward += 1
+            reward = 1
             self.eaten_apples += 1
             self.steps_since_food = 0
             self.apple.respawn(set(self.snake1))

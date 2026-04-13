@@ -367,6 +367,7 @@ def main():
     parser.add_argument("--mlflow-uri", type=str, default="file:///home/korolaab/projects/snake_rl/experiments/mlruns")
     parser.add_argument("--checkpoint-dir", type=str, default="../experiments/checkpoints")
     parser.add_argument("--apple-ttl", type=int, default=0)
+    parser.add_argument("--load-checkpoint", type=str, default=None)
 
     args = parser.parse_args()
 
@@ -390,6 +391,12 @@ def main():
         hidden_units_2=args.hidden2,
     )
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+
+    if args.load_checkpoint:
+        ckpt = torch.load(args.load_checkpoint, map_location='cpu')
+        model.load_state_dict(ckpt['model_state_dict'])
+        optimizer.load_state_dict(ckpt['optimizer_state_dict'])
+        print(f"Loaded checkpoint from {args.load_checkpoint} (ep {ckpt['episode']})")
 
     env = SnakeGame(
         GRID_WIDTH=args.grid_width,
