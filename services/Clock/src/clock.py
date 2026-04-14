@@ -74,7 +74,7 @@ sem_inf_training = posix_ipc.Semaphore("/sem_inf_training", posix_ipc.O_CREX, in
 # Control format: command (int)
 # 0 = normal step
 # 1 = train
-ctrl_fmt_inf = "=idddddddddd" # do_train, loss, policy_loss, entropy_mean, entropy_std, grad_norm, returns_mean, returns_std, action_0_freq, action_1_freq, action_2_freq
+ctrl_fmt_inf = "=iddddddddddd" # do_train, loss, policy_loss, entropy_mean, entropy_std, grad_norm, returns_mean, returns_std, action_0_freq, action_1_freq, action_2_freq, value_loss
 sem_inf_control = posix_ipc.SharedMemory("/inf_control", posix_ipc.O_CREX, 
     size=struct.calcsize(ctrl_fmt_inf))
 mapfile_inf_ctrl = mmap.mmap(sem_inf_control.fd, sem_inf_control.size)
@@ -169,7 +169,7 @@ try:
                 sem_inf_tick.release()   # разрешаем INF работать
                 sem_inf_done.acquire()   # ждем, пока INF закончит
                 
-                do_train, loss, policy_loss, entropy_mean, entropy_std, grad_norm, returns_mean, returns_std, action_0_freq, action_1_freq, action_2_freq = struct.unpack_from(ctrl_fmt_inf, mapfile_inf_ctrl, 0)
+                do_train, loss, policy_loss, entropy_mean, entropy_std, grad_norm, returns_mean, returns_std, action_0_freq, action_1_freq, action_2_freq, value_loss = struct.unpack_from(ctrl_fmt_inf, mapfile_inf_ctrl, 0)
                 print(f"[Clock] {episode}:{snake_length=} {eaten_apples=} {loss=:0.3f} {policy_loss=:0.3f} {entropy_mean=:0.3f} {grad_norm=:0.3f} {frames=}  {sum_reward=}")
                 
                 # Update moving averages
@@ -193,7 +193,8 @@ try:
                     "returns_std": returns_std,
                     "action_0_freq": action_0_freq,
                     "action_1_freq": action_1_freq,
-                    "action_2_freq": action_2_freq
+                    "action_2_freq": action_2_freq,
+                    "value_loss": value_loss
                 }
                 
                 # Add moving averages (last 100 episodes)

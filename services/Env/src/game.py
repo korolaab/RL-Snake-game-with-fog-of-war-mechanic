@@ -122,7 +122,37 @@ class SnakeGame:
         self.max_hunger_steps = max_hunger_steps
         self.steps_since_food = 0
 
+        self._precompute_vision()
         self.reset()
+
+    def _precompute_vision(self):
+        """Precompute diamond cell offsets for each direction (run once at init)."""
+        R = self.VISION_RADIUS
+        rotate_fns = {
+            (0, -1): lambda dx, dy: (dx, dy),
+            (1, 0):  lambda dx, dy: (dy, -dx),
+            (0, 1):  lambda dx, dy: (-dx, -dy),
+            (-1, 0): lambda dx, dy: (-dy, dx),
+        }
+        cx = self.VISION_DISPLAY_COLS // 2
+        cy = self.VISION_DISPLAY_ROWS // 2
+
+        self._vision_offsets = {}
+        for direction, rot in rotate_fns.items():
+            dx_list, dy_list = [], []
+            for dx in range(-R, R + 1):
+                for dy in range(-R, R + 1):
+                    if abs(dx) + abs(dy) > R or (dx, dy) == (0, 0):
+                        continue
+                    r_x, r_y = rot(dx, dy)
+                    col, row = cx + r_x, cy + r_y
+                    if 0 <= col < self.VISION_DISPLAY_COLS and 0 <= row < self.VISION_DISPLAY_ROWS:
+                        dx_list.append(dx)
+                        dy_list.append(dy)
+            self._vision_offsets[direction] = (
+                np.array(dx_list, dtype=np.int32),
+                np.array(dy_list, dtype=np.int32),
+            )
 
     def reset(self):
         # Snake 1: spawns at left-center
@@ -217,10 +247,10 @@ class SnakeGame:
         self.apple.move([self.snake1[0]], set(self.snake1))
 
         self.steps_since_food += 1
-        reward = 0
+        reward = 0.01
 
         if new_head == self.apple.position:
-            reward = 1
+            reward += 1
             self.eaten_apples += 1
             self.steps_since_food = 0
             self.apple.respawn(set(self.snake1))
@@ -307,99 +337,49 @@ class SnakeGame:
         state1, state2 = self.get_state()
         return (state1, state2), reward, False
 
-    def _get_visible_cells(self, snake, direction, other_snake):
+    def _get_state_fast(self, direction, snake, other_snake, last_action, partner_touched=False):
+        """Build state matrix in one numpy pass (no intermediate dict)."""
+        dx_arr, dy_arr = self._vision_offsets[direction]
+        n = len(dx_arr)
+
         head_x, head_y = snake[0]
-        visible_cells = {}
+        gx = (head_x + dx_arr) % self.GRID_WIDTH
+        gy = (head_y + dy_arr) % self.GRID_HEIGHT
 
-        if direction == (0, -1):      # Up
-            def rotate(dx, dy): return (dx, dy)
-        elif direction == (1, 0):     # Right
-            def rotate(dx, dy): return (dy, -dx)
-        elif direction == (0, 1):     # Down
-            def rotate(dx, dy): return (-dx, -dy)
-        elif direction == (-1, 0):    # Left
-            def rotate(dx, dy): return (-dy, dx)
-        else:
-            def rotate(dx, dy): return (dx, dy)
+        # Build boolean grids for fast lookup
+        own_grid = np.zeros((self.GRID_HEIGHT, self.GRID_WIDTH), dtype=bool)
+        for x, y in snake[1:]:
+            own_grid[y, x] = True
 
-        own_body_set = set(snake)
-        other_body_set = set(other_snake) if other_snake else set()
+        other_grid = np.zeros((self.GRID_HEIGHT, self.GRID_WIDTH), dtype=bool)
+        if other_snake:
+            for x, y in other_snake:
+                other_grid[y, x] = True
 
-        for dx in range(-self.VISION_RADIUS, self.VISION_RADIUS + 1):
-            for dy in range(-self.VISION_RADIUS, self.VISION_RADIUS + 1):
-                if abs(dx) + abs(dy) > self.VISION_RADIUS:
-                    continue
+        apple_pos = self.apple.position
 
-                r_x, r_y = rotate(dx, dy)
-                disp_col = (self.VISION_DISPLAY_COLS // 2) + r_x
-                disp_row = (self.VISION_DISPLAY_ROWS // 2) + r_y
+        matrix = np.zeros((n + 3, 4), dtype=np.float32)
+        own_mask   = own_grid[gy, gx]
+        other_mask = other_grid[gy, gx] & ~own_mask
+        apple_mask = (gx == apple_pos[0]) & (gy == apple_pos[1])
 
-                if not (0 <= disp_col < self.VISION_DISPLAY_COLS and 0 <= disp_row < self.VISION_DISPLAY_ROWS):
-                    continue
+        matrix[:n, 0] = own_mask
+        matrix[:n, 1] = other_mask
+        matrix[:n, 2] = apple_mask
 
-                global_x = (head_x + dx) % self.GRID_WIDTH
-                global_y = (head_y + dy) % self.GRID_HEIGHT
-                cell = (global_x, global_y)
+        is_alive = float(np.exp(-len(snake)))
+        matrix[n]   = [is_alive, 1 - is_alive, 0, 0]
+        matrix[n+1] = [1, 0, 0, 0] if last_action != 1 else [0, 1, 0, 0]
+        matrix[n+2] = [float(partner_touched), 0, 0, 0]
 
-                if (dx, dy) == (0, 0):
-                    color = GREEN
-                elif cell in own_body_set:
-                    color = DARKGREEN
-                elif cell in other_body_set:
-                    color = DARKBLUE
-                elif cell == self.apple.position:
-                    color = RED
-                else:
-                    color = WHITE
-
-                visible_cells[(disp_col, disp_row)] = color
-
-        return visible_cells
-
-    def get_visible_cells(self):
-        """Backward compat for single snake"""
-        return self._get_visible_cells(self.snake1, self.direction1,
-                                        self.snake2 if self.num_snakes == 2 else None)
-
-    def _get_state_matrix(self, visible_cells, last_action, snake, partner_touched=False):
-        matrix = []
-        for (col, row), color in visible_cells.items():
-            if color == WHITE:
-                matrix.append([0, 0, 0, 0])
-            elif color == DARKGREEN:
-                matrix.append([1, 0, 0, 0])
-            elif color == DARKBLUE:
-                matrix.append([0, 1, 0, 0])
-            elif color == RED:
-                matrix.append([0, 0, 1, 0])
-            elif color == ORANGE:
-                matrix.append([0, 0, 0, 1])
-
-        is_alive = np.exp(-np.abs(len(snake)))
-        matrix.append([is_alive, 1 - is_alive, 0, 0])
-
-        last_action_vector = [1, 0] if last_action != 1 else [0, 1]
-        matrix.append(last_action_vector + [0, 0])
-
-        # Partner touched the apple (key coordination signal)
-        matrix.append([float(partner_touched), 0, 0, 0])
-
-        return np.array(matrix)
-
-    def get_state_matrix(self, visible_cells, last_action):
-        return self._get_state_matrix(visible_cells, last_action, self.snake1)
+        return matrix
 
     def get_state(self):
         if self.num_snakes == 1:
-            visible_cells = self._get_visible_cells(self.snake1, self.direction1, None)
-            state_matrix = self._get_state_matrix(visible_cells, self.last_action1, self.snake1)
-            return state_matrix
+            return self._get_state_fast(self.direction1, self.snake1, None, self.last_action1)
 
-        # Two snakes: return (state1, state2)
-        vis1 = self._get_visible_cells(self.snake1, self.direction1, self.snake2)
-        vis2 = self._get_visible_cells(self.snake2, self.direction2, self.snake1)
-        state1 = self._get_state_matrix(vis1, self.last_action1, self.snake1,
-                                         partner_touched=self.snake2_touched)
-        state2 = self._get_state_matrix(vis2, self.last_action2, self.snake2,
-                                         partner_touched=self.snake1_touched)
-        return (state1, state2)
+        s1 = self._get_state_fast(self.direction1, self.snake1, self.snake2,
+                                   self.last_action1, partner_touched=self.snake2_touched)
+        s2 = self._get_state_fast(self.direction2, self.snake2, self.snake1,
+                                   self.last_action2, partner_touched=self.snake1_touched)
+        return s1, s2

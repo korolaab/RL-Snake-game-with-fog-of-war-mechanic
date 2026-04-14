@@ -125,13 +125,11 @@ def collect_episode(env, model, args):
                 probs1, talk_out1, _ = model(v1_in, prev_talk2)
                 probs2, talk_out2, _ = model(v2_in, prev_talk1)
 
-            m1 = torch.distributions.Categorical(probs1)
-            a1 = m1.sample()
-            lp1 = m1.log_prob(a1)
+            a1 = probs1.multinomial(1).squeeze(-1)
+            lp1 = torch.log(probs1[a1] + 1e-8)
 
-            m2 = torch.distributions.Categorical(probs2)
-            a2 = m2.sample()
-            lp2 = m2.log_prob(a2)
+            a2 = probs2.multinomial(1).squeeze(-1)
+            lp2 = torch.log(probs2[a2] + 1e-8)
 
             talk_in1_saved = prev_talk2.clone() if prev_talk2 is not None else None
             talk_in2_saved = prev_talk1.clone() if prev_talk1 is not None else None
@@ -160,9 +158,8 @@ def collect_episode(env, model, args):
             v1_in = v1
             with torch.no_grad():
                 probs1, _, _ = model(v1_in, None)
-            m1 = torch.distributions.Categorical(probs1)
-            a1 = m1.sample()
-            lp1 = m1.log_prob(a1)
+            a1 = probs1.multinomial(1).squeeze(-1)
+            lp1 = torch.log(probs1[a1] + 1e-8)
 
             experience = (prev_v1, prev_a1, prev_lp1, None)
 
@@ -248,11 +245,11 @@ def train_on_episode(replay_buffer, model, optimizer, args):
         for _ in range(args.ppo_epochs):
             p1, _, v1 = model(s1_t, ti1_t)
             p2, _, v2 = model(s2_t, ti2_t)
-            m1 = torch.distributions.Categorical(p1)
-            m2 = torch.distributions.Categorical(p2)
-            nlp1 = m1.log_prob(a1_t)
-            nlp2 = m2.log_prob(a2_t)
-            ent1 = m1.entropy(); ent2 = m2.entropy()
+            _idx = torch.arange(len(a1_t))
+            nlp1 = torch.log(p1[_idx, a1_t] + 1e-8)
+            nlp2 = torch.log(p2[_idx, a2_t] + 1e-8)
+            ent1 = -(p1 * torch.log(p1 + 1e-8)).sum(dim=-1)
+            ent2 = -(p2 * torch.log(p2 + 1e-8)).sum(dim=-1)
 
             r1 = torch.exp(nlp1 - lp1_t)
             r2 = torch.exp(nlp2 - lp2_t)
@@ -307,9 +304,9 @@ def train_on_episode(replay_buffer, model, optimizer, args):
         model.train()
         for _ in range(args.ppo_epochs):
             p1, _, v1 = model(s_t, None)
-            m1 = torch.distributions.Categorical(p1)
-            nlp1 = m1.log_prob(a_t)
-            ent1 = m1.entropy()
+            _idx = torch.arange(len(a_t))
+            nlp1 = torch.log(p1[_idx, a_t] + 1e-8)
+            ent1 = -(p1 * torch.log(p1 + 1e-8)).sum(dim=-1)
             r1 = torch.exp(nlp1 - lp_t)
             pl1 = -torch.min(r1 * adv, torch.clamp(r1, 1 - args.eps_clip, 1 + args.eps_clip) * adv).mean()
             vl1 = nn.functional.mse_loss(v1, ret)
